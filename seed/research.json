@@ -1,0 +1,54 @@
+{
+ "source": "research",
+ "pulled_at": "2026-10-14T23:55:00-05:00",
+ "from": "2026-10-01",
+ "to": "2026-10-14",
+ "metrics": [],
+ "events": [],
+ "snapshots": [
+  {
+   "key": "readings",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "tone": "ok",
+     "title": "Tracking works end to end",
+     "text": "Every test sign-up on 2, 5 and 6 Oct was attributed to the source it was sent from (paid social, paid search, email, social, other campaigns) in HubSpot, and recorded as sign_up and login events in Google Analytics."
+    },
+    {
+     "tone": "ok",
+     "title": "11 external people signed up in the platform, 2 from Colombia",
+     "text": "Since 1 Oct PostHog shows 11 new external people with an email (India 4, Philippines 2, Colombia 2, Canada, Malaysia and the Netherlands 1 each), plus 9 internal. They arrived directly (4), from think4ever.com (3), Google (2), LinkedIn (1) and another workspace (1)."
+    },
+    {
+     "tone": "warn",
+     "title": "No campaign is sending traffic to the landing yet",
+     "text": "Since 7 Oct the landing receives 0 to 3 sessions a day (12 sessions and 3 new users in Google Analytics). Sign-ups and sign-up events in that window: 0."
+    },
+    {
+     "tone": "warn",
+     "title": "The LATAM landing is not yet in the sign-up path",
+     "text": "No external sign-up came from go.think4ever.com. Its HubSpot form has only internal tests, and \"Sign up with Google\" goes straight to the platform. In Colombia, think4ever.com had 32 visitors, 15 CTA clicks and 9 sign-up starts in the same period."
+    },
+    {
+     "tone": "crit",
+     "title": "37 visits landed on a missing page",
+     "text": "go.think4ever.com/404 received 37 views. One or more links point to an address that does not exist; fixing it before paid traffic starts avoids paying for visits that never see the landing."
+    }
+   ]
+  }
+ ],
+ "notes": [
+  {
+   "date": "2026-10-02",
+   "label": "Tracking test: landing form, 5 internal sign-ups",
+   "kind": "test"
+  },
+  {
+   "date": "2026-10-05",
+   "label": "Tracking test: platform forms, 6 internal sign-ups",
+   "kind": "test"
+  }
+ ]
+}

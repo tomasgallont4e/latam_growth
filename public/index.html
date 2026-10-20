@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LATAM Growth · think4ever</title>
+  <meta name="description" content="One dashboard for the LATAM launch: landing, sign-ups, platform, social and paid">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="top-row">
+      <div class="brand">
+        <span class="t4e-word">think<b>4</b>ever</span>
+        <span class="brand-sep" aria-hidden="true"></span>
+        <span class="brand-title">LATAM Growth</span>
+      </div>
+      <div class="controls">
+        <label class="ctl" for="period">Period
+          <select id="period">
+            <option value="launch">Since launch (1 Oct)</option>
+            <option value="7">Last 7 days</option>
+            <option value="14">Last 14 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="custom">Custom…</option>
+          </select>
+        </label>
+        <span id="custom-range" class="ctl" hidden>
+          <input type="date" id="from" aria-label="From"> <span>to</span> <input type="date" id="to" aria-label="To">
+        </span>
+        <label class="switch" for="ex-int"><input type="checkbox" id="ex-int" checked> Exclude internal tests</label>
+        <button type="button" id="theme-btn" class="ghost" aria-label="Switch theme">◐</button>
+        <button type="button" id="logout-btn" class="ghost">Sign out</button>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Views">
+      <button type="button" data-tab="overview" class="active">Overview</button>
+      <button type="button" data-tab="acquisition">Acquisition</button>
+      <button type="button" data-tab="conversion">Conversion</button>
+      <button type="button" data-tab="channels">Social and paid</button>
+      <button type="button" data-tab="ads">Ad loader</button>
+      <button type="button" data-tab="sources">Data sources</button>
+    </nav>
+  </header>
+  <main id="main" class="main" tabindex="-1">
+    <p class="loading">Loading data…</p>
+  </main>
+  <footer class="foot" id="foot"></footer>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

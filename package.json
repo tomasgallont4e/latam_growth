@@ -1,0 +1,18 @@
+{
+  "name": "t4e-growth-dashboard",
+  "version": "1.0.0",
+  "description": "LATAM Growth dashboard: one place for HubSpot, Google Analytics, PostHog, Clarity, Meta and LinkedIn data",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

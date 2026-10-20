@@ -1,0 +1,764 @@
+{
+ "source": "hubspot",
+ "pulled_at": "2026-10-14T23:30:00-05:00",
+ "from": "2026-10-01",
+ "to": "2026-10-14",
+ "metrics": [
+  {
+   "metric": "sessions",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 26
+  },
+  {
+   "metric": "new_visitors",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 13
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 37
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 19
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Email",
+   "value": 1
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Email",
+   "value": 1
+  },
+  {
+   "metric": "contacts",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Email",
+   "value": 1
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Other campaigns",
+   "value": 1
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Other campaigns",
+   "value": 1
+  },
+  {
+   "metric": "contacts",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Other campaigns",
+   "value": 1
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Paid search",
+   "value": 1
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Paid search",
+   "value": 1
+  },
+  {
+   "metric": "contacts",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Paid search",
+   "value": 1
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Paid social",
+   "value": 2
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Paid social",
+   "value": 2
+  },
+  {
+   "metric": "contacts",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Paid social",
+   "value": 2
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Referrals",
+   "value": 1
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-02",
+   "dim": "source",
+   "dim_value": "Referrals",
+   "value": 2
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-03",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 2
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-03",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 3
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-03",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-04",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 2
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-04",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 3
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-04",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 11
+  },
+  {
+   "metric": "new_visitors",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 7
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 21
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 7
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Email",
+   "value": 1
+  },
+  {
+   "metric": "new_visitors",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Email",
+   "value": 1
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Email",
+   "value": 1
+  },
+  {
+   "metric": "contacts",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Email",
+   "value": 1
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Other campaigns",
+   "value": 8
+  },
+  {
+   "metric": "new_visitors",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Other campaigns",
+   "value": 4
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Other campaigns",
+   "value": 15
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Other campaigns",
+   "value": 3
+  },
+  {
+   "metric": "contacts",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Other campaigns",
+   "value": 2
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Paid search",
+   "value": 1
+  },
+  {
+   "metric": "new_visitors",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Paid search",
+   "value": 1
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Paid search",
+   "value": 1
+  },
+  {
+   "metric": "contacts",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Paid search",
+   "value": 1
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Paid social",
+   "value": 4
+  },
+  {
+   "metric": "new_visitors",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Paid social",
+   "value": 3
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Paid social",
+   "value": 4
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Paid social",
+   "value": 2
+  },
+  {
+   "metric": "contacts",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Paid social",
+   "value": 2
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Organic social",
+   "value": 1
+  },
+  {
+   "metric": "new_visitors",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Organic social",
+   "value": 1
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Organic social",
+   "value": 1
+  },
+  {
+   "metric": "contacts",
+   "date": "2026-10-05",
+   "dim": "source",
+   "dim_value": "Organic social",
+   "value": 1
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-06",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 15
+  },
+  {
+   "metric": "new_visitors",
+   "date": "2026-10-06",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 3
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-06",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 34
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-06",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 8
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-06",
+   "dim": "source",
+   "dim_value": "Paid social",
+   "value": 1
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-06",
+   "dim": "source",
+   "dim_value": "Paid social",
+   "value": 4
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-07",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 2
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-07",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 2
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-07",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 2
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-08",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 3
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-08",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 3
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-08",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 3
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-09",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 3
+  },
+  {
+   "metric": "new_visitors",
+   "date": "2026-10-09",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-09",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 8
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-09",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-12",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  },
+  {
+   "metric": "new_visitors",
+   "date": "2026-10-12",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-12",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-12",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  },
+  {
+   "metric": "sessions",
+   "date": "2026-10-14",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  },
+  {
+   "metric": "pageviews",
+   "date": "2026-10-14",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  },
+  {
+   "metric": "bounces",
+   "date": "2026-10-14",
+   "dim": "source",
+   "dim_value": "Direct",
+   "value": 1
+  }
+ ],
+ "snapshots": [
+  {
+   "key": "totals",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "sessions": 88,
+     "visitors": 35,
+     "pageviews": 141,
+     "bounce_rate": 0.61,
+     "contacts": 12
+    }
+   ]
+  },
+  {
+   "key": "pages",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "page": "go.think4ever.com/latam",
+     "views": 103,
+     "entrances": 65,
+     "bounce_rate": 0.69,
+     "status": "live"
+    },
+    {
+     "page": "go.think4ever.com/404",
+     "views": 37,
+     "status": "broken"
+    },
+    {
+     "page": "hs-sites /latam",
+     "views": 0,
+     "entrances": 5,
+     "status": "preview"
+    },
+    {
+     "page": "hs-sites /en/latam",
+     "views": 1,
+     "status": "preview"
+    }
+   ]
+  },
+  {
+   "key": "utm_campaigns",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "campaign": "latam_launch_test",
+     "sessions": 16,
+     "visitors": 10,
+     "pageviews": 26,
+     "contacts": 7,
+     "bounce_rate": 0.31,
+     "test": true
+    },
+    {
+     "campaign": "latam_lanzamiento",
+     "sessions": 5,
+     "visitors": null,
+     "pageviews": null,
+     "contacts": 5,
+     "bounce_rate": 1.0,
+     "test": true
+    }
+   ]
+  },
+  {
+   "key": "countries",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "country": "Colombia",
+     "sessions": 54
+    },
+    {
+     "country": "United States",
+     "sessions": 19
+    },
+    {
+     "country": "Canada",
+     "sessions": 7
+    },
+    {
+     "country": "India",
+     "sessions": 4
+    },
+    {
+     "country": "Bangladesh",
+     "sessions": 4
+    }
+   ]
+  },
+  {
+   "key": "forms",
+   "from": "2026-05-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "form": "T4E – Landing Signup LATAM",
+     "type": "HubSpot form (landing)",
+     "submissions": 12,
+     "external": 0,
+     "dates": "2, 5, 6 Oct"
+    },
+    {
+     "form": "T4E – Account Activity",
+     "type": "HubSpot form (platform events)",
+     "submissions": 10,
+     "external": 0,
+     "dates": "5, 6 Oct"
+    },
+    {
+     "form": "Platform sign-up form (#signupForm)",
+     "type": "Captured form",
+     "submissions": 2,
+     "external": 0,
+     "dates": "6 Oct"
+    },
+    {
+     "form": "Platform log-in form (#loginForm)",
+     "type": "Captured form",
+     "submissions": 3,
+     "external": 0,
+     "dates": "6 Oct"
+    },
+    {
+     "form": "Lead Registration Form",
+     "type": "HubSpot form",
+     "submissions": 0,
+     "external": 0,
+     "dates": ""
+    },
+    {
+     "form": "Earlier site forms (.space-y-4/6/8)",
+     "type": "Captured form",
+     "submissions": 15,
+     "external": 14,
+     "dates": "May to Aug 2026 (before the LATAM launch)"
+    }
+   ]
+  }
+ ],
+ "events": [
+  {
+   "kind": "form_signup",
+   "date": "2026-10-02",
+   "form": "T4E – Landing Signup LATAM",
+   "source": "Paid social",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-02",
+   "form": "T4E – Landing Signup LATAM",
+   "source": "Paid search",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-02",
+   "form": "T4E – Landing Signup LATAM",
+   "source": "Paid social",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-02",
+   "form": "T4E – Landing Signup LATAM",
+   "source": "Email",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-02",
+   "form": "T4E – Landing Signup LATAM",
+   "source": "Other campaigns",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-05",
+   "form": "T4E – Account Activity",
+   "source": "Paid social",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-05",
+   "form": "T4E – Account Activity",
+   "source": "Paid social",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-05",
+   "form": "T4E – Account Activity",
+   "source": "Organic social",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-05",
+   "form": "T4E – Account Activity",
+   "source": "Paid search",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-05",
+   "form": "T4E – Account Activity",
+   "source": "Email",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-05",
+   "form": "T4E – Account Activity",
+   "source": "Other campaigns",
+   "internal": true,
+   "country": "Colombia"
+  },
+  {
+   "kind": "form_signup",
+   "date": "2026-10-06",
+   "form": "T4E – Account Activity",
+   "source": "Other campaigns",
+   "internal": true,
+   "country": "Colombia"
+  }
+ ]
+}

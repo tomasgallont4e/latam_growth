@@ -1,0 +1,214 @@
+{
+ "source": "ga4",
+ "pulled_at": "2026-10-14T23:50:00-05:00",
+ "from": "2026-10-01",
+ "to": "2026-10-14",
+ "metrics": [],
+ "snapshots": [
+  {
+   "key": "totals",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "users": 25,
+     "new_users": 25,
+     "sessions": 59,
+     "engaged_sessions": 31,
+     "engagement_rate": 0.5254,
+     "avg_engagement_sec": 52,
+     "pageviews": 91,
+     "events": 262,
+     "key_events": 4
+    }
+   ]
+  },
+  {
+   "key": "totals",
+   "from": "2026-10-07",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "users": 7,
+     "new_users": 3,
+     "sessions": 12,
+     "pageviews": 15,
+     "events": 36,
+     "key_events": 0
+    }
+   ]
+  },
+  {
+   "key": "events",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "event": "page_view",
+     "count": 91,
+     "users": 25
+    },
+    {
+     "event": "session_start",
+     "count": 60,
+     "users": 25
+    },
+    {
+     "event": "user_engagement",
+     "count": 41,
+     "users": 16
+    },
+    {
+     "event": "first_visit",
+     "count": 25,
+     "users": 25
+    },
+    {
+     "event": "scroll",
+     "count": 16,
+     "users": 11
+    },
+    {
+     "event": "generate_lead",
+     "count": 9,
+     "users": 4
+    },
+    {
+     "event": "sign_up",
+     "count": 9,
+     "users": 4
+    },
+    {
+     "event": "form_start",
+     "count": 6,
+     "users": 4
+    },
+    {
+     "event": "login",
+     "count": 5,
+     "users": 4
+    }
+   ]
+  },
+  {
+   "key": "events",
+   "from": "2026-10-07",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "event": "page_view",
+     "count": 15,
+     "users": 7
+    },
+    {
+     "event": "session_start",
+     "count": 12,
+     "users": 7
+    },
+    {
+     "event": "user_engagement",
+     "count": 4,
+     "users": 3
+    },
+    {
+     "event": "first_visit",
+     "count": 3,
+     "users": 3
+    },
+    {
+     "event": "scroll",
+     "count": 2,
+     "users": 2
+    }
+   ]
+  },
+  {
+   "key": "channels",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "note": "Session primary channel group (T4E Channels)",
+   "rows": [
+    {
+     "channel": "Direct",
+     "sessions": 37,
+     "engaged_sessions": 18,
+     "engagement_rate": 0.4865,
+     "key_events": 0
+    },
+    {
+     "channel": "Referral",
+     "sessions": 8,
+     "engaged_sessions": 5,
+     "engagement_rate": 0.625,
+     "key_events": 0
+    },
+    {
+     "channel": "Unassigned",
+     "sessions": 7,
+     "engaged_sessions": 5,
+     "engagement_rate": 0.7143,
+     "key_events": 4
+    },
+    {
+     "channel": "Paid Social",
+     "sessions": 5,
+     "engaged_sessions": 3,
+     "engagement_rate": 0.6,
+     "key_events": 0
+    },
+    {
+     "channel": "Organic Social",
+     "sessions": 2,
+     "engaged_sessions": 0,
+     "engagement_rate": 0,
+     "key_events": 0
+    }
+   ]
+  },
+  {
+   "key": "countries",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "country": "Colombia",
+     "users": 15,
+     "engaged_sessions": 22,
+     "key_events": 4
+    },
+    {
+     "country": "United States",
+     "users": 6,
+     "engaged_sessions": 6,
+     "key_events": 0
+    },
+    {
+     "country": "Canada",
+     "users": 3,
+     "engaged_sessions": 4,
+     "key_events": 0
+    },
+    {
+     "country": "Bangladesh",
+     "users": 1,
+     "engaged_sessions": 0,
+     "key_events": 0
+    }
+   ]
+  },
+  {
+   "key": "pages",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "page": "/latam",
+     "views": 91,
+     "users": 25,
+     "avg_engagement_sec": 125
+    }
+   ]
+  }
+ ],
+ "events": []
+}

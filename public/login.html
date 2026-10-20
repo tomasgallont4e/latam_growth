@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · LATAM Growth</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap">
+  <link rel="stylesheet" href="app.css">
+  <style>
+    .login-wrap { min-height: 100vh; display: grid; place-items: center; padding-inline: 16px; }
+    .login { width: 100%; max-width: 360px; display: grid; gap: 14px; }
+    .login label { display: grid; gap: 4px; font-size: 13px; color: var(--text-2); }
+    .login input { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); border-radius: 8px; padding: 9px 11px; }
+    .login .err { color: var(--bad); font-size: 13px; min-height: 1.2em; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="login-wrap">
+    <form class="card login" id="login-form">
+      <div class="brand"><span class="t4e-word">think<b>4</b>ever</span> <span class="brand-title">LATAM Growth</span></div>
+      <p class="note" style="margin:0">Internal dashboard. Sign in with the credentials shared by Research.</p>
+      <label for="user">User <input id="user" name="user" autocomplete="username" required></label>
+      <label for="password">Password <input id="password" name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn" type="submit">Sign in</button>
+      <p class="err" id="err" role="alert"></p>
+    </form>
+  </div>
+  <script>
+    (function () {
+      try { var th = localStorage.getItem('t4e-growth-theme'); if (th) document.documentElement.dataset.theme = th; } catch (e) {}
+      var MSG = { wrong: 'User or password is not correct.', too_many: 'Too many attempts. Try again in 15 minutes.', not_configured: 'Sign-in is not set up yet. Ask the Research lead.' };
+      document.getElementById('login-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var err = document.getElementById('err'); err.textContent = '';
+        fetch('api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+          body: JSON.stringify({ user: document.getElementById('user').value, password: document.getElementById('password').value }) })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (x) { if (x.ok) location.href = './'; else err.textContent = MSG[x.j.error] || 'Could not sign in.'; })
+          .catch(function () { err.textContent = 'Could not reach the dashboard. Try again.'; });
+      });
+    })();
+  </script>
+</body>
+</html>

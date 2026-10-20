@@ -1,0 +1,566 @@
+{
+ "source": "posthog",
+ "pulled_at": "2026-10-15T01:10:00-05:00",
+ "from": "2026-10-01",
+ "to": "2026-10-14",
+ "status": {
+  "state": "connected",
+  "note": "Project 347860, read by Research from the PostHog session (14 Oct)."
+ },
+ "metrics": [
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-01",
+   "value": 140
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-01",
+   "value": 42
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-01",
+   "value": 11
+  },
+  {
+   "metric": "ph_registration_users",
+   "date": "2026-10-01",
+   "value": 5
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-01",
+   "value": 22
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-02",
+   "value": 50
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-02",
+   "value": 21
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-02",
+   "value": 10
+  },
+  {
+   "metric": "ph_registration_users",
+   "date": "2026-10-02",
+   "value": 5
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-02",
+   "value": 14
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-03",
+   "value": 29
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-03",
+   "value": 17
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-03",
+   "value": 3
+  },
+  {
+   "metric": "ph_registration_users",
+   "date": "2026-10-03",
+   "value": 1
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-03",
+   "value": 5
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-04",
+   "value": 4
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-04",
+   "value": 4
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-04",
+   "value": 4
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-05",
+   "value": 80
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-05",
+   "value": 37
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-05",
+   "value": 15
+  },
+  {
+   "metric": "ph_registration_users",
+   "date": "2026-10-05",
+   "value": 7
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-05",
+   "value": 23
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-06",
+   "value": 51
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-06",
+   "value": 28
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-06",
+   "value": 10
+  },
+  {
+   "metric": "ph_registration_users",
+   "date": "2026-10-06",
+   "value": 6
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-06",
+   "value": 20
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-07",
+   "value": 65
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-07",
+   "value": 19
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-07",
+   "value": 7
+  },
+  {
+   "metric": "ph_registration_users",
+   "date": "2026-10-07",
+   "value": 1
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-07",
+   "value": 17
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-08",
+   "value": 58
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-08",
+   "value": 32
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-08",
+   "value": 10
+  },
+  {
+   "metric": "ph_registration_users",
+   "date": "2026-10-08",
+   "value": 3
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-08",
+   "value": 15
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-09",
+   "value": 80
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-09",
+   "value": 31
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-09",
+   "value": 4
+  },
+  {
+   "metric": "ph_registration_users",
+   "date": "2026-10-09",
+   "value": 1
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-09",
+   "value": 8
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-10",
+   "value": 20
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-10",
+   "value": 15
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-10",
+   "value": 4
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-10",
+   "value": 1
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-11",
+   "value": 18
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-11",
+   "value": 9
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-11",
+   "value": 4
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-12",
+   "value": 42
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-12",
+   "value": 16
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-12",
+   "value": 3
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-12",
+   "value": 11
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-13",
+   "value": 115
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-13",
+   "value": 27
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-13",
+   "value": 15
+  },
+  {
+   "metric": "ph_registration_users",
+   "date": "2026-10-13",
+   "value": 3
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-13",
+   "value": 17
+  },
+  {
+   "metric": "ph_site_pageviews",
+   "date": "2026-10-14",
+   "value": 52
+  },
+  {
+   "metric": "ph_site_users",
+   "date": "2026-10-14",
+   "value": 21
+  },
+  {
+   "metric": "ph_cta_users",
+   "date": "2026-10-14",
+   "value": 6
+  },
+  {
+   "metric": "ph_portal_users",
+   "date": "2026-10-14",
+   "value": 13
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-01",
+   "dim": "type",
+   "dim_value": "External",
+   "value": 3
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-01",
+   "dim": "type",
+   "dim_value": "Internal",
+   "value": 1
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-02",
+   "dim": "type",
+   "dim_value": "External",
+   "value": 2
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-04",
+   "dim": "type",
+   "dim_value": "External",
+   "value": 1
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-05",
+   "dim": "type",
+   "dim_value": "Internal",
+   "value": 1
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-06",
+   "dim": "type",
+   "dim_value": "External",
+   "value": 2
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-07",
+   "dim": "type",
+   "dim_value": "External",
+   "value": 1
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-08",
+   "dim": "type",
+   "dim_value": "Internal",
+   "value": 4
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-08",
+   "dim": "type",
+   "dim_value": "External",
+   "value": 1
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-13",
+   "dim": "type",
+   "dim_value": "Internal",
+   "value": 3
+  },
+  {
+   "metric": "ph_new_persons",
+   "date": "2026-10-13",
+   "dim": "type",
+   "dim_value": "External",
+   "value": 1
+  }
+ ],
+ "snapshots": [
+  {
+   "key": "totals",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "site_users": 226,
+     "cta_users": 58,
+     "registration_users": 27,
+     "portal_users": 84,
+     "new_external": 11,
+     "new_internal": 9
+    }
+   ]
+  },
+  {
+   "key": "countries",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "rows": [
+    {
+     "country": "United States",
+     "site_users": 127,
+     "cta": 9,
+     "reg": 7,
+     "ext_signups": 0
+    },
+    {
+     "country": "Colombia",
+     "site_users": 32,
+     "cta": 15,
+     "reg": 9,
+     "ext_signups": 2
+    },
+    {
+     "country": "India",
+     "site_users": 15,
+     "cta": 7,
+     "reg": 2,
+     "ext_signups": 4
+    },
+    {
+     "country": "Canada",
+     "site_users": 10,
+     "cta": 5,
+     "reg": 2,
+     "ext_signups": 1
+    },
+    {
+     "country": "Curaçao",
+     "site_users": 7,
+     "cta": 2,
+     "reg": 0,
+     "ext_signups": 0
+    },
+    {
+     "country": "Bangladesh",
+     "site_users": 6,
+     "cta": 1,
+     "reg": 0,
+     "ext_signups": 0
+    },
+    {
+     "country": "Philippines",
+     "site_users": 5,
+     "cta": 7,
+     "reg": 4,
+     "ext_signups": 2
+    },
+    {
+     "country": "Malaysia",
+     "site_users": 4,
+     "cta": 1,
+     "reg": 1,
+     "ext_signups": 1
+    },
+    {
+     "country": "Bulgaria",
+     "site_users": 3,
+     "cta": 2,
+     "reg": 0,
+     "ext_signups": 0
+    },
+    {
+     "country": "Singapore",
+     "site_users": 3,
+     "cta": 0,
+     "reg": 0,
+     "ext_signups": 0
+    },
+    {
+     "country": "Trinidad and Tobago",
+     "site_users": 3,
+     "cta": 1,
+     "reg": 1,
+     "ext_signups": 0
+    },
+    {
+     "country": "Serbia",
+     "site_users": 2,
+     "cta": 0,
+     "reg": 0,
+     "ext_signups": 0
+    },
+    {
+     "country": "Brazil",
+     "site_users": 2,
+     "cta": 0,
+     "reg": 0,
+     "ext_signups": 0
+    },
+    {
+     "country": "The Netherlands",
+     "site_users": 2,
+     "cta": 1,
+     "reg": 1,
+     "ext_signups": 1
+    },
+    {
+     "country": "Australia",
+     "site_users": 1,
+     "cta": 0,
+     "reg": 0,
+     "ext_signups": 0
+    }
+   ]
+  },
+  {
+   "key": "new_people_by_source",
+   "from": "2026-10-01",
+   "to": "2026-10-14",
+   "note": "None of the external sign-ups arrived from the LATAM landing (go.think4ever.com); one internal person did.",
+   "rows": [
+    {
+     "source": "Direct (typed address or app link)",
+     "people": 4,
+     "countries": "includes Colombia (1 Oct)"
+    },
+    {
+     "source": "think4ever.com",
+     "people": 3,
+     "countries": "includes Colombia (13 Oct)"
+    },
+    {
+     "source": "Google search",
+     "people": 2,
+     "countries": ""
+    },
+    {
+     "source": "LinkedIn",
+     "people": 1,
+     "countries": ""
+    },
+    {
+     "source": "Another platform workspace",
+     "people": 1,
+     "countries": ""
+    }
+   ]
+  }
+ ]
+}
