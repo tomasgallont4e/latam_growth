@@ -249,8 +249,11 @@ const EVENT_INFO = {
   page_view: 'Page view', session_start: 'Session started', user_engagement: 'Page in focus for 1s or more', first_visit: 'First visit of a user', scroll: 'Scrolled 90% of the page',
 };
 function viewConversion() {
-  const all = snap('ga4', 'events', { from: LAUNCH, to: '2026-10-14' }) || snap('ga4', 'events');
-  const late = S.data.snapshots.find((s) => s.source === 'ga4' && s.key === 'events' && all && s.from > all.from && s.to === all.to);
+  // Landing events: use the widest window snapshot (the seed baseline is a fixed window; live pulls
+  // widen over time), and a later sub-window if one exists to show what happened recently.
+  const evsnaps = S.data.snapshots.filter((s) => s.source === 'ga4' && s.key === 'events');
+  const all = evsnaps.slice().sort((a, b) => diffDays(b.from, b.to) - diffDays(a.from, a.to) || (a.from < b.from ? -1 : 1))[0] || null;
+  const late = evsnaps.find((s) => all && s !== all && s.to === all.to && s.from > all.from) || null;
   const lateMap = late ? Object.fromEntries(late.rows.map((r) => [r.event, r.count])) : {};
   const KEY = ['form_start', 'sign_up', 'login', 'generate_lead'];
   const evRows = all ? all.rows.slice().sort((a, b) => (KEY.includes(b.event) - KEY.includes(a.event)) || b.count - a.count) : [];
@@ -262,7 +265,7 @@ function viewConversion() {
       ${all ? table([{ t: 'Event', f: (r) => `<code>${esc(r.event)}</code>${KEY.includes(r.event) ? ' <span class="pill info">key</span>' : ''}<br><small style="color:var(--muted)">${esc(EVENT_INFO[r.event] || '')}</small>` }, { t: 'Events', num: 1, f: (r) => fmt(r.count) }, { t: 'Users', num: 1, f: (r) => fmt(r.users) }, ...(late ? [{ t: `Since ${dshort(late.from)}`, num: 1, f: (r) => fmt(lateMap[r.event] || 0) }] : [])], evRows) : emptyState('ga4')}
       ${late ? `<p class="note">Every sign_up, login and form_start happened before ${dshort(late.from)}, on the tracking test days.</p>` : ''}</section>
     <section class="card">${head('Sign-up log', `${shown.length} shown${S.exInt && list.length > shown.length ? `, ${list.length - shown.length} internal tests hidden` : ''} · ${win(S.from, S.to)}`, srcTag('hubspot', 'form'))}
-      ${shown.length ? table([{ t: 'Date', f: (r) => dshort(r.date) }, { t: 'Form', k: 'form' }, { t: 'Source', k: 'source' }, { t: 'Country', k: 'country' }, { t: 'Type', f: (r) => (r.internal ? '<span class="pill mute">Internal test</span>' : '<span class="pill ok">External</span>') }], shown.slice().sort((a, b) => (a.date < b.date ? 1 : -1)), (r) => (r.internal ? 'internal' : ''))
+      ${shown.length ? table([{ t: 'Date', f: (r) => dshort(r.date) }, { t: 'Form', k: 'form' }, { t: 'Channel', f: (r) => esc(r.channel || r.source || '') }, { t: 'Country', k: 'country' }, { t: 'Type', f: (r) => (r.internal ? '<span class="pill mute">Internal test</span>' : '<span class="pill ok">External</span>') }], shown.slice().sort((a, b) => (a.date < b.date ? 1 : -1)), (r) => (r.internal ? 'internal' : ''))
         : `<div class="empty"><b>No external sign-ups in this period.</b> Turn off "Exclude internal tests" to see the ${list.length} test entries.</div>`}</section>
   </div>
   <div class="grid g2">
@@ -471,6 +474,125 @@ function adFromForm(form) {
   return o;
 }
 
+// ---------- Goals (color-coded targets per metric, cadence and grouping)
+const GOAL = { data: null, edit: null, arch: false };
+const GOAL_STATE = { met: ['ok', 'Goal met'], on: ['ok', 'On pace'], watch: ['warn', 'Watch'], behind: ['crit', 'Behind pace'] };
+const GOAL_COLOR = { met: 'var(--ok)', on: 'var(--navy-2)', watch: 'var(--warn)', behind: 'var(--bad)' };
+async function loadGoals() {
+  try { GOAL.data = await api('api/goals'); } catch (e) { if (e.message !== 'code') toast(e.message); }
+  if (S.tab === 'goals') render();
+}
+function goalFromForm(form) {
+  const o = {};
+  for (const [k, v] of new FormData(form).entries()) o[k] = typeof v === 'string' ? v.trim() : v;
+  if (o.target !== undefined && o.target !== '') o.target = Number(o.target);
+  return o;
+}
+// The values a grouping can take, straight from the data loaded so far.
+function goalGroups(metricKey) {
+  const spec = GOAL.data.metrics[metricKey] || {};
+  if (metricKey === 'external_signups') return [...new Set(S.data.events.filter((e) => e.kind === 'form_signup').map((e) => e.channel || e.source || '').filter(Boolean))].sort();
+  const srcs = spec.sources || (spec.source ? [spec.source] : []);
+  return [...new Set(M().filter((r) => srcs.includes(r.source) && r.metric === spec.metric && r.dim_value).map((r) => r.dim_value))].sort();
+}
+function goalActual(g) {
+  const w = g.window, to = today();
+  const spec = GOAL.data.metrics[g.metric] || {};
+  // undefined (not null) so msum's default filter applies when the goal is overall.
+  const grp = g.grouping !== 'overall' ? (r) => (r.dim_value || '') === g.group : undefined;
+  if (g.metric === 'external_signups') {
+    return S.data.events.filter((e) => e.kind === 'form_signup' && e.date >= w.from && e.date <= to && !e.internal
+      && (g.grouping !== 'channel' || (e.channel || e.source || '') === g.group)).length;
+  }
+  if (g.metric === 'platform_signups') return msum('posthog', 'ph_new_persons', (r) => r.dim_value !== 'Internal', w.from, to);
+  if (g.metric === 'ga4_sessions') {
+    // Daily metrics exist once the GA4 connector runs; the seed baseline is snapshot-only, so the
+    // channels table (its own window, best overlap) is the fallback.
+    if (has('ga4', 'ga_sessions')) return msum('ga4', 'ga_sessions', grp, w.from, to);
+    const ch = snap('ga4', 'channels');
+    const row = ch && ch.rows.find((r) => !grp || r.channel === g.group);
+    return row ? (row.sessions || 0) : 0;
+  }
+  return (spec.sources || [spec.source]).reduce((s, k) => s + msum(k, spec.metric, grp, w.from, to), 0);
+}
+// Pace mirrors lib/goals.js statusOf: green at or above the expected value, amber within 15% below, red further behind.
+function goalStatus(g, actual) {
+  const w = g.window;
+  const elapsed = Math.min(w.total_days, Math.max(1, diffDays(w.from, today()) + 1));
+  const expected = (g.target * elapsed) / w.total_days;
+  return { key: actual >= g.target ? 'met' : actual >= expected ? 'on' : actual >= expected * 0.85 ? 'watch' : 'behind', expected, elapsed };
+}
+function goalRing(share, color) {
+  const p = Math.max(0, Math.min(1, share));
+  const C = 2 * Math.PI * 26;
+  return `<svg class="goal-ring" viewBox="0 0 64 64" role="img" aria-label="${Math.round(p * 100)}% of target">
+    <circle cx="32" cy="32" r="26" class="ring-bg"></circle>
+    <circle cx="32" cy="32" r="26" class="ring-fg" style="stroke:${color};stroke-dasharray:${(p * C).toFixed(1)} ${C.toFixed(1)}"></circle>
+    <text x="32" y="37" text-anchor="middle">${Math.round(p * 100)}%</text></svg>`;
+}
+function goalTile(g) {
+  const spec = GOAL.data.metrics[g.metric] || {};
+  const actual = goalActual(g);
+  const st = goalStatus(g, actual);
+  const [cls, label] = GOAL_STATE[st.key];
+  const share = g.target ? actual / g.target : 0;
+  const paceShare = g.target ? st.expected / g.target : 0;
+  const daysLeft = Math.max(0, diffDays(today(), g.window.end));
+  const num = (v) => (g.metric === 'ad_spend' ? money(v) : fmt(v));
+  return `<div class="goal ${st.key}">
+    <div class="g-top"><div><div class="g-name">${esc(g.name)}</div>
+      <div class="g-chips"><span class="pill info">${esc(g.window.label)}</span>
+        <span class="pill mute">${esc(GOAL.data.group_label[g.grouping] || g.grouping)}${g.group ? ` · ${esc(g.group)}` : ''}</span>
+        ${g.example ? '<span class="pill mute">Example</span>' : ''}</div></div>
+      <span class="pill ${cls}">${label}</span></div>
+    <div class="g-body">
+      <div class="g-main">
+        <div class="g-actual">${num(actual)}</div>
+        <div class="g-target">of ${num(g.target)} · ${esc(spec.hint || '')}</div>
+        <div class="g-pace"><i style="width:${Math.min(100, share * 100).toFixed(1)}%;background:${GOAL_COLOR[st.key]}"></i><b style="left:${Math.min(99.5, paceShare * 100).toFixed(1)}%"></b></div>
+        <div class="g-note"><span>expected by today: <b>${num(Math.round(st.expected * 10) / 10)}</b></span><span>${daysLeft} day${daysLeft === 1 ? '' : 's'} left</span></div>
+      </div>
+      ${goalRing(share, GOAL_COLOR[st.key])}
+    </div>
+    ${g.example ? '' : `<div class="g-act"><button type="button" class="btn secondary" data-goal-edit="${esc(g.id)}">Edit</button><button type="button" class="btn secondary" data-goal-arch="${esc(g.id)}">${g.status === 'archived' ? 'Restore' : 'Archive'}</button></div>`}
+  </div>`;
+}
+function goalForm(p) {
+  const A = GOAL.data;
+  const spec = A.metrics[p.metric] || {};
+  const groupings = spec.groupings || ['overall'];
+  const groups = goalGroups(p.metric);
+  const f = (k, label, inner, hint) => `<label class="${['name', 'notes'].includes(k) ? 'wide' : ''}"><span>${esc(label)}</span>${inner}${hint ? `<small>${esc(hint)}</small>` : ''}</label>`;
+  const grp = (p.grouping || 'overall');
+  return `<section class="card">${head(p.id ? 'Edit goal' : 'New goal', 'A goal tracks one metric for a calendar month or quarter, overall or for one source, channel or campaign. The tile colors by pace against the target.')}
+  <form id="goal-form" class="goal-form" data-id="${esc(p.id || '')}">
+    ${f('name', 'Goal name (optional)', `<input name="name" type="text" value="${esc(p.name || '')}" placeholder="External sign-ups in the month">`)}
+    ${f('metric', 'What it measures', `<select name="metric">${Object.entries(A.metrics).map(([k, m]) => `<option value="${esc(k)}"${p.metric === k ? ' selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`, spec.hint)}
+    ${f('cadence', 'Cadence', `<select name="cadence">${Object.entries(A.cadences).map(([k, t]) => `<option value="${esc(k)}"${(p.cadence || 'monthly') === k ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`)}
+    ${f('grouping', 'Grouping', `<select name="grouping">${groupings.map((k) => `<option value="${esc(k)}"${grp === k ? ' selected' : ''}>${esc(A.group_label[k] || k)}</option>`).join('')}</select>`)}
+    ${grp !== 'overall' ? f('group', 'Value', `<select name="group" required>${groups.length ? groups.map((v) => `<option value="${esc(v)}"${p.group === v ? ' selected' : ''}>${esc(v)}</option>`).join('') : '<option value="">No values in the data yet</option>'}</select>`, 'Values come from the data loaded so far.') : ''}
+    ${f('target', 'Target', `<input name="target" type="number" min="0" step="any" value="${p.target != null ? esc(p.target) : ''}" required>`)}
+    ${f('notes', 'Notes (optional)', `<textarea name="notes" rows="2">${esc(p.notes || '')}</textarea>`)}
+    <div class="wide form-row"><button class="btn">${p.id ? 'Save goal' : 'Add goal'}</button><button type="button" class="btn secondary" data-goal-cancel>Cancel</button></div>
+  </form></section>`;
+}
+function viewGoals() {
+  if (!GOAL.data) { loadGoals(); return '<p class="loading">Loading goals…</p>'; }
+  const list = GOAL.data.goals.filter((g) => GOAL.arch || g.status !== 'archived');
+  const counts = { met: 0, on: 0, watch: 0, behind: 0 };
+  for (const g of list) counts[goalStatus(g, goalActual(g)).key] += 1;
+  return `<section class="card">${head('Goals', 'Targets per metric, per calendar month or quarter, overall or by source, channel and campaign. Green: at or above the expected value for today. Amber: within 15% below. Red: further behind.', `<div class="form-row"><button type="button" class="btn" data-goal-new>New goal</button><label class="switch"><input type="checkbox" id="goal-arch"${GOAL.arch ? ' checked' : ''}> Show archived</label></div>`)}
+    <div class="goal-summary">
+      <span class="goal-chip ok"><b>${counts.met}</b> met</span>
+      <span class="goal-chip ok"><b>${counts.on}</b> on pace</span>
+      <span class="goal-chip warn"><b>${counts.watch}</b> watch</span>
+      <span class="goal-chip crit"><b>${counts.behind}</b> behind</span>
+    </div></section>
+  ${GOAL.edit ? goalForm(GOAL.edit) : ''}
+  ${list.length ? `<div class="goal-grid">${list.map(goalTile).join('')}</div>`
+    : '<section class="card"><div class="empty"><b>No goals yet.</b> Leadership sets them with <b>New goal</b>; the examples show how each one reads once loaded.</div></section>'}`;
+}
+
 // ---------- CSV
 function parseCSV(text) {
   const rows = [];
@@ -493,7 +615,7 @@ function toCSV() {
 }
 
 // ---------- render and events
-const VIEWS = { overview: viewOverview, acquisition: viewAcquisition, conversion: viewConversion, channels: viewChannels, ads: viewAds, sources: viewSources };
+const VIEWS = { overview: viewOverview, acquisition: viewAcquisition, conversion: viewConversion, goals: viewGoals, channels: viewChannels, ads: viewAds, sources: viewSources };
 function render() {
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === S.tab));
   main.innerHTML = VIEWS[S.tab]();
@@ -570,6 +692,14 @@ main.addEventListener('submit', async (e) => {
     AD.edit = null; AD.sel = r.id; await loadAds();
   } catch (err) { toast(err.message); }
 });
+main.addEventListener('submit', async (e) => {
+  if (e.target.id !== 'goal-form') return;
+  const id = e.target.dataset.id, body = goalFromForm(e.target);
+  try {
+    await api(id ? `api/goals/${encodeURIComponent(id)}` : 'api/goals', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    toast(id ? 'Goal saved' : 'Goal added'); GOAL.edit = null; await loadGoals();
+  } catch (err) { toast(err.message); }
+});
 main.addEventListener('input', (e) => {
   const t = e.target; if (!t.dataset || !t.dataset.max) return;
   const c = main.querySelector(`[data-count="${t.name}"]`);
@@ -578,6 +708,17 @@ main.addEventListener('input', (e) => {
 main.addEventListener('change', (e) => {
   const t = e.target;
   if (t.id === 'ad-arch') { AD.arch = t.checked; render(); return; }
+  if (t.id === 'goal-arch') { GOAL.arch = t.checked; render(); return; }
+  const gform = t.closest && t.closest('#goal-form');
+  if (gform) {
+    // The fields change with the metric and grouping: keep what was typed and draw the form again.
+    if (t.name === 'metric' || t.name === 'grouping') {
+      const cur = goalFromForm(gform);
+      GOAL.edit = { ...GOAL.edit, ...cur, group: t.name === 'grouping' && cur.grouping === 'overall' ? '' : GOAL.edit.group, id: gform.dataset.id || undefined };
+      render();
+    }
+    return;
+  }
   const form = t.closest && t.closest('#ad-form'); if (!form) return;
   if (t.name === 'persona') { const u = form.elements.utm_content; if (u && (!u.value || /^p\d\d$/.test(u.value))) u.value = t.value; }
   if (t.name === 'platform') {
@@ -627,6 +768,15 @@ main.addEventListener('click', async (e) => {
 main.addEventListener('click', async (e) => {
   const del = e.target.closest('[data-del-note]');
   if (del) { try { await api('api/notes/' + encodeURIComponent(del.dataset.delNote), { method: 'DELETE' }); toast('Note removed'); await load(); } catch (err) { toast(err.message); } return; }
+  let gl;
+  if ((gl = e.target.closest('[data-goal-new]'))) { GOAL.edit = { metric: 'landing_sessions', cadence: 'monthly', grouping: 'overall' }; render(); main.querySelector('#goal-form input')?.focus(); return; }
+  if ((gl = e.target.closest('[data-goal-cancel]'))) { GOAL.edit = null; render(); return; }
+  if ((gl = e.target.closest('[data-goal-edit]'))) { GOAL.edit = { ...GOAL.data.goals.find((x) => x.id === gl.dataset.goalEdit) }; render(); main.querySelector('#goal-form')?.scrollIntoView({ behavior: 'smooth' }); return; }
+  if ((gl = e.target.closest('[data-goal-arch]'))) {
+    const goal = GOAL.data.goals.find((x) => x.id === gl.dataset.goalArch);
+    try { await api(`api/goals/${encodeURIComponent(goal.id)}`, { method: 'PUT', body: JSON.stringify({ status: goal.status === 'archived' ? 'active' : 'archived' }) }); toast(goal.status === 'archived' ? 'Goal restored' : 'Goal archived'); await loadGoals(); } catch (err) { toast(err.message); }
+    return;
+  }
   const sync = e.target.closest('[data-sync]');
   if (sync) { sync.disabled = true; sync.textContent = 'Syncing…'; try { const r = await api('api/sync/' + sync.dataset.sync, { method: 'POST' }); toast(`Synced: ${r.metrics} rows`); await load(); } catch (err) { toast(err.message); sync.disabled = false; sync.textContent = 'Sync now'; } return; }
   if (e.target.id === 'dl-csv') {
