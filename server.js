@@ -211,7 +211,7 @@ async function goalList() {
     for (const [i, ex] of goals.EXAMPLES.entries()) await store.upsert('goal', `gex-${i + 1}`, { ...ex, example: true, status: 'active', created_by: 'example', created_at: new Date().toISOString() });
     await store.upsert('goalseed', 'done', { at: new Date().toISOString() });
   }
-  return (await store.list('goal')).map((g) => { const { _at, ...rest } = g; return { ...rest, id: g._k, updated: _at, window: goals.windowOf(g.cadence) }; });
+  return (await store.list('goal')).map((g) => { const { _at, ...rest } = g; return { ...rest, id: g._k, updated: _at, window: goals.windowOf(g.cadence, undefined, g) }; });
 }
 app.get('/api/goals', async (req, res, next) => {
   try { res.json({ goals: await goalList(), metrics: goals.METRICS, cadences: goals.CADENCES, group_label: goals.GROUP_LABEL }); }

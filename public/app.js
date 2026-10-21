@@ -539,7 +539,7 @@ function goalTile(g) {
   const paceShare = g.target ? st.expected / g.target : 0;
   const daysLeft = Math.max(0, diffDays(today(), g.window.end));
   const num = (v) => (g.metric === 'ad_spend' ? money(v) : fmt(v));
-  return `<div class="goal ${st.key}">
+  return `<div class="goal ${st.key}${g.cadence === 'custom' ? ' big' : ''}">
     <div class="g-top"><div><div class="g-name">${esc(g.name)}</div>
       <div class="g-chips"><span class="pill info">${esc(g.window.label)}</span>
         <span class="pill mute">${esc(GOAL.data.group_label[g.grouping] || g.grouping)}${g.group ? ` · ${esc(g.group)}` : ''}</span>
@@ -569,6 +569,7 @@ function goalForm(p) {
     ${f('name', 'Goal name (optional)', `<input name="name" type="text" value="${esc(p.name || '')}" placeholder="External sign-ups in the month">`)}
     ${f('metric', 'What it measures', `<select name="metric">${Object.entries(A.metrics).map(([k, m]) => `<option value="${esc(k)}"${p.metric === k ? ' selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`, spec.hint)}
     ${f('cadence', 'Cadence', `<select name="cadence">${Object.entries(A.cadences).map(([k, t]) => `<option value="${esc(k)}"${(p.cadence || 'monthly') === k ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`)}
+    ${(p.cadence || 'monthly') === 'custom' ? f('start', 'Window start', `<input name="start" type="date" value="${esc(p.start || '')}" required>`) + f('end', 'Window end', `<input name="end" type="date" value="${esc(p.end || '')}" required>`) : ''}
     ${f('grouping', 'Grouping', `<select name="grouping">${groupings.map((k) => `<option value="${esc(k)}"${grp === k ? ' selected' : ''}>${esc(A.group_label[k] || k)}</option>`).join('')}</select>`)}
     ${grp !== 'overall' ? f('group', 'Value', `<select name="group" required>${groups.length ? groups.map((v) => `<option value="${esc(v)}"${p.group === v ? ' selected' : ''}>${esc(v)}</option>`).join('') : '<option value="">No values in the data yet</option>'}</select>`, 'Values come from the data loaded so far.') : ''}
     ${f('target', 'Target', `<input name="target" type="number" min="0" step="any" value="${p.target != null ? esc(p.target) : ''}" required>`)}
@@ -712,7 +713,7 @@ main.addEventListener('change', (e) => {
   const gform = t.closest && t.closest('#goal-form');
   if (gform) {
     // The fields change with the metric and grouping: keep what was typed and draw the form again.
-    if (t.name === 'metric' || t.name === 'grouping') {
+    if (t.name === 'metric' || t.name === 'grouping' || t.name === 'cadence') {
       const cur = goalFromForm(gform);
       GOAL.edit = { ...GOAL.edit, ...cur, group: t.name === 'grouping' && cur.grouping === 'overall' ? '' : GOAL.edit.group, id: gform.dataset.id || undefined };
       render();

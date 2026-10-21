@@ -236,6 +236,9 @@ body[data-role="ads"] :is(#note-form, #csv-form, [data-sync], [data-del-note], [
 .goal-chip.warn { background: var(--warn-soft); color: var(--warn); }
 .goal-chip.crit { background: var(--bad-soft); color: var(--bad); }
 .goal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 350px), 1fr)); gap: 14px; }
+.goal.big { grid-column: 1 / -1; }
+.goal.big .g-actual { font-size: 44px; }
+.goal.big .g-pace { height: 12px; }
 .goal { border: 1px solid var(--line); border-left: 5px solid var(--navy-3); border-radius: var(--radius); padding: 15px 16px; background: var(--surface); display: grid; gap: 12px; min-width: 0; align-content: start; }
 .goal.met { border-left-color: var(--ok); background: var(--ok-soft); }
 .goal.on { border-left-color: var(--ok); }

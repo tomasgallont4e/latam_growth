@@ -29,6 +29,24 @@ test('statusOf colors by pace against the target', () => {
   assert.strictEqual(statusOf(5, 0, 20, 31), 'behind'); // target 0 never happens: guarded
 });
 
+test('custom (big goal) window spans the set dates', () => {
+  const w = windowOf('custom', '2026-10-20', { start: '2026-10-01', end: '2027-03-31' });
+  assert.strictEqual(w.from, '2026-10-01');
+  assert.strictEqual(w.end, '2027-03-31');
+  assert.strictEqual(w.total_days, 182); // 31+30+31+31+28+31
+  assert.strictEqual(w.label, '1 Oct 2026 – 31 Mar 2027');
+});
+
+test('clean requires start and end for a custom window', () => {
+  assert.ok(clean({ metric: 'external_signups', cadence: 'custom', target: 500000 }).error);
+  assert.ok(clean({ metric: 'external_signups', cadence: 'custom', start: '2027-03-31', end: '2026-10-01', target: 500000 }).error);
+  const g = clean({ metric: 'external_signups', cadence: 'custom', start: '2026-10-01', end: '2027-03-31', target: 500000 });
+  assert.strictEqual(g.error, undefined);
+  assert.strictEqual(g.start, '2026-10-01');
+  assert.strictEqual(g.end, '2027-03-31');
+  assert.strictEqual(g.target, 500000);
+});
+
 test('clean validates the goal fields', () => {
   assert.ok(clean({ metric: 'nope', cadence: 'monthly' }).error);
   assert.ok(clean({ metric: 'landing_sessions', cadence: 'yearly' }).error);
