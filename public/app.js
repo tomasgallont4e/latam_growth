@@ -164,7 +164,7 @@ function kpis() {
     gt ? `<div class="kpi"><span class="lbl">Engagement rate</span><span class="val">${pct(gt.engagement_rate)}</span><span class="ctx">${fmt(gt.engaged_sessions)} engaged sessions${gt.avg_engagement_sec ? ` · ${gt.avg_engagement_sec}s avg` : ''}</span><span class="ctx">${srcTag('ga4', snapLabel(ga))}</span></div>` : '',
     su ? `<div class="kpi"><span class="lbl">Sign-up submits</span><span class="val">${fmt(su.count)}</span><span class="ctx">${su.users != null ? `${fmt(su.users)} users · ` : ''}includes internal tests</span><span class="ctx">${srcTag('ga4', su.label)}</span></div>` : '',
     `<div class="kpi ${S.exInt && !ext.length ? 'alert' : ''}"><span class="lbl">${S.exInt ? 'External sign-ups' : 'Form sign-ups'}</span><span class="val">${fmt(S.exInt ? ext.length : all.length)}</span><span class="ctx">${S.exInt ? `${all.length - ext.length} internal tests excluded` : `${all.length - ext.length} internal, ${ext.length} external`}</span><span class="ctx">${srcTag('hubspot', 'form')}</span></div>`,
-    ph ? `<div class="kpi"><span class="lbl">${S.exInt ? 'External platform sign-ups' : 'Platform sign-ups'}</span><span class="val">${fmt(phAccounts(S.exInt))}</span><span class="ctx">${S.exInt ? `${fmt(phAccounts(false) - phAccounts(true))} internal excluded` : 'internal and external'} · new people with an email</span><span class="ctx">${srcTag('posthog', win(S.from, S.to))}</span></div>`
+    ph ? `<div class="kpi"><span class="lbl">Platform sign-ups</span><span class="val">${fmt(phAccounts(false))}</span><span class="ctx">New people reported by PostHog; no internal/external split is inferred.</span><span class="ctx">${srcTag('posthog', win(S.from, S.to))}</span></div>`
        : `<div class="kpi pending"><span class="lbl">Platform accounts</span><span class="val">Awaiting PostHog</span><span class="ctx">${srcTag('posthog')}</span><span class="ctx">Sign-ups made directly in the platform</span></div>`,
   ];
   return `<section class="kpis" aria-label="Summary">${tiles.filter(Boolean).join('')}</section>`;
@@ -181,7 +181,7 @@ function funnel() {
     { name: 'Started the sign-up form', src: `Google Analytics · users`, n: fs ? (fs.users != null ? fs.users : fs.count) : null },
     { name: 'Submitted the sign-up', src: `Google Analytics · users`, n: su ? (su.users != null ? su.users : su.count) : null },
     { name: S.exInt ? 'External sign-ups' : 'Form sign-ups', src: 'HubSpot form', n: ext },
-    { name: S.exInt ? 'External platform sign-ups' : 'Platform sign-ups', src: 'PostHog · any entry point', n: ph, pending: ph == null },
+    { name: 'Platform sign-ups', src: 'PostHog · any entry point', n: ph, pending: ph == null },
     { name: 'Activated (first project)', src: 'PostHog · event not tracked yet', n: null, pending: true },
   ];
   const top = Math.max(1, steps[0].n || 1);
@@ -279,14 +279,15 @@ function viewConversion() {
 
 function platformCard() {
   if (!has('posthog', 'ph_new_persons')) return `<section class="card">${head('Platform sign-ups and activation', 'Accounts created directly in the product do not pass through the landing form', srcTag('posthog'))}${emptyState('posthog', 'Accounts created, first project, first build and returning users will appear here')}</section>`;
-  const days_ = byDay('posthog', 'ph_new_persons', S.from, S.to, 'type');
-  const rows = Object.entries(days_).map(([d, v]) => ({ d, ext: v.External || 0, int: v.Internal || 0, site: msum('posthog', 'ph_site_users', () => true, d, d), cta: msum('posthog', 'ph_cta_users', () => true, d, d), reg: msum('posthog', 'ph_registration_users', () => true, d, d) })).filter((r) => r.ext || r.int || r.site || r.reg).reverse();
-  const ref = snap('posthog', 'new_people_by_source'), ctry = snap('posthog', 'countries');
-  return `<section class="card span-all">${head('Platform sign-ups', 'New people identified with an email in the platform, from any entry point (site, landing, Google sign-up)', srcTag('posthog', win(S.from, S.to)))}
-    ${table([{ t: 'Date', f: (r) => dshort(r.d) }, { t: 'Site visitors', num: 1, f: (r) => fmt(r.site) }, { t: 'Clicked a CTA', num: 1, f: (r) => fmt(r.cta) }, { t: 'Started sign-up', num: 1, f: (r) => fmt(r.reg) }, { t: 'External sign-ups', num: 1, f: (r) => (r.ext ? `<b>${fmt(r.ext)}</b>` : '0') }, { t: 'Internal', num: 1, f: (r) => fmt(r.int) }], rows)}
-    <p class="note">Site visitors are people who viewed think4ever.com that day; visitors, clicks and sign-ups are counted per person and per day.</p></section>
-  ${ref ? `<section class="card">${head('Where external sign-ups came from', 'First referrer of each new external person', srcTag('posthog', snapLabel(ref)))}${table([{ t: 'Came from', k: 'source' }, { t: 'People', num: 1, f: (r) => fmt(r.people) }, { t: 'Countries', k: 'countries' }], ref.rows)}<p class="note">${esc(ref.note || '')}</p></section>` : ''}
-  ${ctry ? `<section class="card">${head('Platform interest by country', 'think4ever.com visitors, CTA clicks and sign-up starts per person', srcTag('posthog', snapLabel(ctry)))}${table([{ t: 'Country', k: 'country' }, { t: 'Site visitors', num: 1, f: (r) => fmt(r.site_users) }, { t: 'Clicked a CTA', num: 1, f: (r) => fmt(r.cta) }, { t: 'Started sign-up', num: 1, f: (r) => fmt(r.reg) }, { t: 'External sign-ups', num: 1, f: (r) => fmt(r.ext_signups) }], ctry.rows)}</section>` : ''}`;
+  const people = byDay('posthog', 'ph_new_persons', S.from, S.to);
+  const active = byDay('posthog', 'ph_active_users', S.from, S.to);
+  const rows = [...new Set([...Object.keys(people), ...Object.keys(active)])].sort().reverse()
+    .map((d) => ({ d, people: people[d] || 0, active: active[d] || 0 }));
+  const events = byDim('posthog', 'ph_event', S.from, S.to).sort((a, b) => b[1] - a[1]);
+  return `<section class="card span-all">${head('Platform activity', 'Live daily totals from the configured PostHog project', srcTag('posthog', win(S.from, S.to)))}
+    ${table([{ t: 'Date', f: (r) => dshort(r.d) }, { t: 'New people', num: 1, f: (r) => r.people ? `<b>${fmt(r.people)}</b>` : '0' }, { t: 'Active people', num: 1, f: (r) => fmt(r.active) }], rows)}
+    <p class="note">These totals come directly from PostHog. The dashboard does not infer visitor, CTA, country, or internal/external breakdowns unless those fields are explicitly added to the connector.</p></section>
+  ${events.length ? `<section class="card">${head('Platform events', 'Events captured by PostHog during the selected period', srcTag('posthog', win(S.from, S.to)))}${table([{ t: 'Event', f: (r) => `<code>${esc(r[0])}</code>` }, { t: 'Occurrences', num: 1, f: (r) => fmt(r[1]) }], events)}</section>` : ''}`;
 }
 function channelCard(key, title, metricsHint) {
   const rows = byDim(key, 'ad_spend', S.from, S.to);
