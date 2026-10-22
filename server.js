@@ -218,9 +218,14 @@ async function autoSync() {
 
 (async () => {
   await store.init();
-  const n = await seed();
+  const liveSources = new Set(Object.keys(connectors).filter(configured));
+  const n = await seed(liveSources);
   if (n) console.log(`Seed loaded for ${n} source(s)`);
   app.listen(PORT, () => console.log(`Growth dashboard (${store.kind}) listening on ${PORT}${auth.configured() ? '' : ' (locked: DASH_USERS not set)'}`));
-  setTimeout(autoSync, 20e3);
+  if (process.env.AUTO_SYNC === '0') {
+    console.log('Automatic connector sync disabled; use Sync now to refresh data.');
+    return;
+  }
+  void autoSync();
   setInterval(autoSync, Math.max(1, Number(process.env.SYNC_EVERY_HOURS || 6)) * 3600e3);
 })().catch((e) => { console.error('Boot failed:', e); process.exit(1); });

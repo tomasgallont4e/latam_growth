@@ -67,7 +67,7 @@ Leadership loads each approved piece here: creative link, copy, language, person
 | LinkedIn | `LINKEDIN_ORG_ID` (129864039), and `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_REFRESH_TOKEN` (or a `LINKEDIN_TOKEN` that lasts 60 days). Needs the Community Management API approved by LinkedIn. |
 | Google Ads | `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN`; optional `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (manager account), `GOOGLE_ADS_API_VERSION` (default v21) |
 | Clarity | `CLARITY_TOKEN` |
-| Optional | `SYNC_EVERY_HOURS` (default 6), `TEAM_CODE` (asks for a code before using the API), `INGEST_KEY`, `LAUNCH_DATE` (default 2026-10-01), `INTERNAL_DOMAINS` (default think4ever.com) |
+| Optional | `SYNC_EVERY_HOURS` (default 6), `AUTO_SYNC=0` (manual "Sync now" only), `TEAM_CODE` (asks for a code before using the API), `INGEST_KEY`, `LAUNCH_DATE` (default 2026-10-01), `INTERNAL_DOMAINS` (default think4ever.com) |
 
 API versions change often: confirm the current one on the first sync with each platform and set it in the variable if the default is retired.
 
