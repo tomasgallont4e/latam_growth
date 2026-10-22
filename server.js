@@ -1,7 +1,8 @@
 'use strict';
-require('dotenv').config();
-
 const path = require('path');
+// The process manager can start Node from another working directory. Load the
+// service's .env beside this file rather than resolving it from process.cwd().
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const store = require('./lib/store');
 const seed = require('./lib/seed');
@@ -219,6 +220,9 @@ async function autoSync() {
 (async () => {
   await store.init();
   const liveSources = new Set(Object.keys(connectors).filter(configured));
+  console.log('connector configuration:', Object.fromEntries(
+    Object.keys(connectors).map((key) => [key, configured(key)])
+  ));
   const n = await seed(liveSources);
   if (n) console.log(`Seed loaded for ${n} source(s)`);
   app.listen(PORT, () => console.log(`Growth dashboard (${store.kind}) listening on ${PORT}${auth.configured() ? '' : ' (locked: DASH_USERS not set)'}`));
