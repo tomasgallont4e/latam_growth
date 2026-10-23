@@ -160,6 +160,39 @@ const rate = (n) => `${(n * 100).toFixed(n < 0.1 && n > 0 ? 1 : 0)}%`;
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const dshort = (iso) => `${+iso.slice(8)} ${MON[+iso.slice(5, 7) - 1]}`;
 
+// Live data helpers: every request carries the session cookie and the team code (if the classic dashboard stored one).
+function api(url, opts = {}) {
+  const headers = Object.assign({}, opts.headers || {});
+  try { const code = localStorage.getItem('t4e-growth-code'); if (code) headers['x-team-code'] = code; } catch (err) { /* no stored code */ }
+  return fetch(url, Object.assign({}, opts, { headers, credentials: 'same-origin' })).then((r) => {
+    if (r.status === 401) { location.assign('login.html'); throw new Error('Session expired. Opening the login page…'); }
+    return r;
+  });
+}
+async function persistTargets(message) {
+  try {
+    const r = await api('api/targets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(S.overrides) });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.error || `Targets were not saved (${r.status}).`);
+    }
+    S.overrides = await r.json();
+    S.targetNote = message;
+  } catch (err) {
+    S.targetNote = err.message;
+  }
+  render();
+}
+const CHART_NEED = [
+  ['New accounts', 'platform_signups'], ['Paid clicks', 'clicks'], ['Landing sessions', 'landing_sessions'],
+  ['Sign-up form', 'form_starts'], ['Impressions', 'impressions'], ['Clicks', 'clicks'], ['Spend', 'ad_spend'],
+  ['Customers and active', 'open_accounts'], ['Credits spent', 'avg_credits'], ['CAC', 'cac'], ['Cost per paying', 'cost_per_paid'],
+];
+function chartNoData(title) {
+  const hit = CHART_NEED.find(([prefix]) => String(title).startsWith(prefix));
+  const m = hit && metric(hit[1]);
+  return m && m.noData ? m.noData : '';
+}
 function metric(id) { return S.data.metrics.find((m) => m.id === id); }
 function allOn() { return S.selected.size === S.data.countries.length; }
 function windowIndexes() {
@@ -522,6 +555,7 @@ function snapshotValue(m, monthly) {
 
 function valueOf(m) {
   const target = periodTarget(m);
+  if (m.noData) return { target, actual: null, global: m.split === 'No' };
   if (m.id === 'retention') return { target: null, actual: null, global: false };
   if (m.id === 'activity_rate' || m.id === 'project_rate' || m.id === 'avg_projects' || m.id === 'avg_credits' || m.id === 'cancellation_rate' || m.id === 'churn_rate') {
     return snapshotValue(m, target);
@@ -545,10 +579,8 @@ function valueOf(m) {
     return { target, actual, global: false };
   }
   if (m.id === 'mau') {
-    const sum = flowTotal('dau');
-    const len = windowIndexes().length;
-    const factor = len <= 7 ? 0.68 : len <= 31 ? 0.4 : 0.26;
-    return { target, actual: Math.round(sum * factor), global: false };
+    const vals = sliceWindow(fullDaily('dau'));
+    return { target, actual: vals.length ? Math.max(...vals) : null, global: false };
   }
   if (m.point && S.data.series[m.id]) {
     return { target, actual: stock(m.id, endIndex()), global: false };
@@ -757,6 +789,10 @@ function byGrain(name) {
   return `${name} by ${word}`;
 }
 function drawChart({ title, note, summary, series, stack, currency, extra }) {
+  const missing = chartNoData(title);
+  if (missing) {
+    return `<section class="card"><h2>${esc(title)}</h2><p class="lead">${esc(note)}</p><div class="empty">${esc(missing)}</div></section>`;
+  }
   const buckets = chartBuckets(windowDays());
   const labels = buckets.map(bucketLabel);
   const days = buckets.map(bucketTip);
@@ -978,6 +1014,9 @@ function momLine(result, sense, label) {
   }
   return `<span class="mom ${cls}">${esc(growthText(pct))} ${esc(word)}</span>`;
 }
+function noDataCard(label, m) {
+  return metricCard({ label, value: '—', flow: m.noData, goal: '<span class="goal"><span class="pill mute">No data yet</span></span>', mom: '' });
+}
 function metricCard({ label, value, flow, goal, mom }) {
   return `<div class="kpi"><span class="lbl">${esc(label)}</span><span class="val">${esc(value)}</span><span class="sub">${esc(flow)}</span>${goal}${mom}</div>`;
 }
@@ -1000,6 +1039,7 @@ function momForFlow(metricId, sense) {
 }
 function hero(id) {
   const m = metric(id);
+  if (m.noData) return noDataCard(m.name, m);
   const v = valueOf(m);
   const empty = noSpend(m);
   if (empty || v.actual == null) {
@@ -1024,6 +1064,7 @@ function hero(id) {
 
 function flowCard(label, metricId, value, flow, goalId) {
   const m = metric(metricId);
+  if (m.noData) return noDataCard(label, m);
   const judged = metric(goalId || metricId);
   const v = valueOf(judged);
   const empty = noSpend(m);
@@ -1128,11 +1169,16 @@ function channelCard() {
 }
 
 function marketingView() {
-  return `${marketingCards()}${channelCard()}${chartsFor('marketing')}`;
+  const ads = metric('ad_spend');
+  const channels = ads.noData
+    ? `<section class="card"><h2>What each channel returned</h2><div class="empty">${esc(ads.noData)}</div></section>`
+    : channelCard();
+  return `${marketingCards()}${channels}${chartsFor('marketing')}`;
 }
 
 function coreCard(label, value, flow, metricId, momResult) {
   const m = metric(metricId);
+  if (m.noData) return noDataCard(label, m);
   return metricCard({
     label,
     value,
@@ -1245,6 +1291,7 @@ function monthlyCacCard() {
 }
 function costCard({ label, value, flow, metricId, actual, target, mom, sense, word }) {
   const m = metricId ? metric(metricId) : null;
+  if (m && m.noData) return noDataCard(label, m);
   const goal = m ? goalLine(m, actual == null ? { actual: null, target: null } : { actual, target }) : openGoal();
   return metricCard({ label, value, flow, goal, mom: momLine(mom, sense || (m ? senseOf(m) : 'higher'), word) });
 }
@@ -1397,7 +1444,7 @@ function planningMonths() {
   return [...ids].sort();
 }
 function targetHint(month, m) {
-  if (m.id === 'retention') return 'October has no prior month, so this preview has no target.';
+  if (m.id === 'retention') return 'No monthly target.';
   if (m.id === 'campaigns') return 'Campaigns with spend. A shorter or longer range does not scale this number.';
   if (m.point) return 'Level at the end of the month. A shorter or longer range does not scale this number.';
   if (m.ratio) return 'Cost for the month. A shorter or longer range does not scale this number.';
@@ -1405,7 +1452,7 @@ function targetHint(month, m) {
   const saved = S.overrides[month] && S.overrides[month][m.id] != null;
   const planned = S.data.targets[month] && S.data.targets[month][m.id] != null;
   const unit = m.unit === 'currency' ? 'Dollars for the month' : 'Count for the month';
-  if (!saved && !planned) return `${unit}. Showing the October goal until you save this month.`;
+  if (!saved && !planned) return `${unit}. Blank until you set it.`;
   return unit;
 }
 function targetInputValue(m, month) {
@@ -1438,11 +1485,18 @@ function sourcesView() {
     }
   }
   const missingNote = [...missing.entries()].map(([part, names]) => `${part}: ${names.join(', ')}`).join('. ');
+  // Live statuses from the server (gd_items kind 'source' merged with the source catalog).
+  const live = new Map((S.data.sources || []).map((s) => [s.key, s]));
   const rows = SOURCES.map((s) => {
+    const l = live.get(s.key) || {};
+    const state = l.state || s.state;
+    const last = l.last_sync ? String(l.last_sync).slice(0, 10) : '';
     const used = metricsFor(s);
     const usedLine = used.length ? `<span class="sub">Dashboard: ${used.map((m) => esc(m.name)).join(', ')}</span>` : '';
-    const loaded = s.last ? `${esc(s.last)}<span class="sub">${esc(s.window)}</span>` : '–';
-    return `<tr><td><span class="name">${esc(s.name)}</span><span class="sub">${esc(s.area)}</span></td><td>${pill(s.state)}</td><td>${esc(s.provides)}${usedLine}</td><td>${loaded}</td><td><span class="pill mute">Manual</span></td></tr>`;
+    const noteLine = l.note ? `<span class="sub">${esc(l.note)}</span>` : '';
+    const loaded = last ? `${esc(last)}<span class="sub">${esc(l.window || '')}</span>` : '–';
+    const auto = l.auto ? '<span class="pill ok">Automatic</span>' : '<span class="pill mute">Manual</span>';
+    return `<tr><td><span class="name">${esc(s.name)}</span><span class="sub">${esc(s.area)}</span></td><td>${pill(state)}${noteLine}</td><td>${esc(s.provides)}${usedLine}</td><td>${loaded}</td><td>${auto}</td></tr>`;
   }).join('');
   const connect = SOURCES.map((s) => {
     const vars = s.env.length ? `<br><small>Variables: ${s.env.map((v) => `<code>${esc(v)}</code>`).join(' ')}</small>` : '';
@@ -1450,8 +1504,8 @@ function sourcesView() {
   }).join('');
   const history = S.loads.length
     ? `<div class="table-wrap"><table class="sources"><thead><tr><th>When</th><th>Source</th><th>How</th><th>Rows</th><th>Detail</th></tr></thead><tbody>${S.loads.map((r) => `<tr><td>${esc(String(r.at).slice(0, 16).replace('T', ' '))}</td><td>${esc(r.source)}</td><td>${esc(r.how)}</td><td>${r.error ? '<span class="pill bad">Error</span>' : esc(String(r.rows))}</td><td>${esc(r.error || r.detail || '')}</td></tr>`).join('')}</tbody></table></div>`
-    : '<div class="empty">No CSV loads in this session.</div>';
-  return `<section class="card roomy"><h2>Data sources</h2><p class="lead">Every number in this dashboard comes from one of these tools. Statuses match the live dashboard. The other tabs still use sample figures so the metrics can be reviewed.</p>
+    : '<div class="empty">No loads recorded yet.</div>';
+  return `<section class="card roomy"><h2>Data sources</h2><p class="lead">Every number in this dashboard comes from one of these tools. Statuses, last loads and the automatic flag are live from the server. Metrics whose source is not connected show “No data yet” on the other tabs.</p>
     <div class="table-wrap"><table class="sources"><thead><tr><th>Source</th><th>Status</th><th>Provides</th><th>Last load</th><th>Automatic</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${missingNote ? `<p class="page-note">Still without a connector. ${esc(missingNote)}.</p>` : ''}</section>
   <div class="split">
@@ -1476,7 +1530,7 @@ function sourcesView() {
       <div><dt>Platform account (PostHog)</dt><dd>A new person in the product, whether they came from the landing or signed up directly.</dd></div>
       <div><dt>Cost per sign-up</dt><dd>Campaign spend divided by external sign-ups with that campaign's utm_campaign.</dd></div>
     </dl></section>
-  <section class="card roomy"><h2>Load history</h2><p class="lead">Last 30 loads in this session</p>${history}</section>`;
+  <section class="card roomy"><h2>Load history</h2><p class="lead">Last 30 loads recorded by the server (connectors, CSV and the daily routine)</p>${history}</section>`;
 }
 function parseCSV(text) {
   const rows = [];
@@ -1587,16 +1641,14 @@ function readTargetInputs() {
 }
 function saveTargets() {
   const values = readTargetInputs();
-  if (!values) { S.targetNote = 'Enter a number in every field you want to keep, or leave it blank to use the default.'; render(); return; }
+  if (!values) { S.targetNote = 'Enter a number in every field you want to keep, or leave it blank for no target.'; render(); return; }
   const month = S.targetMonth;
   if (!S.overrides[month]) S.overrides[month] = {};
   for (const [id, v] of Object.entries(values)) {
     if (v == null) delete S.overrides[month][id];
     else S.overrides[month][id] = v;
   }
-  localStorage.setItem(TARGET_KEY, JSON.stringify(S.overrides));
-  S.targetNote = `Saved ${monthLabel(month)} targets for ${TARGET_VIEWS.find((v) => v.id === S.targetView).label}.`;
-  render();
+  persistTargets(`Saved ${monthLabel(month)} targets for ${TARGET_VIEWS.find((v) => v.id === S.targetView).label}.`);
 }
 function resetTargets() {
   const month = S.targetMonth;
@@ -1604,9 +1656,7 @@ function resetTargets() {
   if (S.overrides[month]) {
     for (const id of ids) delete S.overrides[month][id];
   }
-  localStorage.setItem(TARGET_KEY, JSON.stringify(S.overrides));
-  S.targetNote = `Restored the default ${monthLabel(month)} targets for ${TARGET_VIEWS.find((v) => v.id === S.targetView).label}.`;
-  render();
+  persistTargets(`Cleared the ${monthLabel(month)} targets for ${TARGET_VIEWS.find((v) => v.id === S.targetView).label}.`);
 }
 
 function render() {
@@ -1646,7 +1696,7 @@ function render() {
   const countryBit = S.page === 'targets' ? 'Targets are app-wide.' : `${esc(scope)}${allOn() ? '' : '. The percent compares this selection with the app-wide target.'}`;
   const key = S.page === 'targets' ? '' : metricKey();
   document.getElementById('main').innerHTML = `
-    <div class="banner"><b>Preview with invented data.</b><p>Daily figures through ${esc(S.data.asOf)}. Monthly targets can be changed on the Targets page. A rolling range or a quarter scales count and money targets by the days included. A chosen month uses that month’s full goal. Rates and costs per result stay the monthly figure.</p></div>
+    <div class="banner"><b>Live data.</b><p>Real figures from the connected sources, through ${esc(S.data.asOf)} (the latest day with data). Metrics without a connected source say which one to connect. Daily totals that a source does not split by country appear under “Not split by country”. Targets are shared by the team and set on the Targets page.</p></div>
     <p class="scope"><b>${esc(info.label)}</b> · ${esc(info.range)} · ${countryBit} ${esc(info.note)}</p>
     ${key}
     ${body}`;
@@ -1682,8 +1732,16 @@ async function init() {
     showTip(e, Number(hit.dataset.chart), Number(hit.dataset.i));
   });
   main.addEventListener('mouseleave', hideTip);
-  S.data = await fetch('data/preview.json').then((r) => r.json());
-  try { S.overrides = JSON.parse(localStorage.getItem(TARGET_KEY)) || {}; } catch (err) { S.overrides = {}; }
+  const res = await api('api/executive');
+  if (!res.ok) {
+    const j = await res.json().catch(() => ({}));
+    throw new Error(`Could not load live data (${res.status}${j.error ? `: ${j.error}` : ''}). If this dashboard uses a team code, enter it on the Classic dashboard first.`);
+  }
+  S.data = await res.json();
+  const tr = await api('api/targets');
+  S.overrides = tr.ok ? await tr.json() : {};
+  S.targetMonth = S.data.asOf.slice(0, 7);
+  S.loads = (S.data.synclog || []).map((r) => ({ at: r.at, source: r.source, how: r.how, rows: r.rows, error: r.error, detail: r.detail }));
   for (const c of S.data.countries) S.selected.add(c.name);
   const hash = location.hash.slice(1);
   if (PAGES[hash]) S.page = hash;
