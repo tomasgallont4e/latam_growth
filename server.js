@@ -8,7 +8,7 @@ const store = require('./lib/store');
 const seed = require('./lib/seed');
 const ingest = require('./lib/ingest');
 const CATALOG = require('./lib/sources');
-const { connectors, configured } = require('./lib/connectors');
+const { connectors, configured, REQUIRED } = require('./lib/connectors');
 const auth = require('./lib/auth');
 const ads = require('./lib/adloader');
 
@@ -223,6 +223,12 @@ async function autoSync() {
   console.log('connector configuration:', Object.fromEntries(
     Object.keys(connectors).map((key) => [key, configured(key)])
   ));
+  // Safe setup diagnostic: names only, never the values of tokens or secrets.
+  // This makes a missing service variable actionable in deployment logs.
+  for (const key of Object.keys(connectors)) {
+    const missing = (REQUIRED[key] || []).filter((name) => !String(process.env[name] || '').trim());
+    if (missing.length) console.warn(`connector ${key} missing variables: ${missing.join(', ')}`);
+  }
   const n = await seed(liveSources);
   if (n) console.log(`Seed loaded for ${n} source(s)`);
   app.listen(PORT, () => console.log(`Growth dashboard (${store.kind}) listening on ${PORT}${auth.configured() ? '' : ' (locked: DASH_USERS not set)'}`));
