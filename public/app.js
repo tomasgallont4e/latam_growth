@@ -76,6 +76,13 @@ function phAccounts(ext) {
   if (!has('posthog', 'ph_new_persons')) return null;
   return msum('posthog', 'ph_new_persons', (r) => !ext || r.dim_value !== 'Internal');
 }
+function phActivated() {
+  // The connector stores the first matching "Proyecto creado (clic)" Action per
+  // person. It already applies PostHog's test-account filter, so do not try to
+  // infer an additional internal/external split from the dashboard toggle.
+  if (!has('posthog', 'ph_activated_users')) return null;
+  return msum('posthog', 'ph_activated_users');
+}
 function ga4Event(name) {
   if (has('ga4', 'ga_event')) return { count: msum('ga4', 'ga_event', (r) => r.dim_value === name), users: null, label: win(S.from, S.to) };
   const s = snap('ga4', 'events');
@@ -175,6 +182,7 @@ function funnel() {
   const fs = ga4Event('form_start'), su = ga4Event('sign_up');
   const ext = signups((e) => !S.exInt || !e.internal).length;
   const ph = phAccounts(S.exInt);
+  const activated = phActivated();
   const steps = [
     { name: 'Landing sessions', src: 'HubSpot', n: msum('hubspot', 'sessions') },
     { name: 'Engaged sessions', src: `Google Analytics · ${snapLabel(ga)}`, n: gt ? gt.engaged_sessions : null },
@@ -182,7 +190,7 @@ function funnel() {
     { name: 'Submitted the sign-up', src: `Google Analytics · users`, n: su ? (su.users != null ? su.users : su.count) : null },
     { name: S.exInt ? 'External sign-ups' : 'Form sign-ups', src: 'HubSpot form', n: ext },
     { name: 'Platform sign-ups', src: 'PostHog · any entry point', n: ph, pending: ph == null },
-    { name: 'Activated (first project)', src: 'PostHog · event not tracked yet', n: null, pending: true },
+    { name: 'Activation proxy (first project click)', src: 'PostHog · Action “Proyecto creado (clic)”', n: activated, pending: activated == null },
   ];
   const top = Math.max(1, steps[0].n || 1);
   let prev = null;
@@ -191,7 +199,7 @@ function funnel() {
     if (s.n != null) prev = s;
     return `<div class="fstep ${s.pending ? 'pending' : ''}"><span class="name">${esc(s.name)}<small>${esc(s.src)}</small></span><span class="fbar">${s.pending ? '' : `<i style="width:${Math.max(0.5, ((s.n || 0) / top) * 100)}%"></i>`}</span><span class="n">${s.pending ? 'pending' : fmt(s.n)}</span>${conv ? `<span class="conv">${conv}</span>` : ''}</div>`;
   });
-  return `<section class="card">${head('Funnel', 'From a visit to an active account. Each step shows the tool it comes from; Google Analytics steps include internal tests.')}<div class="funnel">${rows.join('')}</div></section>`;
+  return `<section class="card">${head('Funnel', 'From a visit to an active account. Activation is the first “Proyecto creado (clic)” Action per person; it is a click proxy, not a confirmed backend creation.')}<div class="funnel">${rows.join('')}</div></section>`;
 }
 
 function readings() {
@@ -281,12 +289,13 @@ function platformCard() {
   if (!has('posthog', 'ph_new_persons')) return `<section class="card">${head('Platform sign-ups and activation', 'Accounts created directly in the product do not pass through the landing form', srcTag('posthog'))}${emptyState('posthog', 'Accounts created, first project, first build and returning users will appear here')}</section>`;
   const people = byDay('posthog', 'ph_new_persons', S.from, S.to);
   const active = byDay('posthog', 'ph_active_users', S.from, S.to);
-  const rows = [...new Set([...Object.keys(people), ...Object.keys(active)])].sort().reverse()
-    .map((d) => ({ d, people: people[d] || 0, active: active[d] || 0 }));
+  const activated = byDay('posthog', 'ph_activated_users', S.from, S.to);
+  const rows = [...new Set([...Object.keys(people), ...Object.keys(active), ...Object.keys(activated)])].sort().reverse()
+    .map((d) => ({ d, people: people[d] || 0, active: active[d] || 0, activated: activated[d] || 0 }));
   const events = byDim('posthog', 'ph_event', S.from, S.to).sort((a, b) => b[1] - a[1]);
   return `<section class="card span-all">${head('Platform activity', 'Live daily totals from the configured PostHog project', srcTag('posthog', win(S.from, S.to)))}
-    ${table([{ t: 'Date', f: (r) => dshort(r.d) }, { t: 'New people', num: 1, f: (r) => r.people ? `<b>${fmt(r.people)}</b>` : '0' }, { t: 'Active people', num: 1, f: (r) => fmt(r.active) }], rows)}
-    <p class="note">These totals come directly from PostHog. The dashboard does not infer visitor, CTA, country, or internal/external breakdowns unless those fields are explicitly added to the connector.</p></section>
+    ${table([{ t: 'Date', f: (r) => dshort(r.d) }, { t: 'New people', num: 1, f: (r) => r.people ? `<b>${fmt(r.people)}</b>` : '0' }, { t: 'Active people', num: 1, f: (r) => fmt(r.active) }, { t: 'First project click', num: 1, f: (r) => fmt(r.activated) }], rows)}
+    <p class="note">“First project click” is the first matching “Proyecto creado (clic)” Action per person, with PostHog test accounts filtered. It is a proxy and does not confirm that a project was created. These totals otherwise come directly from PostHog.</p></section>
   ${events.length ? `<section class="card">${head('Platform events', 'Events captured by PostHog during the selected period', srcTag('posthog', win(S.from, S.to)))}${table([{ t: 'Event', f: (r) => `<code>${esc(r[0])}</code>` }, { t: 'Occurrences', num: 1, f: (r) => fmt(r[1]) }], events)}</section>` : ''}`;
 }
 function channelCard(key, title, metricsHint) {
