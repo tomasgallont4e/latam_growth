@@ -11,6 +11,7 @@ const CATALOG = require('./lib/sources');
 const { connectors, configured, REQUIRED } = require('./lib/connectors');
 const auth = require('./lib/auth');
 const ads = require('./lib/adloader');
+const executive = require('./lib/executive');
 
 const app = express();
 app.set('trust proxy', true);
@@ -21,9 +22,23 @@ app.get(['/health', '/api/health'], async (req, res) => {
   catch (e) { res.status(503).json({ status: 'error', error: e.message }); }
 });
 
+// Classic dashboard under classic/: forward its relative api/, login.html and app.css requests
+// to the existing routes and files (done before auth so the open login paths still match).
+app.use((req, res, next) => {
+  if (req.url.startsWith('/classic/api/') || req.url.startsWith('/classic/login.html') || req.url.startsWith('/classic/app.css')) {
+    req.url = req.url.slice('/classic'.length);
+  }
+  next();
+});
+
 // Login: every page and API route below needs a session (DASH_USERS in the service variables).
 auth.mount(app);
-app.use(express.static(path.join(__dirname, 'public')));
+// Main page: the executive view. The old mock data folder is never served.
+app.use((req, res, next) => (req.method === 'GET' && req.url === '/classic' ? res.redirect('classic/') : next()));
+app.use('/data', (req, res) => res.status(404).json({ error: 'not found' }));
+app.use(express.static(path.join(__dirname, 'sample', 'executive'), { redirect: false }));
+app.use('/classic', express.static(path.join(__dirname, 'public'), { redirect: false }));
+app.use(express.static(path.join(__dirname, 'public'), { index: false, redirect: false }));
 
 // Optional team code: when TEAM_CODE is set, the API asks for it.
 app.use('/api', (req, res, next) => {
@@ -59,11 +74,51 @@ app.get('/api/data', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Executive view: built only from real rows (connectors, CSV loads, daily routine).
+app.get('/api/executive', async (req, res, next) => {
+  try {
+    const clean = (rows) => rows.map(({ _at, ...r }) => r);
+    const data = await executive.build(store);
+    data.sources = await sourcesView();
+    data.synclog = clean(await store.list('synclog')).slice(-30).reverse().map((r) => ({
+      ...r, rows: r.rows != null ? r.rows : (Number(r.metrics) || 0) + (Number(r.events) || 0) + (Number(r.snapshots) || 0),
+    }));
+    res.json(data);
+  } catch (e) { next(e); }
+});
+
+// Shared monthly targets (start blank). Stored as kind 'target', one row per month. Writes are admin-only (auth rules).
+app.get('/api/targets', async (req, res, next) => {
+  try {
+    const out = {};
+    for (const t of await store.list('target')) out[t._k] = t.values || {};
+    res.json(out);
+  } catch (e) { next(e); }
+});
+app.put('/api/targets', async (req, res, next) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const keep = {};
+    for (const [month, vals] of Object.entries(body).slice(0, 60)) {
+      if (!/^\d{4}-\d{2}$/.test(month) || !vals || typeof vals !== 'object') continue;
+      const clean = {};
+      for (const [id, v] of Object.entries(vals)) {
+        const n = Number(v);
+        if (/^[a-z0-9_]{1,40}$/.test(id) && v !== null && v !== '' && Number.isFinite(n) && n >= 0) clean[id] = n;
+      }
+      if (Object.keys(clean).length) keep[month] = clean;
+    }
+    for (const t of await store.list('target')) if (!keep[t._k]) await store.remove('target', t._k);
+    for (const [month, values] of Object.entries(keep)) await store.upsert('target', month, { values, by: req.user, at: new Date().toISOString() });
+    res.json(keep);
+  } catch (e) { next(e); }
+});
+
 // Data loads (Research, CSV import, connectors). INGEST_KEY, when set, protects this route.
 app.post('/api/ingest', async (req, res, next) => {
   try {
     const key = process.env.INGEST_KEY;
-    if (key && req.get('x-ingest-key') !== key) return res.status(401).json({ error: 'ingest key' });
+    if (key && !req.user && req.get('x-ingest-key') !== key) return res.status(401).json({ error: 'ingest key' });
     res.json(await ingest(req.body, req.get('x-load-how') === 'csv' ? 'csv' : 'api'));
   } catch (e) { e.status ? res.status(e.status).json({ error: e.message }) : next(e); }
 });
