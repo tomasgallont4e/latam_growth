@@ -1168,12 +1168,57 @@ function channelCard() {
   return `<section class="card"><h2>What each channel returned</h2><p class="lead">Impressions and clicks show which channel is being seen and clicked. Cost per sign-up sets that result against the money spent on the same channel.</p><p class="readout">${esc(channelRead(rows))}</p><div class="mix">${mixRow('Impressions', 'impressions', rows)}${mixRow('Clicks', 'clicks', rows)}${mixRow('Spend', 'ad_spend', rows)}${mixRow('Sign-ups', 'paid_signups', rows)}</div><div class="legend">${legend}</div><div class="table-wrap"><table class="chan"><thead><tr><th>Channel</th><th>Spend</th><th>Impressions</th><th>Clicks</th><th>Click-through</th><th>Cost per click</th><th>Sign-ups</th><th>Cost per sign-up</th></tr></thead><tbody>${body}</tbody></table></div></section>`;
 }
 
+function attributionCard() {
+  const days = new Set(windowDays());
+  const ga4 = ((S.data.attribution || {}).ga4 || []).filter((r) => days.has(r.date));
+  const hubspot = ((S.data.attribution || {}).hubspot || []).filter((r) => days.has(r.date));
+  const projects = ((S.data.attribution || {}).projects || []).filter((r) => days.has(r.date));
+  if (!ga4.length && !hubspot.length && !projects.length) {
+    return `<section class="card"><h2>Campaign attribution</h2><p class="lead">UTM, landing page, city and confirmed projects.</p><div class="empty">No attribution rows yet. The next GA4 sync will populate visits with UTM tags. Confirmed projects appear after the portal sends <code>project_created</code> with the documented UTM properties.</div></section>`;
+  }
+  const visitMap = new Map();
+  for (const r of ga4) {
+    const k = [r.source, r.medium, r.campaign, r.content, r.landing_page, r.city].join('\u0001');
+    const x = visitMap.get(k) || { source: r.source, medium: r.medium, campaign: r.campaign, content: r.content, landing_page: r.landing_page, city: r.city, sessions: 0, engaged_sessions: 0, users: 0, key_events: 0 };
+    for (const f of ['sessions', 'engaged_sessions', 'users', 'key_events']) x[f] += Number(r[f]) || 0;
+    visitMap.set(k, x);
+  }
+  const visitRows = [...visitMap.values()].sort((a, b) => b.sessions - a.sessions).slice(0, 100);
+  const projectMap = new Map();
+  for (const r of projects) {
+    const k = [r.source, r.medium, r.campaign, r.content, r.landing_page].join('\u0001');
+    const x = projectMap.get(k) || { source: r.source, medium: r.medium, campaign: r.campaign, content: r.content, landing_page: r.landing_page, projects_created: 0, people: 0 };
+    x.projects_created += Number(r.projects_created) || 0;
+    x.people += Number(r.people) || 0;
+    projectMap.set(k, x);
+  }
+  const projectRows = [...projectMap.values()].sort((a, b) => b.projects_created - a.projects_created).slice(0, 100);
+  const signupMap = new Map();
+  for (const r of hubspot) {
+    const k = [r.source, r.medium, r.campaign, r.content, r.landing_page].join('\u0001');
+    const x = signupMap.get(k) || { source: r.source, medium: r.medium, campaign: r.campaign, content: r.content, landing_page: r.landing_page, signups: 0 };
+    x.signups += 1;
+    signupMap.set(k, x);
+  }
+  const signupRows = [...signupMap.values()].sort((a, b) => b.signups - a.signups).slice(0, 100);
+  const visitTable = visitRows.length
+    ? `<div class="table-wrap"><table class="chan"><thead><tr><th>Source / medium</th><th>Campaign</th><th>Piece</th><th>Landing</th><th>City</th><th>Sessions</th><th>Engaged</th><th>Users</th><th>Key events</th></tr></thead><tbody>${visitRows.map((r) => `<tr><td>${esc(`${r.source} / ${r.medium}`)}</td><td><code>${esc(r.campaign)}</code></td><td><code>${esc(r.content)}</code></td><td><code>${esc(r.landing_page)}</code></td><td>${esc(r.city)}</td><td>${fmt(r.sessions)}</td><td>${fmt(r.engaged_sessions)}</td><td>${fmt(r.users)}</td><td>${fmt(r.key_events)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<div class="empty">GA4 has not returned UTM rows for this period.</div>';
+  const projectTable = projectRows.length
+    ? `<h3>Confirmed projects</h3><div class="table-wrap"><table class="chan"><thead><tr><th>Source / medium</th><th>Campaign</th><th>Piece</th><th>Landing</th><th>Projects</th><th>People</th></tr></thead><tbody>${projectRows.map((r) => `<tr><td>${esc(`${r.source} / ${r.medium}`)}</td><td><code>${esc(r.campaign)}</code></td><td><code>${esc(r.content)}</code></td><td><code>${esc(r.landing_page)}</code></td><td>${fmt(r.projects_created)}</td><td>${fmt(r.people)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="footnote">No confirmed projects yet. The current click Action remains a separate, temporary activation proxy.</p>';
+  const signupTable = signupRows.length
+    ? `<h3>External HubSpot form sign-ups</h3><div class="table-wrap"><table class="chan"><thead><tr><th>Source / medium</th><th>Campaign</th><th>Piece</th><th>Landing</th><th>Sign-ups</th></tr></thead><tbody>${signupRows.map((r) => `<tr><td>${esc(`${r.source} / ${r.medium}`)}</td><td><code>${esc(r.campaign)}</code></td><td><code>${esc(r.content)}</code></td><td><code>${esc(r.landing_page)}</code></td><td>${fmt(r.signups)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="footnote">No external HubSpot form sign-ups in this period.</p>';
+  return `<section class="card"><h2>Campaign attribution</h2><p class="lead">GA4 reports visits by UTM, landing page and city. HubSpot shows external form sign-ups. Confirmed projects require the backend <code>project_created</code> event; “(not set)” means that the visitor or event did not include that value.</p>${visitTable}${signupTable}${projectTable}</section>`;
+}
+
 function marketingView() {
   const ads = metric('ad_spend');
   const channels = ads.noData
     ? `<section class="card"><h2>What each channel returned</h2><div class="empty">${esc(ads.noData)}</div></section>`
     : channelCard();
-  return `${marketingCards()}${channels}${chartsFor('marketing')}`;
+  return `${marketingCards()}${channels}${attributionCard()}${chartsFor('marketing')}`;
 }
 
 function coreCard(label, value, flow, metricId, momResult) {

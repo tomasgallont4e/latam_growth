@@ -71,6 +71,10 @@ Leadership loads each approved piece here: creative link, copy, language, person
 
 API versions change often: confirm the current one on the first sync with each platform and set it in the variable if the default is retired.
 
+## UTM and product attribution
+
+The dashboard now reads GA4 sessions by UTM, landing page and city, and it is ready to show confirmed `project_created` events from PostHog. This needs tracking changes outside this repository: link tags, hidden HubSpot fields, and backend product events. Follow the complete owner-by-owner checklist in [docs/utm-measurement.md](docs/utm-measurement.md). The existing PostHog Action is intentionally kept as a click proxy until the backend event exists.
+
 ## How it runs
 
 - Node 18+, Express, MySQL (`mysql2`). Creates table `gd_items` on boot. Reads `DATABASE_URL` or `DB_*` and listens on `process.env.PORT`. All URLs are relative, so it works behind the `/run/<id>/` proxy.
