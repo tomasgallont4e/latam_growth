@@ -104,7 +104,7 @@ const PIECES = {
 };
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const S = { data: null, page: 'overview', range: 'd30', grain: 'day', selected: new Set(), charts: [], overrides: {}, targetView: 'marketing', targetMonth: '2026-10', targetNote: '', loads: [] };
+const S = { data: null, page: 'overview', range: 'd30', grain: 'day', selected: new Set(), goalCountry: '', charts: [], overrides: {}, targetView: 'marketing', targetMonth: '2026-10', targetNote: '', loads: [] };
 let tip;
 
 function showTip(e, chartId, dayIndex) {
@@ -1023,6 +1023,67 @@ function metricCard({ label, value, flow, goal, mom }) {
 function metricKey() {
   return `<p class="key"><b>How to read each metric.</b> The large number is the result for this period. The line under it is that step’s share of the flow. The colored percent divides the result by its goal. A count is divided by the count goal. A rate, such as form completion, is divided by the rate goal, so 36% against a 35% goal reads 102%. <span class="goal-name ok">Goal met</span> is 100% or more. <span class="goal-name beat">Goal stretch</span> is 110% or more. <span class="goal-name warn">Goal not met</span> in amber is under the goal but within 10%. <span class="goal-name bad">Goal not met</span> in red is further below. Spend that stays within 10% of its budget is Goal met. The last line is how much the large number rose or fell versus the previous month. A shorter range compares the previous stretch of the same length.</p>`;
 }
+
+// The planning goal is separate from editable monthly targets. It makes the
+// top-down LATAM 500K scenario visible without treating it as live data.
+function plan() { return S.data.goalPlan || null; }
+function allDataTotal(metricId) {
+  const id = metricId === 'new_accounts' ? 'platform_signups' : metricId;
+  return Object.values(S.data.series[id] || {}).reduce((sum, daily) => sum + sumArray(sliceWindow(daily)), 0);
+}
+function planMetric(label, target, actual, detail) {
+  const text = actual == null ? 'No country-attributed actual yet' : `Actual ${actual}`;
+  return `<div class="plan-metric"><span class="plan-label">${esc(label)}</span><b>${esc(target)}</b><span>${esc(text)}</span><small>${esc(detail)}</small></div>`;
+}
+function latamGoalPanel() {
+  const p = plan();
+  if (!p) return '';
+  const accounts = allDataTotal('platform_signups');
+  const landing = allDataTotal('landing_sessions');
+  const impressions = allDataTotal('impressions');
+  const spend = allDataTotal('ad_spend');
+  const conversion = landing ? accounts / landing : null;
+  const impressionVisit = impressions ? landing / impressions : null;
+  const coverage = (S.data.countries || []).filter((c) => c.seenIn && c.seenIn.includes('GA4 traffic')).map((c) => c.name).join(', ') || 'No country-level GA4 traffic loaded yet';
+  return `<details class="goal-panel"><summary><span><b>LATAM 500K goal</b><small>Top-down funnel and live progress</small></span><span class="goal-summary">500,000 verified users <i>View plan</i></span></summary><div class="goal-body">
+    <p class="goal-intro">This shared scale target starts with verified users and derives the traffic, media and efficiency required. Country coverage is context, not a warning.</p>
+    <div class="plan-grid">
+      ${planMetric('Verified users', fmt(p.verified_users), fmt(accounts), 'Canonical outcome across PostHog.')}
+      ${planMetric('Landing sessions', fmt(p.landing_sessions), fmt(landing), 'Requirement at the planned conversion.')}
+      ${planMetric('Visit to verified user', rate(p.visit_to_signup), conversion == null ? null : rate(conversion), 'Verified users divided by landing sessions.')}
+      ${planMetric('Impression to landing visit', rate(p.impression_to_visit), impressionVisit == null ? null : rate(impressionVisit), 'Link-level traffic efficiency, not generic CTR.')}
+      ${planMetric('Paid impressions', fmt(p.impressions), fmt(impressions), 'Reach required to create planned traffic.')}
+      ${planMetric('Paid media budget', money(p.paid_budget), money(spend), `Plan paid cost per sign-up ${money(p.paid_cps)}.`)}
+    </div><p class="coverage-note"><b>Country traffic coverage:</b> ${esc(coverage)}. PostHog account totals remain unallocated until the product sends country with the verified account.</p>
+  </div></details>`;
+}
+function countryGoalPanel() {
+  const p = plan();
+  if (!p) return '';
+  const markets = Object.keys(p.countries || {});
+  const selected = markets.includes(S.goalCountry) ? S.goalCountry : markets[0];
+  const target = p.countries[selected] || 0;
+  const traffic = countryTotal('ga_sessions', selected);
+  const visitors = countryTotal('visitors', selected);
+  const engaged = countryTotal('engaged', selected);
+  const forms = countryTotal('form_signups', selected);
+  const accounts = countryTotal('platform_signups', selected);
+  const unallocated = countryTotal('platform_signups', 'Not split by country');
+  const targetSessions = target ? p.landing_sessions * target / p.verified_users : 0;
+  const options = markets.map((name) => `<option value="${esc(name)}" ${name === selected ? 'selected' : ''}>${esc(name)}</option>`).join('');
+  return `<details class="goal-panel country-goal"><summary><span><b>Country goal</b><small>${esc(selected)} inside the LATAM plan</small></span><span class="goal-summary">${target ? `${fmt(target)} verified users` : 'Choose a country'} <i>View country</i></span></summary><div class="goal-body">
+    <p class="goal-intro">The country target is its allocated share of the 500K plan. This view shows live figures only where the source genuinely resolves a country.</p>
+    <label class="goal-country-select">Country <select id="goal-country" aria-label="Country goal">${options}</select></label>
+    <div class="plan-grid">
+      ${planMetric('Country verified-user target', target ? fmt(target) : '—', accounts ? fmt(accounts) : null, 'Allocated from the LATAM scenario.')}
+      ${planMetric('Planned landing sessions', target ? fmt(targetSessions) : '—', traffic ? fmt(traffic) : null, 'Observed traffic is GA4 sessions; plan uses landing sessions.')}
+      ${planMetric('GA4 users', 'Traffic readout', visitors ? fmt(visitors) : null, 'Users observed in the selected country.')}
+      ${planMetric('GA4 engagement rate', 'Quality readout', traffic ? rate(engaged / traffic) : null, 'Engaged sessions divided by GA4 sessions.')}
+      ${planMetric('HubSpot form sign-ups', 'Lead readout', forms ? fmt(forms) : null, 'External contacts with matching CRM country.')}
+      ${planMetric('Verified accounts awaiting country', 'Identity coverage', unallocated ? fmt(unallocated) : null, 'Do not assign until PostHog or backend sends country code.')}
+    </div><p class="coverage-note">GA4 country is sufficient for traffic analysis. It cannot by itself assign a verified PostHog account to a country because GA4 and PostHog are separate identities. Store country code at verified-account creation; retain HubSpot country for CRM leads.</p>
+  </div></details>`;
+}
 function senseOf(m) {
   if (!m) return 'higher';
   if (m.direction === 'lower') return 'lower';
@@ -1732,12 +1793,13 @@ function render() {
   const custom = S.page === 'overview' || S.page === 'marketing' || S.page === 'growth' || S.page === 'core' || S.page === 'economics' || S.page === 'targets';
   const section = custom ? '' : `<section class="card"><h2>${esc(PAGES[S.page])}</h2><p class="lead">${esc(PAGE_LEAD[S.page])}</p>${S.data.metrics.filter((m) => m.section === PAGES[S.page]).map(row).join('')}</section>`;
   const kpis = S.page === 'overview' ? `<section class="kpis" aria-label="Summary">${HERO.map(hero).join('')}</section>` : '';
+  const goalPanels = S.page === 'overview' ? `${latamGoalPanel()}${countryGoalPanel()}` : '';
   const body = S.page === 'marketing' ? marketingView()
     : S.page === 'growth' ? growthView()
     : S.page === 'core' ? coreView()
     : S.page === 'economics' ? economicsView()
     : S.page === 'targets' ? targetsView()
-    : `${kpis}${chartsFor(S.page)}${section}`;
+    : `${goalPanels}${kpis}${chartsFor(S.page)}${section}`;
   const countryBit = S.page === 'targets' ? 'Targets are app-wide.' : `${esc(scope)}${allOn() ? '' : '. The percent compares this selection with the app-wide target.'}`;
   const key = S.page === 'targets' ? '' : metricKey();
   document.getElementById('main').innerHTML = `
@@ -1788,6 +1850,7 @@ async function init() {
   S.targetMonth = S.data.asOf.slice(0, 7);
   S.loads = (S.data.synclog || []).map((r) => ({ at: r.at, source: r.source, how: r.how, rows: r.rows, error: r.error, detail: r.detail }));
   for (const c of S.data.countries) S.selected.add(c.name);
+  S.goalCountry = S.data.countries.some((c) => c.name === 'Colombia') ? 'Colombia' : Object.keys(S.data.goalPlan?.countries || {})[0] || '';
   const hash = location.hash.slice(1);
   if (PAGES[hash]) S.page = hash;
   paintTheme();
@@ -1843,10 +1906,16 @@ async function init() {
     if (e.target.id === 'reset-targets') resetTargets();
   });
   main.addEventListener('change', (e) => {
-    if (e.target.id !== 'target-month') return;
-    S.targetMonth = e.target.value;
-    S.targetNote = '';
-    render();
+    if (e.target.id === 'goal-country') {
+      S.goalCountry = e.target.value;
+      render();
+      return;
+    }
+    if (e.target.id === 'target-month') {
+      S.targetMonth = e.target.value;
+      S.targetNote = '';
+      render();
+    }
   });
   document.getElementById('all').onchange = (e) => {
     S.selected = new Set(e.target.checked ? S.data.countries.map((c) => c.name) : []);
