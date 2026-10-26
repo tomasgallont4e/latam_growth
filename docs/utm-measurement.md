@@ -95,11 +95,12 @@ If the landing and portal are different domains, pass the stored attribution val
 ## 5. Dashboard operator checklist
 
 1. Deploy the dashboard code.
-2. Add the two optional service variables above (`HUBSPOT_UTM_PROPERTIES` and `POSTHOG_PROJECT_CREATED_EVENT=project_created`).
+2. Add `HUBSPOT_UTM_PROPERTIES`, `POSTHOG_PROJECT_CREATED_EVENT=project_created`, and leave `POSTHOG_PROJECT_CREATED_ENABLED=0` until the event is verified.
 3. Complete steps 1–4 for a test URL with a unique `utm_content`.
 4. In GA4 Realtime/DebugView, confirm the session and `sign_up` event.
 5. In HubSpot, confirm the contact has all hidden UTM properties.
 6. In PostHog, confirm `account_created` and `project_created` include the UTM properties and a stable `portal_user_id`.
-7. Use **Data Sources → Sync now** for GA4 and PostHog. In **Marketing campaigns → Campaign attribution**, verify the GA4 session row and, after project creation, the confirmed-project row.
+7. After verifying the event in PostHog, set `POSTHOG_PROJECT_CREATED_ENABLED=1`. This deliberately enables the more expensive UTM aggregation only after Product has installed the event.
+8. Use **Data Sources → Sync now** for GA4 and PostHog. In **Marketing campaigns → Campaign attribution**, verify the GA4 session row and, after project creation, the confirmed-project row.
 
 Historical traffic without UTMs will remain `(not set)`; this is expected and should not be backfilled with guesses.
