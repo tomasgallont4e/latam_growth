@@ -9,9 +9,20 @@ One dashboard for the LATAM launch: landing traffic, sign-ups, platform accounts
 | Overview | Summary figures, funnel from visit to active account, research reading, daily sessions by source with timeline notes |
 | Acquisition | Sessions by source (HubSpot), channels (Google Analytics), UTM campaigns, countries |
 | Conversion | Landing events (Tag Manager and Google Analytics), sign-up log, platform sign-ups (PostHog), pages, forms |
+| Goals | Color-coded targets per metric: monthly or quarterly, overall or by channel, source or campaign, with the pace against the target |
 | Social and paid | Meta, LinkedIn, Google Ads and Clarity; cost per sign-up once campaigns run |
 | Ad loader | Approved ad pieces, the checklist for each one, and the Google Ads, Meta and LinkedIn API payloads (task 124) |
 | Data sources | Status of every source, CSV import, how each one connects, definitions, load history |
+
+## Goals
+
+Leadership sets targets and the dashboard colors the progress: green at or above the expected value for today, amber within 15% below, red further behind. The expected value paces the target by the days elapsed in the window.
+
+- A goal tracks **one metric**: landing sessions (HubSpot), external sign-ups (HubSpot form, internal tests excluded), platform sign-ups (PostHog), GA4 sessions or ad spend (Meta and Google Ads).
+- **Cadence**: calendar month, calendar quarter, or a custom start-to-end window (the big goal, e.g. 500,000 external sign-ups in six months); the window and its pace are computed from today.
+- **Grouping**: overall, or one traffic source, channel or campaign; the values offered come from the data loaded so far.
+- Only `admin` users create and change goals; everyone sees the color-coded board. Example goals show how each tile reads.
+- `GET/POST/PUT api/goals`. Goals are archived, never deleted, and every target change is recorded with user and time.
 
 ## Sign-in
 

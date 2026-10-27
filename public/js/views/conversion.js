@@ -42,7 +42,7 @@
     const PST = { live: ['success', 'Live'], broken: ['error', 'Check links'], preview: ['info', 'Preview'] };
     const details = `<div class="detail-group">
       ${U.details('Sign-up log', `${shown.length} shown${S.exInt && all.length > shown.length ? ` · ${all.length - shown.length} internal hidden` : ''}`, shown.length ? U.table([
-        { t: 'Date', f: (r) => `<span class="mono">${U.dshort(r.date)}</span>` }, { t: 'Form', k: 'form' }, { t: 'Source', k: 'source' }, { t: 'Country', k: 'country' },
+        { t: 'Date', f: (r) => `<span class="mono">${U.dshort(r.date)}</span>` }, { t: 'Form', k: 'form' }, { t: 'Channel', f: (r) => U.esc(r.channel || r.source || '') }, { t: 'Country', k: 'country' },
         { t: 'Type', f: (r) => (r.internal ? U.pill('neutral', 'Internal test') : U.pill('success', 'External')) },
       ], shown.slice().sort((a, b) => (a.date < b.date ? 1 : -1)), (r) => (r.internal ? 'muted' : '')) : U.empty('No external sign-ups in this period', all.length ? `Turn off "Exclude internal tests" to see the ${all.length} test entries.` : ''))}
       ${U.details('Landing events (GA4)', evs ? U.win(evs.from, evs.to) : '', evs ? U.table([

@@ -471,3 +471,21 @@ body[data-role="ads"] :is(#note-form, #csv-form, #source-form, [data-sync], [dat
   .kpi-value { font-size: 26px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Goals board (cadence × grouping pace goals; reuses .goal-card and its st-* states) */
+.goal-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 14px; }
+.goal-card.big { grid-column: 1 / -1; }
+.goal-card.big .goal-actual { font-size: 30px; }
+.goal-name { font: 600 13px var(--font-body); color: var(--color-text); min-width: 0; }
+.goal-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.goal-side { display: flex; align-items: center; gap: 14px; flex: 1; }
+.goal-main { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.goal-pace { position: relative; height: 8px; background: var(--track); border-radius: 999px; }
+.goal-pace i { display: block; height: 100%; border-radius: 999px; min-width: 2px; }
+.goal-pace b { position: absolute; top: -4px; width: 2px; height: 16px; border-radius: 1px; background: var(--color-text-secondary); }
+.goal-ring { width: 72px; height: 72px; flex-shrink: 0; }
+.goal-ring .track { fill: none; stroke: var(--track); stroke-width: 6; }
+.goal-ring .fg { fill: none; stroke-width: 6; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 36px 36px; }
+.goal-ring text { font: 700 13px var(--font-mono); fill: var(--color-text); }
+.goal-summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.goal-act { display: flex; gap: 8px; }
