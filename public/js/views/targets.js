@@ -74,7 +74,15 @@
     const users = () => { const v = geo('ga_geo_users'); if (v) return v; const r = snapRow('ga4', 'countries'); return r ? Number(r.users) : null; };
     const engaged = () => { const v = geo('ga_geo_engaged_sessions'); if (v) return v; const r = snapRow('ga4', 'countries'); return r ? Number(r.engaged_sessions) : null; };
     const formsCountry = () => D.forms(from, to).filter((e) => e.country === country).length;
-    const platformCountry = () => { const r = snapRow('posthog', 'countries'); return r ? Number(r.ext_signups) : null; };
+    const platformCountry = () => {
+      const r = snapRow('posthog', 'countries');
+      if (r) return Number(r.ext_signups) || null;
+      // Once the PostHog GeoIP enrichment is on, the connector's ph_new_persons_geo rows take over.
+      const v = D.sum('posthog', 'ph_new_persons_geo', (r2) => (r2.dim_value || '') === country, from, to);
+      return v || null;
+    };
+    // Paid by country: the Meta/Google Ads connectors store their country split under *_geo rows.
+    const paidGeo = (metric) => ['meta', 'google_ads'].reduce((s, k) => s + D.sum(k, `${metric}_geo`, (r) => (r.dim_value || '') === country, from, to), 0);
     const signupsCountry = () => { const f = formsCountry(), p = platformCountry(); return p == null ? (f || null) : f + p; };
     switch (key) {
       case 'landing_sessions': return sessions();
@@ -83,7 +91,10 @@
       case 'total_signups': return signupsCountry();
       case 'platform_signups': return platformCountry();
       case 'visit_to_signup_rate': { const s = sessions(); return s ? signupsCountry() / s : null; }
-      default: return null; // ad_spend_budget, clicks, ctr: no country split in the data yet
+      case 'ad_spend_budget': return paidGeo('ad_spend') || null;
+      case 'clicks': return paidGeo('ad_clicks') || null;
+      case 'ctr': { const i = ['meta', 'google_ads'].reduce((s, k) => s + D.sum(k, 'ad_impressions_geo', (r) => (r.dim_value || '') === country, from, to), 0); return i ? paidGeo('ad_clicks') / i : null; }
+      default: return null;
     }
   };
 
