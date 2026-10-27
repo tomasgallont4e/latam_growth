@@ -114,6 +114,10 @@
       case 'total_signups': return D.signups(from, to);
       case 'platform_signups': return D.platform(from, to);
       case 'visit_to_signup_rate': { const s = D.sessions(from, to); return s ? D.signups(from, to) / s : null; }
+      // Cost per external sign-up: the CEO efficiency question, target = the plan's paid_cps.
+      case 'cps': { const s = D.signups(from, to); const spend = D.anyPaid() ? D.paidSum('ad_spend', from, to) : null; return spend && s ? spend / s : null; }
+      // Activation: share of new platform people whose first "Proyecto creado" action is in the window.
+      case 'activation_7d': { const base = D.platform(from, to); if (!base) return null; const act = D.sum('posthog', 'ph_activated_users', null, from, to); return act / base; }
       case 'ad_spend_budget': return D.anyPaid() ? D.paidSum('ad_spend', from, to) : null;
       case 'clicks': return D.anyPaid() ? D.paidSum('ad_clicks', from, to) : null;
       case 'ctr': { const i = D.paidSum('ad_impressions', from, to); return i ? D.paidSum('ad_clicks', from, to) / i : null; }

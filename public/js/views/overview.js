@@ -82,18 +82,33 @@
     const suDay = D.dailySignups();
 
     const kpis = U.kpiRow([
+      // Sign-ups lead the page: the number leadership asks for first, then the metrics that build it.
+      U.kpi({ label: 'Total Sign-ups', source: 'HubSpot + PostHog', value: U.fmt(total), hero: true, delta: U.delta(total, pTotal), spark: days.map((d) => suDay[d].form + suDay[d].platform), compare: `${U.fmt(form)} form + ${plat == null ? 'PostHog pending' : `${U.fmt(plat)} platform`} · ${cmp}` }),
+      U.kpi({ label: 'Form Sign-ups', source: 'HubSpot', value: U.fmt(form), delta: U.delta(form, pForm), spark: days.map((d) => suDay[d].form), compare: cmp }),
+      plat != null
+        ? U.kpi({ label: 'Platform Sign-ups', source: 'PostHog', value: U.fmt(plat), delta: U.delta(plat, pPlat), spark: days.map((d) => suDay[d].platform), compare: cmp })
+        : U.kpi({ label: 'Platform Sign-ups', source: 'PostHog', awaiting: 'PostHog' }),
+      hasSess ? U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', value: U.pct(rate), delta: U.delta(rate, pRate), spark: days.map((d) => (sessDay[d] ? (suDay[d].form + suDay[d].platform) / sessDay[d] : 0)), compare: cmp })
+        : U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', awaiting: 'HubSpot' }),
       hasSess ? U.kpi({ label: 'Landing Sessions', source: 'HubSpot', value: U.fmt(sess), delta: U.delta(sess, pSess), spark: days.map((d) => sessDay[d]), compare: cmp })
         : U.kpi({ label: 'Landing Sessions', source: 'HubSpot', awaiting: 'HubSpot' }),
       gt ? U.kpi({ label: 'Unique Visitors', source: 'GA4', value: U.fmt(gt.users), delta: U.delta(null, null), compare: `GA4 window ${U.win(ga.from, ga.to)} · ${U.fmt(gt.new_users)} new` })
         : U.kpi({ label: 'Unique Visitors', source: 'GA4', awaiting: 'GA4' }),
-      gt ? U.kpi({ label: 'Engagement Rate', source: 'GA4', value: U.pct(gt.engagement_rate), delta: U.delta(null, null), compare: `${U.fmt(gt.engaged_sessions)} engaged sessions · ${U.win(ga.from, ga.to)}` })
-        : U.kpi({ label: 'Engagement Rate', source: 'GA4', awaiting: 'GA4' }),
-      U.kpi({ label: 'Total Sign-ups', source: 'HubSpot + PostHog', value: U.fmt(total), hero: true, delta: U.delta(total, pTotal), spark: days.map((d) => suDay[d].form + suDay[d].platform), compare: `${U.fmt(form)} form + ${plat == null ? 'PostHog pending' : `${U.fmt(plat)} platform`} · ${cmp}` }),
-      hasSess ? U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', value: U.pct(rate), delta: U.delta(rate, pRate), spark: days.map((d) => (sessDay[d] ? (suDay[d].form + suDay[d].platform) / sessDay[d] : 0)), compare: cmp })
-        : U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', awaiting: 'HubSpot' }),
-    ]);
+    ], 6);
 
-    const goals = A.targets.strip(['landing_sessions', 'unique_visitors', 'engagement_rate', 'total_signups', 'visit_to_signup_rate']);
+    // Sign-ups by persona (utm_content p01–p13): whether the launch reaches the audience it was designed for.
+    const personas = {};
+    for (const e of D.forms()) { const c = String(e.utm_content || '').trim(); if (c) personas[c] = (personas[c] || 0) + 1; }
+    const pRows = Object.entries(personas).sort((a, b) => b[1] - a[1]);
+    const personaTotal = pRows.reduce((s, r) => s + r[1], 0);
+    const personaCard = U.card({
+      title: 'Sign-ups by persona', sub: pRows.length ? `External sign-ups carrying a persona code in utm_content · ${U.fmt(personaTotal)} of ${U.fmt(form)}` : 'Every ad piece carries its persona (p01–p13) in utm_content',
+      right: U.srcPill('hubspot', 'utm_content'),
+      body: pRows.length ? C.hbars(pRows, personaTotal)
+        : `${U.empty('No persona-tagged sign-ups yet', 'Sign-ups show here per persona once campaigns with utm_content run, so leadership can see which audience the launch actually reaches.', 'users')}`,
+    });
+
+    const goals = A.targets.strip(['total_signups', 'platform_signups', 'visit_to_signup_rate', 'landing_sessions', 'unique_visitors', 'engagement_rate']);
 
     const ch = D.channels();
     const mix = U.card({ title: 'Channel mix', sub: `Share of landing sessions · <span class="mono">${U.fmt(sess)} sessions</span>`, right: U.srcPill('hubspot'), body: hasSess ? C.mix(ch) : U.awaiting('hubspot') });
@@ -132,9 +147,9 @@
     });
 
     return goalPanels()
-      + U.section('Launch at a glance', `Five numbers that summarise the LATAM launch · ${U.win(S.from, S.to)} · ${cmp}`, kpis)
+      + U.section('Launch at a glance', `Six numbers, sign-ups first · ${U.win(S.from, S.to)} · ${cmp}`, kpis)
       + goals
-      + `<section class="section">${mix}</section>`
+      + `<section class="section grid-2-1">${personaCard}${mix}</section>`
       + `<section class="section">${chart}</section>`
       + `<section class="section grid-2-1">${funnel}${readings}</section>`;
   }

@@ -8,12 +8,14 @@
   const SRC = {
     landing_sessions: 'HubSpot', unique_visitors: 'GA4', engagement_rate: 'GA4', total_signups: 'HubSpot + PostHog',
     platform_signups: 'PostHog', visit_to_signup_rate: 'HubSpot + PostHog', ad_spend_budget: 'ads platforms', clicks: 'ads platforms', ctr: 'ads platforms',
+    cps: 'ads spend / sign-ups', activation_7d: 'PostHog',
   };
   const FALLBACK_META = {
     landing_sessions: { label: 'Landing sessions', kind: 'count' }, unique_visitors: { label: 'Unique visitors', kind: 'count' },
     engagement_rate: { label: 'Engagement rate', kind: 'rate' }, total_signups: { label: 'Total sign-ups', kind: 'count' },
     platform_signups: { label: 'Platform sign-ups', kind: 'count' }, visit_to_signup_rate: { label: 'Visit-to-sign-up rate', kind: 'rate' },
     ad_spend_budget: { label: 'Ad spend budget', kind: 'money' }, clicks: { label: 'Clicks', kind: 'count' }, ctr: { label: 'Click-through rate', kind: 'rate' },
+    cps: { label: 'Cost per sign-up', kind: 'money' }, activation_7d: { label: 'Activation within 7 days', kind: 'rate' },
   };
   const meta = () => (Object.keys(T.meta).length ? T.meta : FALLBACK_META);
 
@@ -94,6 +96,10 @@
       case 'ad_spend_budget': return paidGeo('ad_spend') || null;
       case 'clicks': return paidGeo('ad_clicks') || null;
       case 'ctr': { const i = ['meta', 'google_ads'].reduce((s, k) => s + D.sum(k, 'ad_impressions_geo', (r) => (r.dim_value || '') === country, from, to), 0); return i ? paidGeo('ad_clicks') / i : null; }
+      // Cost per sign-up in this market: local ad spend over local sign-ups.
+      case 'cps': { const s = signupsCountry(); const sp = paidGeo('ad_spend'); return sp && s ? sp / s : null; }
+      // The activation proxy has no country split yet; it stays a LATAM-level metric.
+      case 'activation_7d': return null;
       default: return null;
     }
   };
