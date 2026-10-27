@@ -17,33 +17,41 @@
   };
   const meta = () => (Object.keys(T.meta).length ? T.meta : FALLBACK_META);
 
-  T.ensure = async (month, force) => {
-    if (!month || (!force && (T.byMonth[month] || T.loading[month]))) return;
-    T.loading[month] = true;
+  // One cache entry per month AND country ('LATAM' or a country of the plan).
+  const ck = (month, country) => `${month}|${country || 'LATAM'}`;
+  T.ensure = async (month, force, country = TV.country) => {
+    const key = ck(month, country);
+    if (!month || (!force && (T.byMonth[key] || T.loading[key]))) return;
+    T.loading[key] = true;
     try {
-      const r = await A.api(`api/targets?month=${encodeURIComponent(month)}`);
+      const r = await A.api(`api/targets?month=${encodeURIComponent(month)}&country=${encodeURIComponent(country)}`);
       if (r.metrics) T.meta = r.metrics;
-      T.byMonth[month] = r.targets || [];
+      T.byMonth[key] = r.targets || [];
     } catch (e) {
-      T.byMonth[month] = T.byMonth[month] || [];
+      T.byMonth[key] = T.byMonth[key] || [];
       if (e.message !== 'code') U.toast(`Targets: ${e.message}`, 'error');
-    } finally { T.loading[month] = false; }
+    } finally { T.loading[key] = false; }
     if (A.S.data) A.render();
   };
-  T.refresh = (month) => { T.byMonth = {}; T.ensure(month, true); if (month !== A.S.to.slice(0, 7)) T.ensure(A.S.to.slice(0, 7), true); };
+  T.refresh = (month) => {
+    T.byMonth = {};
+    T.ensure(month, true, TV.country);
+    if (month !== A.S.to.slice(0, 7)) T.ensure(A.S.to.slice(0, 7), true, TV.country);
+    T.ensure(month, true, 'LATAM'); // the month-goal strips on every screen read the LATAM level
+  };
 
-  // Goal for one metric in one month: month-to-date actual, % of target, pace to month end and status.
-  T.goal = (key, month) => {
-    const row = (T.byMonth[month] || []).find((t) => t.metric_key === key);
+  // Goal for one metric in one month and level: month-to-date actual, % of target, pace to month end and status.
+  T.goal = (key, month, country = 'LATAM') => {
+    const row = (T.byMonth[ck(month, country)] || []).find((t) => t.metric_key === key);
     if (!row) return null;
     const m = meta()[key] || { label: key, kind: 'count' };
     const first = `${month}-01`, last = U.endOfMonth(month), today = U.today();
-    const g = { key, row, label: m.label, kind: m.kind, target: row.target_value, month, upcoming: first > today };
+    const g = { key, row, label: m.label, kind: m.kind, target: row.target_value, month, country, upcoming: first > today };
     if (g.upcoming) return { ...g, actual: null, status: 'none' };
     const to = last < today ? last : today;
     const elapsed = U.diffDays(first, to) + 1, dim = U.diffDays(first, last) + 1;
     g.ongoing = to < last; g.to = to;
-    g.actual = A.D.actual(key, first, to);
+    g.actual = T.actual(key, country, first, to);
     if (g.actual == null) return { ...g, status: 'none' };
     g.ratio = g.target ? g.actual / g.target : null;
     g.projected = m.kind === 'rate' || !g.ongoing ? g.actual : (g.actual / elapsed) * dim;
@@ -54,6 +62,31 @@
     g.pr = pr;
     return g;
   };
+  // Month-to-date actual for one metric. LATAM reads the whole data; a country reads its GA4
+  // geo rows, the HubSpot/GA4/PostHog country tables and the sign-up log's country field.
+  // Paid metrics have no country split in the current data, so only the LATAM level tracks them.
+  T.actual = (key, country, from, to) => {
+    const D = A.D;
+    if (country === 'LATAM') return D.actual(key, from, to);
+    const geo = (metric) => D.countryMetric(metric, country, from, to);
+    const snapRow = (src, k) => { const s = D.snap(src, k, from, to); return s && (s.rows || []).find((r) => r.country === country) || null; };
+    const sessions = () => { const v = geo('ga_geo_sessions'); if (v) return v; const r = snapRow('hubspot', 'countries'); return r ? Number(r.sessions) : null; };
+    const users = () => { const v = geo('ga_geo_users'); if (v) return v; const r = snapRow('ga4', 'countries'); return r ? Number(r.users) : null; };
+    const engaged = () => { const v = geo('ga_geo_engaged_sessions'); if (v) return v; const r = snapRow('ga4', 'countries'); return r ? Number(r.engaged_sessions) : null; };
+    const formsCountry = () => D.forms(from, to).filter((e) => e.country === country).length;
+    const platformCountry = () => { const r = snapRow('posthog', 'countries'); return r ? Number(r.ext_signups) : null; };
+    const signupsCountry = () => { const f = formsCountry(), p = platformCountry(); return p == null ? (f || null) : f + p; };
+    switch (key) {
+      case 'landing_sessions': return sessions();
+      case 'unique_visitors': return users();
+      case 'engagement_rate': { const s = sessions(), e = engaged(); return s ? e / s : null; }
+      case 'total_signups': return signupsCountry();
+      case 'platform_signups': return platformCountry();
+      case 'visit_to_signup_rate': { const s = sessions(); return s ? signupsCountry() / s : null; }
+      default: return null; // ad_spend_budget, clicks, ctr: no country split in the data yet
+    }
+  };
+
   const STATUS = {
     green: ['success', 'On track'], yellow: ['warning', 'At risk'], red: ['error', 'Off track'], none: ['neutral', 'No data'],
   };
@@ -74,9 +107,10 @@
       <div class="goal-meta">${meta2}</div></div>`;
   };
   // Month goals strip for a dashboard screen: always the month that contains the end of the selected period.
+  // The strips always read the LATAM level; per-country targets live on the Targets screen.
   T.strip = (keys, month = A.S.to.slice(0, 7)) => {
-    if (!T.byMonth[month]) { T.ensure(month); return U.section(`Month goals · ${U.monthName(month)}`, 'Loading targets…', '<div class="goal-row"><div class="goal-card"><div class="skeleton" style="height:70px"></div></div></div>'); }
-    const goals = keys.map((k) => T.goal(k, month)).filter(Boolean);
+    if (!T.byMonth[ck(month, 'LATAM')]) { T.ensure(month, false, 'LATAM'); return U.section(`Month goals · ${U.monthName(month)}`, 'Loading targets…', '<div class="goal-row"><div class="goal-card"><div class="skeleton" style="height:70px"></div></div></div>'); }
+    const goals = keys.map((k) => T.goal(k, month, 'LATAM')).filter(Boolean);
     const today = U.today(), last = U.endOfMonth(month);
     const sub = `Month to date (${U.win(`${month}-01`, last < today ? last : today)}) vs the ${U.monthName(month)} target · green ≥100%, yellow 90–99%, red &lt;90% of goal (pace for counts)`;
     const link = `<button type="button" class="btn btn-secondary btn-sm" data-go="targets">${U.icon('bullseye')} Targets</button>`;
@@ -85,7 +119,7 @@
   };
 
   // ---------- Targets screen
-  const TV = { month: null, preview: null, csv: null, fileName: '', editing: null, busy: false };
+  const TV = { month: null, country: 'LATAM', preview: null, csv: null, fileName: '', editing: null, busy: false };
   const PV = { plan: null, loading: false, saving: false };
   const PLAN_FIELDS = [
     ['verified_users', 'Verified users', 'count'], ['landing_sessions', 'Landing sessions', 'count'],
@@ -124,7 +158,7 @@
       right: `<div class="card-actions"><button type="button" class="btn btn-secondary" data-t-cancel>Cancel</button><button type="button" class="btn btn-primary" data-t-confirm${n ? '' : ' disabled'}>${U.icon('check')} Import ${n} row${n === 1 ? '' : 's'}</button></div>`,
       body: `<div class="preview-summary">${U.pill('success', `${p.counts.ok} OK`)}${U.pill('warning', `${p.counts.overwrite} overwrite`)}${U.pill('error', `${p.counts.error} error`)}${U.pill('neutral', `${p.counts.skip} skipped`)}</div>`
         + U.table([
-          { t: 'Line', num: 1, f: (r) => r.line }, { t: 'Month', f: (r) => `<span class="mono">${U.esc(r.month)}</span>` },
+          { t: 'Line', num: 1, f: (r) => r.line }, { t: 'Month', f: (r) => `<span class="mono">${U.esc(r.month)}</span>` }, { t: 'Country', f: (r) => U.esc(r.country || 'LATAM') },
           { t: 'Metric', f: (r) => `${U.esc(r.label || r.metric_key)}<br><small><code>${U.esc(r.metric_key)}</code></small>` },
           { t: 'Target', num: 1, f: (r) => (r.target_value == null ? U.esc(r.raw) : U.value((meta()[r.metric_key] || {}).kind, r.target_value)) },
           { t: 'Current', num: 1, f: (r) => (r.previous == null ? '–' : U.value((meta()[r.metric_key] || {}).kind, r.previous)) },
@@ -136,21 +170,27 @@
     const S = A.S;
     TV.month = TV.month || S.to.slice(0, 7);
     const month = TV.month;
-    if (!T.byMonth[month]) T.ensure(month);
-    const rows = T.byMonth[month];
+    const country = TV.country;
+    if (!T.byMonth[ck(month, country)]) T.ensure(month, false, country);
+    const rows = T.byMonth[ck(month, country)];
     const M = meta();
-    const head = `<section class="card"><div class="card-header"><div><div class="card-title">Monthly targets</div><div class="card-sub">Shared by the whole team. Upload a CSV (month, metric_key, target_value) or edit a single value. Rates accept 45% or 0.45.</div></div></div>
+    // The countries available to set goals for: LATAM plus the markets of the persistent plan.
+    const markets = Object.keys((PV.plan || {}).countries || {});
+    const options = ['LATAM', ...markets].map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${name === 'LATAM' ? 'LATAM (all markets)' : U.esc(name)}</option>`).join('');
+    const level = country === 'LATAM' ? 'LATAM' : U.esc(country);
+    const head = `<section class="card"><div class="card-header"><div><div class="card-title">Monthly targets</div><div class="card-sub">Set for ${level} or for any single market. Upload a CSV (month, country, metric_key, target_value) or edit a value in the table. Rates accept 45% or 0.45.</div></div></div>
       <div class="form-row">
         <label class="field" for="t-month"><span>Month</span><input type="month" id="t-month" value="${U.esc(month)}" style="width:180px"></label>
+        <label class="field" for="t-country"><span>Country</span><select id="t-country" style="width:220px">${options}</select></label>
         <button type="button" class="btn btn-secondary" data-t-template>${U.icon('file-arrow-down')} Download template</button>
         <label class="btn btn-primary" for="t-file" style="margin:0">${U.icon('file-arrow-up')} Upload targets CSV<input type="file" id="t-file" accept=".csv,text/csv" hidden></label>
       </div></section>`;
     const goals = rows ? (rows.length
-      ? U.section(`Goal completion · ${U.monthName(month)}`, 'Actual month to date vs target · pace to month end for counts', `<div class="goal-row">${Object.keys(M).map((k) => T.goal(k, month)).filter(Boolean).map(T.card).join('')}</div>`)
-      : U.section(`Goal completion · ${U.monthName(month)}`, '', `<div class="goal-empty"><span>${U.icon('bullseye')} No targets for ${U.monthName(month)} yet. Download the template, fill in the values and upload it, or set a value in the table below.</span></div>`)) : '';
-    const tableRows = Object.keys(M).map((k) => ({ key: k, m: M[k], t: rows ? rows.find((r) => r.metric_key === k) : null, g: T.goal(k, month) }));
+      ? U.section(`Goal completion · ${level} · ${U.monthName(month)}`, 'Actual month to date vs target · pace to month end for counts', `<div class="goal-row">${Object.keys(M).map((k) => T.goal(k, month, country)).filter(Boolean).map(T.card).join('')}</div>`)
+      : U.section(`Goal completion · ${level} · ${U.monthName(month)}`, '', `<div class="goal-empty"><span>${U.icon('bullseye')} No targets for ${level} in ${U.monthName(month)} yet. Download the template, fill in the values and upload it, or set a value in the table below.</span></div>`)) : '';
+    const tableRows = Object.keys(M).map((k) => ({ key: k, m: M[k], t: rows ? rows.find((r) => r.metric_key === k) : null, g: T.goal(k, month, country) }));
     const table = U.card({
-      title: `Targets for ${U.monthName(month)}`, sub: `${rows ? rows.length : 0} of ${Object.keys(M).length} metrics have a target`,
+      title: `Targets for ${level} · ${U.monthName(month)}`, sub: `${rows ? rows.length : 0} of ${Object.keys(M).length} metrics have a target`,
       body: !rows ? '<div class="skeleton" style="height:180px"></div>' : U.table([
         { t: 'Metric', f: (r) => `${U.esc(r.m.label)}<br><small><code>${U.esc(r.key)}</code> · ${U.esc(r.m.kind)}</small>` },
         { t: 'Target', num: 1, f: (r) => (TV.editing === r.key
@@ -180,7 +220,8 @@
       } catch (err) { if (err.message !== 'code') U.toast(err.message, 'error'); }
       finally { PV.saving = false; if (A.S.data) A.render(); }
     });
-    el.querySelector('#t-month').addEventListener('change', (e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { TV.month = e.target.value; TV.editing = null; T.ensure(TV.month); A.render(); } });
+    el.querySelector('#t-month').addEventListener('change', (e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { TV.month = e.target.value; TV.editing = null; T.ensure(TV.month, false, TV.country); A.render(); } });
+    el.querySelector('#t-country').addEventListener('change', (e) => { TV.country = e.target.value; TV.editing = null; T.ensure(TV.month, false, TV.country); A.render(); });
     el.querySelector('#t-file').addEventListener('change', async (e) => {
       const file = e.target.files[0]; if (!file) return;
       try {
@@ -194,11 +235,11 @@
       const f = e.target.closest('[data-t-form]'); if (!f) return;
       e.preventDefault();
       const key = f.dataset.tForm, val = f.elements.v.value.trim();
-      const cur = (T.byMonth[TV.month] || []).find((r) => r.metric_key === key);
+      const cur = (T.byMonth[ck(TV.month, TV.country)] || []).find((r) => r.metric_key === key);
       try {
         if (cur) await A.api(`api/targets/${cur.id}`, { method: 'PUT', body: JSON.stringify({ target_value: val }) });
         else {
-          const r = await A.api('api/targets/import', { method: 'POST', body: JSON.stringify({ csv: `month,metric_key,target_value\n${TV.month},${key},"${val.replace(/"/g, '')}"`, confirm: true }) });
+          const r = await A.api('api/targets/import', { method: 'POST', body: JSON.stringify({ csv: `month,country,metric_key,target_value\n${TV.month},${TV.country},"${key}","${val.replace(/"/g, '')}"`, confirm: true }) });
           if (!r.applied) throw new Error((r.rows[0] && r.rows[0].message) || 'The value was not accepted');
         }
         afterChange('Target saved');

@@ -11,7 +11,6 @@ const CATALOG = require('./lib/sources');
 const { connectors, configured, REQUIRED } = require('./lib/connectors');
 const auth = require('./lib/auth');
 const ads = require('./lib/adloader');
-const goals = require('./lib/goals');
 const executive = require('./lib/executive');
 const targets = require('./lib/targets');
 
@@ -91,19 +90,21 @@ app.put('/api/goal-plan', async (req, res, next) => {
   catch (e) { e.status ? res.status(e.status).json({ error: e.message }) : next(e); }
 });
 
-// Shared monthly operating targets. They back the existing Target cards and
-// the CSV workflow in the active dashboard.
+// Shared monthly operating targets, at the LATAM level or per country. They back the existing
+// Target cards and the CSV workflow in the active dashboard.
 app.get('/api/targets', async (req, res, next) => {
   try {
     const month = String(req.query.month || '');
+    const country = String(req.query.country || 'LATAM');
     if (!targets.monthOk(month)) return res.status(400).json({ error: 'month must be YYYY-MM' });
-    res.json({ metrics: targets.METRICS, targets: await targets.monthly(store, month) });
+    if (!targets.countryOk(country)) return res.status(400).json({ error: 'country must be LATAM or a country name' });
+    res.json({ metrics: targets.METRICS, targets: await targets.monthly(store, month, country) });
   } catch (e) { next(e); }
 });
 app.get('/api/targets/template', (req, res) => {
   const month = targets.monthOk(req.query.month) ? req.query.month : new Date().toISOString().slice(0, 7);
-  const lines = Object.keys(targets.METRICS).map((key) => `${month},${key},`);
-  res.type('text/csv').send(`month,metric_key,target_value\n${lines.join('\n')}\n`);
+  const lines = Object.keys(targets.METRICS).map((key) => `${month},LATAM,${key},`);
+  res.type('text/csv').send(`month,country,metric_key,target_value\n${lines.join('\n')}\n`);
 });
 app.post('/api/targets/import', async (req, res, next) => {
   try {
@@ -114,20 +115,20 @@ app.post('/api/targets/import', async (req, res, next) => {
 });
 app.put('/api/targets/:id', async (req, res, next) => {
   try {
-    const [month, metric] = String(req.params.id || '').split('|');
+    const { month, country, metric } = targets.parseId(req.params.id);
     const value = targets.validateTarget(month, metric, req.body && req.body.target_value);
-    if (value == null) return res.status(400).json({ error: 'Invalid target' });
-    const id = `${month}|${metric}`;
-    const row = { month, metric_key: metric, target_value: value, updated_by: req.user, updated_at: new Date().toISOString() };
+    if (value == null || !targets.countryOk(country)) return res.status(400).json({ error: 'Invalid target' });
+    const id = targets.targetId(month, country, metric);
+    const row = { month, country, metric_key: metric, target_value: value, updated_by: req.user, updated_at: new Date().toISOString() };
     await store.upsert('target', id, row);
     res.json({ id, ...row });
   } catch (e) { next(e); }
 });
 app.delete('/api/targets/:id', async (req, res, next) => {
   try {
-    const [month, metric] = String(req.params.id || '').split('|');
-    if (!targets.monthOk(month) || !targets.METRICS[metric]) return res.status(400).json({ error: 'Invalid target' });
-    await store.remove('target', `${month}|${metric}`);
+    const { month, country, metric } = targets.parseId(req.params.id);
+    if (!targets.monthOk(month) || !targets.METRICS[metric] || !targets.countryOk(country)) return res.status(400).json({ error: 'Invalid target' });
+    await store.remove('target', targets.targetId(month, country, metric));
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -274,46 +275,6 @@ app.post('/api/ads/:id/send', async (req, res, next) => {
     const live = ads.liveReady(v.platform);
     if (!live.ready) return res.status(409).json({ error: live.why });
     res.status(501).json({ error: 'Live sending for this platform is enabled once the connector is tested with the real account. Load it by hand with the payload meanwhile.' });
-  } catch (e) { next(e); }
-});
-
-// Goals: targets per metric, per cadence (month or quarter) and per grouping (overall, source, channel,
-// campaign). Stored as kind "goal"; the Goals view computes progress from api/data and colors by pace.
-async function goalList() {
-  if (!(await store.count('goalseed'))) {
-    for (const [i, ex] of goals.EXAMPLES.entries()) await store.upsert('goal', `gex-${i + 1}`, { ...ex, example: true, status: 'active', created_by: 'example', created_at: new Date().toISOString() });
-    await store.upsert('goalseed', 'done', { at: new Date().toISOString() });
-  }
-  return (await store.list('goal')).map((g) => { const { _at, ...rest } = g; return { ...rest, id: g._k, updated: _at, window: goals.windowOf(g.cadence, undefined, g) }; });
-}
-app.get('/api/goals', async (req, res, next) => {
-  try { res.json({ goals: await goalList(), metrics: goals.METRICS, cadences: goals.CADENCES, group_label: goals.GROUP_LABEL }); }
-  catch (e) { next(e); }
-});
-app.post('/api/goals', async (req, res, next) => {
-  try {
-    const g = goals.clean(req.body || {});
-    if (g.error) return res.status(400).json({ error: g.error });
-    const id = `goal-${Date.now().toString(36)}`;
-    const now = new Date().toISOString();
-    await store.upsert('goal', id, { ...g, example: false, status: 'active', created_by: req.user, created_at: now, log: [{ at: now, user: req.user, action: 'created' }] });
-    res.status(201).json((await goalList()).find((x) => x.id === id));
-  } catch (e) { next(e); }
-});
-app.put('/api/goals/:id', async (req, res, next) => {
-  try {
-    const prev = (await store.list('goal')).find((g) => g._k === req.params.id);
-    if (!prev) return res.status(404).json({ error: 'not found' });
-    const { _k, _at, ...rest } = prev;
-    const g = goals.clean({ ...rest, ...(req.body || {}) });
-    if (g.error) return res.status(400).json({ error: g.error });
-    const now = new Date().toISOString();
-    const log = [...(rest.log || [])];
-    if (g.target !== rest.target) log.push({ at: now, user: req.user, action: `target changed from ${rest.target} to ${g.target}` });
-    const status = ['active', 'archived'].includes(req.body && req.body.status) ? req.body.status : rest.status;
-    if (status !== rest.status) log.push({ at: now, user: req.user, action: status === 'archived' ? 'archived' : 'restored' });
-    await store.upsert('goal', req.params.id, { ...g, example: !!rest.example, status, created_by: rest.created_by, created_at: rest.created_at, log: log.slice(-50) });
-    res.json((await goalList()).find((x) => x.id === req.params.id));
   } catch (e) { next(e); }
 });
 
