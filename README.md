@@ -94,4 +94,4 @@ The dashboard now reads GA4 sessions by UTM, landing page and city, and it is re
 ## Upload to Think4Ever
 
 1. New project (Node.js + MySQL), import `t4e-growth-dashboard.zip` (no `node_modules`, `data/` or `_local.js`).
-2. Start command `node server.js` → install dependencies → start → health check on `/api/health`.
+2. Start command `npm start` (installs the dependencies itself, then boots; `node server.js` only works after they are installed) → health check on `/api/health`.
