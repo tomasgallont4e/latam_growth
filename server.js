@@ -22,23 +22,13 @@ app.get(['/health', '/api/health'], async (req, res) => {
   catch (e) { res.status(503).json({ status: 'error', error: e.message }); }
 });
 
-// Classic dashboard under classic/: forward its relative api/, login.html and app.css requests
-// to the existing routes and files (done before auth so the open login paths still match).
-app.use((req, res, next) => {
-  if (req.url.startsWith('/classic/api/') || req.url.startsWith('/classic/login.html') || req.url.startsWith('/classic/app.css')) {
-    req.url = req.url.slice('/classic'.length);
-  }
-  next();
-});
-
 // Login: every page and API route below needs a session (DASH_USERS in the service variables).
 auth.mount(app);
-// Main page: the executive view. The old mock data folder is never served.
-app.use((req, res, next) => (req.method === 'GET' && req.url === '/classic' ? res.redirect('classic/') : next()));
+// The public dashboard is the application's active interface. The executive
+// prototype stays available for comparison without replacing the live route.
 app.use('/data', (req, res) => res.status(404).json({ error: 'not found' }));
-app.use(express.static(path.join(__dirname, 'sample', 'executive'), { redirect: false }));
-app.use('/classic', express.static(path.join(__dirname, 'public'), { redirect: false }));
-app.use(express.static(path.join(__dirname, 'public'), { index: false, redirect: false }));
+app.use('/executive', express.static(path.join(__dirname, 'sample', 'executive'), { redirect: false }));
+app.use(express.static(path.join(__dirname, 'public'), { redirect: false }));
 
 // Optional team code: when TEAM_CODE is set, the API asks for it.
 app.use('/api', (req, res, next) => {
