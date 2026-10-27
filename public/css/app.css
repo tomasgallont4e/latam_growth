@@ -191,6 +191,9 @@ label { font: 500 12px var(--font-body); color: var(--color-text-secondary); }
 .plan-metric > span { color: var(--color-text-secondary); font: 600 10px var(--font-body); letter-spacing: .06em; text-transform: uppercase; }
 .plan-metric b { font: 700 20px/1.2 var(--font-mono); letter-spacing: -.02em; }
 .plan-metric em { color: var(--color-primary-text); font: 600 12px var(--font-body); font-style: normal; }
+.plan-bar { display: block; height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.plan-bar i { display: block; height: 100%; border-radius: 999px; background: var(--color-primary); }
+.plan-complete { color: var(--color-text); font: 600 12px var(--font-body); }
 .plan-metric small { color: var(--color-text-muted); font-size: 11.5px; line-height: 1.35; }
 .goal-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: var(--gap); }
 .goal-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }

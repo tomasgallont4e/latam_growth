@@ -14,9 +14,26 @@
   // the 500K verified-user outcome and shows the traffic/media inputs implied
   // by that scenario. Live values retain their source labels and are never
   // fabricated for a country that has not been identified by a source.
-  function goalMetric(label, target, actual, note) {
+  // Completion is actual ÷ target. A target of 500 and an actual of 100 is 20% of the goal.
+  // Rates use the same ratio: 3.20% against a 4.02% plan is 79.6% of that rate goal.
+  function completionOf(actual, target) {
     const U = A.ui;
-    return `<div class="plan-metric"><span>${U.esc(label)}</span><b>${U.esc(target)}</b><em>${actual == null ? 'No live value yet' : `Actual ${U.esc(actual)}`}</em><small>${U.esc(note)}</small></div>`;
+    if (!U.num(actual) || !U.num(target) || Number(target) === 0) return null;
+    return Number(actual) / Number(target);
+  }
+  function completionLabel(ratio) {
+    const p = Math.abs(ratio) * 100;
+    const digits = p !== 0 && p < 0.1 ? 3 : p < 10 ? 2 : 1;
+    return A.ui.pct(ratio, digits);
+  }
+  function goalMetric(label, target, actual, note, raw) {
+    const U = A.ui;
+    const ratio = raw ? completionOf(raw.actual, raw.target) : null;
+    const tracked = !!raw;
+    const width = ratio == null ? 0 : Math.min(100, Math.max(0, ratio * 100));
+    const bar = tracked ? `<span class="plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(width)}" aria-label="${U.esc(label)} goal completion"><i style="width:${width.toFixed(1)}%"></i></span>` : '';
+    const complete = tracked ? `<strong class="plan-complete">${ratio == null ? '– of goal' : `${completionLabel(ratio)} of goal`}</strong>` : '';
+    return `<div class="plan-metric"><span>${U.esc(label)}</span><b>${U.esc(target)}</b><em>${actual == null ? 'No live value yet' : `Actual ${U.esc(actual)}`}</em>${bar}${complete}<small>${U.esc(note)}</small></div>`;
   }
 
   function goalPanels() {
@@ -46,12 +63,12 @@
     return `<section class="section goal-plan-section"><details class="goal-panel"><summary><span><b>LATAM 500K goal</b><small>Top-down funnel and live progress</small></span><span class="goal-summary">500,000 verified users <i>View plan</i></span></summary><div class="goal-body">
       <p>This is a planning scenario: it starts with 500,000 verified users and derives the required traffic, media and efficiency. It does not replace the monthly targets below.</p>
       <div class="plan-grid">
-        ${goalMetric('Verified users', U.fmt(p.verified_users), accounts == null ? null : U.fmt(accounts), 'PostHog new people across active markets.')}
-        ${goalMetric('Landing sessions', U.fmt(p.landing_sessions), U.fmt(landing), 'Traffic required at the planned conversion.')}
-        ${goalMetric('Visit to verified user', U.pct(p.visit_to_signup), conversion == null ? null : U.pct(conversion), 'Verified users divided by landing sessions.')}
-        ${goalMetric('Impression to landing visit', U.pct(p.impression_to_visit), impressionVisit == null ? null : U.pct(impressionVisit), 'Link efficiency, not generic platform CTR.')}
-        ${goalMetric('Paid impressions', U.fmt(p.impressions), impressions == null ? null : U.fmt(impressions), 'Reach required for the planned traffic.')}
-        ${goalMetric('Paid media budget', U.money(p.paid_budget), spend == null ? null : U.money(spend), `Planned cost per sign-up: ${U.money(p.paid_cps)}.`)}
+        ${goalMetric('Verified users', U.fmt(p.verified_users), accounts == null ? null : U.fmt(accounts), 'PostHog new people across active markets.', { target: p.verified_users, actual: accounts })}
+        ${goalMetric('Landing sessions', U.fmt(p.landing_sessions), U.fmt(landing), 'Traffic required at the planned conversion.', { target: p.landing_sessions, actual: landing })}
+        ${goalMetric('Visit to verified user', U.pct(p.visit_to_signup), conversion == null ? null : U.pct(conversion), 'Verified users divided by landing sessions.', { target: p.visit_to_signup, actual: conversion })}
+        ${goalMetric('Impression to landing visit', U.pct(p.impression_to_visit), impressionVisit == null ? null : U.pct(impressionVisit), 'Link efficiency, not generic platform CTR.', { target: p.impression_to_visit, actual: impressionVisit })}
+        ${goalMetric('Paid impressions', U.fmt(p.impressions), impressions == null ? null : U.fmt(impressions), 'Reach required for the planned traffic.', { target: p.impressions, actual: impressions })}
+        ${goalMetric('Paid media budget', U.money(p.paid_budget), spend == null ? null : U.money(spend), `Planned cost per sign-up: ${U.money(p.paid_cps)}.`, { target: p.paid_budget, actual: spend })}
       </div></div></details>
       <details class="goal-panel"><summary><span><b>Country goal</b><small>${U.esc(country)} within the LATAM plan</small></span><span class="goal-summary">${U.fmt(target)} verified users <i>View country</i></span></summary><div class="goal-body">
         <label class="goal-select">Country <select id="goal-country" aria-label="Country goal">${options}</select></label>
