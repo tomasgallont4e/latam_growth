@@ -70,6 +70,7 @@ app.get('/api/data', async (req, res, next) => {
       notes: clean(await store.list('note')),
       sources: await sourcesView(),
       synclog: clean(await store.list('synclog')).slice(-30).reverse(),
+      goalPlan: executive.GOAL_PLAN,
     });
   } catch (e) { next(e); }
 });

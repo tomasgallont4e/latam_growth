@@ -3,7 +3,7 @@
    Daily metrics follow the period selector; snapshots (tables pulled for a fixed window) show their own window. */
 
 const LAUNCH = '2026-10-01';
-const S = { data: null, tab: 'overview', period: 'launch', from: LAUNCH, to: today(), exInt: true };
+const S = { data: null, tab: 'overview', period: 'launch', from: LAUNCH, to: today(), exInt: true, goalCountry: 'Colombia' };
 const main = document.getElementById('main');
 
 // ---------- utils
@@ -82,6 +82,14 @@ function phActivated() {
   // infer an additional internal/external split from the dashboard toggle.
   if (!has('posthog', 'ph_activated_users')) return null;
   return msum('posthog', 'ph_activated_users');
+}
+function allMetric(metric) { return M().filter((r) => r.metric === metric && inRange(r.date)).reduce((sum, r) => sum + r.value, 0); }
+function countryMetric(metric, country) {
+  return M().filter((r) => r.source === 'ga4' && r.metric === metric && r.dim === 'country' && r.dim_value === country && inRange(r.date)).reduce((sum, r) => sum + r.value, 0);
+}
+function countrySnapshot(country) {
+  const s = snap('ga4', 'countries');
+  return s && (s.rows || []).find((r) => r.country === country);
 }
 function ga4Event(name) {
   if (has('ga4', 'ga_event')) return { count: msum('ga4', 'ga_event', (r) => r.dim_value === name), users: null, label: win(S.from, S.to) };
@@ -221,8 +229,61 @@ function dailyCard() {
     </form></section>`;
 }
 
+// The shared 500K plan is intentionally separate from the editable monthly
+// targets below. It is a top-down scale scenario, not a claim that every
+// country already has verified accounts attributed to it.
+function goalMetric(label, target, actual, note) {
+  return `<div class="goal-metric"><span>${esc(label)}</span><b>${esc(target)}</b><em>${actual == null ? 'No live value yet' : `Actual ${esc(actual)}`}</em><small>${esc(note)}</small></div>`;
+}
+function goalPanels() {
+  const p = S.data.goalPlan;
+  if (!p) return '';
+  const accounts = phAccounts(false);
+  const landing = msum('hubspot', 'sessions');
+  const impressions = allMetric('ad_impressions');
+  const spend = allMetric('ad_spend');
+  const conversion = landing && accounts != null ? accounts / landing : null;
+  const impressionVisit = impressions && landing ? landing / impressions : null;
+  const markets = Object.keys(p.countries || {});
+  const country = markets.includes(S.goalCountry) ? S.goalCountry : markets[0];
+  const target = p.countries[country] || 0;
+  const liveSessions = countryMetric('ga_geo_sessions', country);
+  const liveUsers = countryMetric('ga_geo_users', country);
+  const liveEngaged = countryMetric('ga_geo_engaged_sessions', country);
+  const snapshot = countrySnapshot(country);
+  const sessions = liveSessions || (snapshot && snapshot.sessions) || null;
+  const users = liveUsers || (snapshot && snapshot.users) || null;
+  const engagement = sessions && liveEngaged ? liveEngaged / sessions : null;
+  const forms = signups((e) => e.country === country && (!S.exInt || !e.internal)).length;
+  const plannedSessions = target ? p.landing_sessions * target / p.verified_users : null;
+  const options = markets.map((name) => `<option value="${esc(name)}" ${name === country ? 'selected' : ''}>${esc(name)}</option>`).join('');
+  return `<details class="goal-panel"><summary><span><b>LATAM 500K goal</b><small>Shared top-down funnel and live progress</small></span><span class="goal-cta">500,000 verified users · View plan</span></summary><div class="goal-body">
+    <p class="note">This scale scenario starts with verified users and derives the traffic, media and efficiency required. It does not replace the monthly targets below.</p>
+    <div class="goal-grid">
+      ${goalMetric('Verified users', fmt(p.verified_users), accounts == null ? null : fmt(accounts), 'PostHog new people across all countries.')}
+      ${goalMetric('Landing sessions', fmt(p.landing_sessions), fmt(landing), 'Traffic required at the planned conversion.')}
+      ${goalMetric('Visit to verified user', pct(p.visit_to_signup), conversion == null ? null : pct(conversion), 'Verified users divided by landing sessions.')}
+      ${goalMetric('Impression to landing visit', pct(p.impression_to_visit), impressionVisit == null ? null : pct(impressionVisit), 'Link traffic efficiency; not generic CTR.')}
+      ${goalMetric('Paid impressions', fmt(p.impressions), impressions ? fmt(impressions) : null, 'Reach needed for the planned traffic.')}
+      ${goalMetric('Paid media budget', money(p.paid_budget), spend ? money(spend) : null, `Planned paid cost per sign-up ${money(p.paid_cps)}.`)}
+    </div>
+  </div></details>
+  <details class="goal-panel"><summary><span><b>Country goal</b><small>${esc(country)} within the LATAM plan</small></span><span class="goal-cta">${fmt(target)} verified users · View country</span></summary><div class="goal-body">
+    <label class="goal-select">Country <select id="goal-country" aria-label="Country goal">${options}</select></label>
+    <p class="note">The target is this market's allocation from the 500K scenario. Actuals appear only when a source can genuinely resolve a country.</p>
+    <div class="goal-grid">
+      ${goalMetric('Verified-user target', fmt(target), null, 'Allocated share of the LATAM plan.')}
+      ${goalMetric('Planned landing sessions', fmt(plannedSessions), sessions == null ? null : fmt(sessions), 'Actual traffic comes from GA4.')}
+      ${goalMetric('GA4 users', 'Traffic readout', users == null ? null : fmt(users), 'Users observed in this country.')}
+      ${goalMetric('GA4 engagement rate', 'Quality readout', engagement == null ? null : pct(engagement), 'Engaged sessions divided by sessions.')}
+      ${goalMetric('HubSpot form sign-ups', 'Lead readout', fmt(forms), 'Contacts with a matching CRM country.')}
+      ${goalMetric('Verified accounts by country', 'Identity coverage', null, 'Requires country code on the verified PostHog/backend account.')}
+    </div>
+  </div></details>`;
+}
+
 function viewOverview() {
-  return `${kpis()}<div class="grid g32">${funnel()}${readings()}</div>${dailyCard()}`;
+  return `${goalPanels()}${kpis()}<div class="grid g32">${funnel()}${readings()}</div>${dailyCard()}`;
 }
 
 function viewAcquisition() {
@@ -587,6 +648,7 @@ main.addEventListener('input', (e) => {
 });
 main.addEventListener('change', (e) => {
   const t = e.target;
+  if (t.id === 'goal-country') { S.goalCountry = t.value; render(); return; }
   if (t.id === 'ad-arch') { AD.arch = t.checked; render(); return; }
   const form = t.closest && t.closest('#ad-form'); if (!form) return;
   if (t.name === 'persona') { const u = form.elements.utm_content; if (u && (!u.value || /^p\d\d$/.test(u.value))) u.value = t.value; }
