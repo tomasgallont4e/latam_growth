@@ -79,7 +79,7 @@
       ${utmSnap || hp || gp ? U.details('Landing pages', utmSnap ? `${gaPages.length} pages · ${U.win(S.from, S.to)}` : hp ? U.win(hp.from, hp.to) : '', `${utmSnap ? (gaPages.length ? U.table([
         { t: 'Entry page (GA4)', f: (r) => `<code>${U.esc(r.key)}</code>` }, { t: 'Sessions', num: 1, f: (r) => U.fmt(r.sessions) },
         { t: 'Engagement', num: 1, f: (r) => U.pct(r.sessions ? r.engaged_sessions / r.sessions : null) },
-        { t: 'Users (daily sum)', num: 1, f: (r) => U.fmt(r.users) }, { t: 'Key events', num: 1, f: (r) => U.fmt(r.key_events) },
+        { t: 'Key events', num: 1, f: (r) => U.fmt(r.key_events) },
       ], gaPages) : U.empty('No GA4 sessions in this period')) : ''}${hp ? U.table([
         { t: 'Page', f: (r) => `<code>${U.esc(r.page)}</code>` }, { t: 'Views (HubSpot)', num: 1, f: (r) => U.fmt(r.views) },
         { t: 'Status', f: (r) => { const p = PST[r.status] || ['neutral', r.status || '–']; return U.pill(p[0], p[1]); } },

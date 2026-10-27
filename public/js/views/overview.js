@@ -1,15 +1,8 @@
 
 'use strict';
 /* Overview: the CEO glance. Five KPIs with % change, month goals, channel mix, daily sessions with timeline notes,
-   the visit-to-active-account funnel and what the data says. */
+   and the visit-to-active-account funnel. The right-hand reading is a placeholder until an AI agent explains the data. */
 (function (A) {
-  const TONE = { crit: 'bad', bad: 'bad', warn: 'watch', watch: 'watch', info: 'watch', ok: 'good', good: 'good' };
-  function insight(o) {
-    const ic = { bad: 'triangle-exclamation', watch: 'eye', good: 'arrow-trend-up' }[o.tone];
-    const lb = { bad: 'Critical', watch: 'Watch', good: 'Good' }[o.tone];
-    return `<div class="insight"><span class="insight-icon ${o.tone}">${A.ui.icon(ic)}</span><p><span class="tone ${o.tone}">${lb}</span>${o.html}</p></div>`;
-  }
-
   // The plan is intentionally separate from monthly targets. It starts with
   // the 500K verified-user outcome and shows the traffic/media inputs implied
   // by that scenario. Live values retain their source labels and are never
@@ -39,11 +32,10 @@
   function goalPanels() {
     const U = A.ui, D = A.D, S = A.S, p = S.data && S.data.goalPlan;
     if (!p) return '';
-    const accounts = D.platform();
+    const signups = D.signups();
     const landing = D.sessions();
     const impressions = D.anyPaid() ? D.paidSum('ad_impressions') : null;
-    const spend = D.anyPaid() ? D.paidSum('ad_spend') : null;
-    const conversion = landing && accounts != null ? accounts / landing : null;
+    const conversion = landing ? signups / landing : null;
     const impressionVisit = impressions && landing ? landing / impressions : null;
     const markets = Object.keys(p.countries || {});
     if (!markets.length) return '';
@@ -62,20 +54,18 @@
 
     return `<section class="section goal-plan-section"><details class="goal-panel"><summary><span><b>LATAM 500K goal</b><small>Top-down funnel and live progress</small></span><span class="goal-summary">500,000 verified users <i>View plan</i></span></summary><div class="goal-body">
       <p>This is a planning scenario: it starts with 500,000 verified users and derives the required traffic, media and efficiency. It does not replace the monthly targets below.</p>
-      <div class="plan-grid">
-        ${goalMetric('Verified users', U.fmt(p.verified_users), accounts == null ? null : U.fmt(accounts), 'PostHog new people across active markets.', { target: p.verified_users, actual: accounts })}
-        ${goalMetric('Landing sessions', U.fmt(p.landing_sessions), U.fmt(landing), 'Traffic required at the planned conversion.', { target: p.landing_sessions, actual: landing })}
-        ${goalMetric('Visit to verified user', U.pct(p.visit_to_signup), conversion == null ? null : U.pct(conversion), 'Verified users divided by landing sessions.', { target: p.visit_to_signup, actual: conversion })}
+      <div class="plan-grid plan-grid-4">
+        ${goalMetric('Sign-ups', U.fmt(p.verified_users), U.fmt(signups), 'HubSpot form sign-ups plus PostHog platform sign-ups.', { target: p.verified_users, actual: signups })}
         ${goalMetric('Impression to landing visit', U.pct(p.impression_to_visit), impressionVisit == null ? null : U.pct(impressionVisit), 'Link efficiency, not generic platform CTR.', { target: p.impression_to_visit, actual: impressionVisit })}
-        ${goalMetric('Paid impressions', U.fmt(p.impressions), impressions == null ? null : U.fmt(impressions), 'Reach required for the planned traffic.', { target: p.impressions, actual: impressions })}
-        ${goalMetric('Paid media budget', U.money(p.paid_budget), spend == null ? null : U.money(spend), `Planned cost per sign-up: ${U.money(p.paid_cps)}.`, { target: p.paid_budget, actual: spend })}
+        ${goalMetric('Landing sessions', U.fmt(p.landing_sessions), U.fmt(landing), 'Traffic required at the planned conversion.', { target: p.landing_sessions, actual: landing })}
+        ${goalMetric('Visit to verified user sign-up', U.pct(p.visit_to_signup), conversion == null ? null : U.pct(conversion), 'Sign-ups divided by landing sessions.', { target: p.visit_to_signup, actual: conversion })}
       </div></div></details>
       <details class="goal-panel"><summary><span><b>Country goal</b><small>${U.esc(country)} within the LATAM plan</small></span><span class="goal-summary">${U.fmt(target)} verified users <i>View country</i></span></summary><div class="goal-body">
         <label class="goal-select">Country <select id="goal-country" aria-label="Country goal">${options}</select></label>
-        <p>Country traffic comes from GA4. Verified accounts remain blank until the product or PostHog sends a trusted country code for each account.</p>
+        <p>Country traffic comes from GA4. Each percentage is the live count divided by this market’s target.</p>
         <div class="plan-grid">
-          ${goalMetric('Verified-user target', U.fmt(target), null, 'This market’s allocation within the 500K plan.')}
-          ${goalMetric('Planned landing sessions', U.fmt(plannedSessions), sessions == null ? null : U.fmt(sessions), 'Actual sessions come from GA4.')}
+          ${goalMetric('Verified-user target', U.fmt(target), users == null ? null : U.fmt(users), 'GA4 users observed in this country, against this market’s allocation.', { target, actual: users })}
+          ${goalMetric('Planned landing sessions', U.fmt(plannedSessions), sessions == null ? null : U.fmt(sessions), 'Actual sessions come from GA4.', { target: plannedSessions, actual: sessions })}
           ${goalMetric('GA4 users', 'Traffic readout', users == null ? null : U.fmt(users), 'Users observed in this country.')}
           ${goalMetric('GA4 engagement rate', 'Quality readout', engagement == null ? null : U.pct(engagement), 'Engaged sessions divided by sessions.')}
           ${goalMetric('HubSpot form sign-ups', 'Lead readout', U.fmt(forms), 'Contacts with a matching CRM country.')}
@@ -90,9 +80,10 @@
     const days = U.days(S.from, S.to);
     const hasSess = D.has('hubspot', 'sessions');
     const sess = D.sessions(), pSess = prev ? D.sessions(prev.from, prev.to) : null;
-    const g = D.ga();
-    const gaUsersDay = D.byDay('ga4', 'ga_users');
-    const dailyUsers = (f, t) => D.sum('ga4', 'ga_users', null, f, t);
+    const g = D.ga(), pg = prev ? D.ga(prev.from, prev.to) : null;
+    const siteUser = (r) => r.dim !== 'channel';
+    const hasSiteUsers = D.M().some((r) => r.source === 'ga4' && r.metric === 'ga_users' && siteUser(r));
+    const gaUsersDay = hasSiteUsers ? D.byDay('ga4', 'ga_users', S.from, S.to, siteUser) : null;
     const form = D.forms().length, pForm = prev ? D.forms(prev.from, prev.to).length : null;
     const plat = D.platform(), pPlat = prev ? D.platform(prev.from, prev.to) : null;
     const total = form + (plat || 0), pTotal = prev ? pForm + (pPlat || 0) : null;
@@ -111,8 +102,9 @@
         : U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', awaiting: 'HubSpot' }),
       hasSess ? U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', value: U.fmt(sess), delta: U.delta(sess, pSess), spark: days.map((d) => sessDay[d]), compare: cmp })
         : U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', awaiting: 'HubSpot' }),
-      g ? U.kpi({ label: 'Unique Visitors', source: 'GA4', value: U.fmt(g.users), delta: U.delta(dailyUsers(S.from, S.to), prev ? dailyUsers(prev.from, prev.to) : null), spark: days.map((d) => gaUsersDay[d]), compare: `${g.usersExact ? 'GA4 total' : 'Sum of daily users'}${g.newUsers != null ? ` · ${U.fmt(g.newUsers)} new` : ''} · ${cmp}` })
-        : U.kpi({ label: 'Unique Visitors', source: 'GA4', awaiting: 'GA4' }),
+      !g ? U.kpi({ label: 'Unique Visitors', source: 'GA4', awaiting: 'GA4' })
+        : g.users == null ? U.kpi({ label: 'Unique Visitors', source: 'GA4', value: '–', compare: 'Deduped visitors for this range appear after the next GA4 sync' })
+          : U.kpi({ label: 'Unique Visitors', source: 'GA4', value: U.fmt(g.users), delta: U.delta(g.users, pg && pg.users), spark: gaUsersDay ? days.map((d) => gaUsersDay[d]) : null, compare: `GA4 total${g.newUsers != null ? ` · ${U.fmt(g.newUsers)} new` : ''} · ${cmp}` }),
     ], 6);
 
     const goals = A.targets.strip(['total_signups', 'platform_signups', 'visit_to_signup_rate', 'landing_sessions', 'unique_visitors', 'engagement_rate']);
@@ -132,25 +124,10 @@
     const steps = D.funnel();
     const funnel = U.card({ cls: 'chart-card', title: 'Visit-to-active-account funnel', sub: `7 steps · count, % of step 1 and step-to-step % · internal tests ${S.exInt ? 'excluded' : 'included'}`, right: U.pill('neutral', 'GA4 · HubSpot · PostHog'), body: C.funnel(steps) });
 
-    const items = [];
-    const w = C.weakest(steps);
-    if (w > 0) items.push({ tone: 'bad', html: `Only <b>${U.pct(steps[w].n / steps[w - 1].n)}</b> of ${U.esc(steps[w - 1].name.toLowerCase())} reach ${U.esc(steps[w].name.toLowerCase())}: the weakest step in the funnel.` });
-    if (plat == null) items.push({ tone: 'watch', html: '<b>Platform sign-ups</b> are awaiting PostHog, so total sign-ups only count the landing form.' });
-    if (hasSess && sess) {
-      let top = 0; ch.forEach((v, i) => { if (v > ch[top]) top = i; });
-      const pch = prev ? D.channels(prev.from, prev.to)[top] : null;
-      items.push({ tone: 'good', html: `${U.esc(C.CHANNELS[top].name)} leads with <b>${U.fmt(ch[top])}</b> sessions (${U.pct(ch[top] / sess)} share)${pch ? `, ${ch[top] >= pch ? 'up' : 'down'} ${U.pct(Math.abs(ch[top] - pch) / pch)} vs previous period.` : '.'}` });
-    }
-    const internal = D.formsAll().length - D.forms().length;
-    if (internal > 0) items.push({ tone: 'watch', html: `<b>${internal}</b> think4ever.com test sign-ups are ${S.exInt ? 'excluded from' : 'included in'} the counts.` });
-    const rs = D.snap('research', 'readings');
-    if (rs) for (const r of rs.rows || []) items.push({ tone: TONE[r.tone] || 'watch', html: `<b>${U.esc(r.title)}</b> ${U.esc(r.text)}` });
-    const order = { bad: 0, watch: 1, good: 2 };
-    items.sort((a, b) => order[a.tone] - order[b.tone]);
     const readings = U.card({
-      title: 'What the data says', sub: `Computed from the live numbers${rs ? ` and the Research reading · ${U.win(rs.from, rs.to)}` : ''}`,
-      body: items.length ? `<div class="insights">${items.slice(0, 3).map(insight).join('')}</div>${items.length > 3 ? `<details class="more"><summary>${U.icon('chevron-right')}More readings <span class="pill pill-neutral">${items.length - 3}</span></summary><div class="insights">${items.slice(3).map(insight).join('')}</div></details>` : ''}`
-        : U.empty('No readings yet', 'Readings appear as soon as the sources send data.'),
+      cls: 'agent-placeholder',
+      title: 'Coming soon',
+      body: U.empty('Coming soon', 'We are integrating an AI agent to explain the Overview of the data.', 'robot'),
     });
 
     return goalPanels()

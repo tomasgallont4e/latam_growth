@@ -87,27 +87,32 @@
     const row = (s.rows || []).find((r) => r.event === name) || { count: 0, users: 0 };
     return { count: row.count, users: row.users, label: U.win(s.from, s.to) };
   };
-  // ---------- GA4 by period (built from the daily metrics the connector stores)
-  const gaTot = () => { const s = D.snap('ga4', 'totals'); return s && s.rows && s.rows[0] ? { s, t: s.rows[0] } : null; };
-  // GA4 user counts are not additive across days. The exact GA4 total is used only when the
-  // period contains the whole synced window; otherwise users are the sum of daily users.
+  // ---------- GA4 by period
+  // totalUsers and newUsers are not additive across days or channels. Headline counts come
+  // from a deduped totals snapshot. New users may also be the sum of site-wide daily rows
+  // (one first visit per person). Channel rows are never added into a visitor total.
+  const gaSnaps = () => ((S.data && S.data.snapshots) || []).filter((s) => s.source === 'ga4' && s.key === 'totals' && s.rows && s.rows[0]);
+  const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  D.gaWindow = () => gaSnaps().slice().sort((a, b) => U.diffDays(b.from, b.to) - U.diffDays(a.from, a.to) || (a.from < b.from ? -1 : 1))[0] || null;
+  D.gaExact = (from = S.from, to = S.to) => gaSnaps().find((s) => s.from === from && s.to === to) || null;
+  // True when the selected range contains the whole synced window, so that window's total applies.
   D.gaCovers = (from = S.from, to = S.to) => {
-    const g = gaTot(); if (!g) return false;
-    return from <= g.s.from && D.sum('ga4', 'ga_sessions', null, U.addDays(to, 1), g.s.to) === 0;
+    const s = D.gaWindow(); if (!s) return false;
+    return from <= s.from && D.sum('ga4', 'ga_sessions', null, U.addDays(to, 1), s.to) === 0;
   };
+  const siteUser = (r) => r.dim !== 'channel';
   D.ga = (from = S.from, to = S.to) => {
-    const has = D.has('ga4', 'ga_sessions'), g = gaTot();
-    if (!has && !g) return null;
-    const exact = D.gaCovers(from, to);
-    if (!has) {
-      if (!exact) return null;
-      return { sessions: +g.t.sessions, engaged: +g.t.engaged_sessions, rate: +g.t.engagement_rate, users: +g.t.users, usersExact: true, newUsers: +g.t.new_users };
-    }
-    const sessions = D.sum('ga4', 'ga_sessions', null, from, to), engaged = D.sum('ga4', 'ga_engaged_sessions', null, from, to);
+    const has = D.has('ga4', 'ga_sessions');
+    const snap = D.gaExact(from, to) || (D.gaCovers(from, to) ? D.gaWindow() : null);
+    const row = snap && snap.rows[0];
+    if (!has && !row) return null;
+    const sessions = has ? D.sum('ga4', 'ga_sessions', null, from, to) : num(row.sessions);
+    const engaged = has ? D.sum('ga4', 'ga_engaged_sessions', null, from, to) : num(row.engaged_sessions);
+    const hasSiteNew = D.M().some((r) => r.source === 'ga4' && r.metric === 'ga_new_users' && siteUser(r) && inR(r.date, from, to));
     return {
-      sessions, engaged, rate: sessions ? engaged / sessions : null,
-      users: exact ? Number(g.t.users) : D.sum('ga4', 'ga_users', null, from, to), usersExact: exact,
-      newUsers: D.has('ga4', 'ga_new_users') ? D.sum('ga4', 'ga_new_users', null, from, to) : exact ? Number(g.t.new_users) : null,
+      sessions, engaged, rate: sessions ? engaged / sessions : (row ? num(row.engagement_rate) : null),
+      users: row ? num(row.users) : null, usersExact: !!row,
+      newUsers: row ? num(row.new_users) : (hasSiteNew ? D.sum('ga4', 'ga_new_users', siteUser, from, to) : null),
     };
   };
   D.group = (rows, keyFn, fields) => {
@@ -122,10 +127,10 @@
   };
   D.gaChannels = (from = S.from, to = S.to) => {
     const out = {};
-    for (const [metric, f] of [['ga_sessions', 'sessions'], ['ga_engaged_sessions', 'engaged_sessions'], ['ga_users', 'users']]) {
+    for (const [metric, f] of [['ga_sessions', 'sessions'], ['ga_engaged_sessions', 'engaged_sessions']]) {
       for (const r of D.M()) if (r.source === 'ga4' && r.metric === metric && inR(r.date, from, to)) {
         const k = r.dim_value || '(not set)';
-        out[k] = out[k] || { channel: k, sessions: 0, engaged_sessions: 0, users: 0 };
+        out[k] = out[k] || { channel: k, sessions: 0, engaged_sessions: 0 };
         out[k][f] += Number(r.value) || 0;
       }
     }

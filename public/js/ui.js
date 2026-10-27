@@ -51,7 +51,7 @@
     const mx = Math.max(...v), mn = Math.min(...v), rg = mx - mn || 1;
     const pts = v.map((y, i) => [((i / (n - 1)) * (w - 4) + 2).toFixed(1), (h - 3 - ((y - mn) / rg) * (h - 8)).toFixed(1)]);
     const line = pts.map((p) => p.join(',')).join(' '), last = pts[n - 1];
-    return `<svg class="sparkline" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polygon class="area" points="2,${h} ${line} ${w - 2},${h}"/><polyline class="line" points="${line}"/><circle class="last" cx="${last[0]}" cy="${last[1]}" r="2.4"/></svg>`;
+    return `<svg class="sparkline" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" overflow="hidden" aria-hidden="true"><polygon class="area" points="2,${h} ${line} ${w - 2},${h}"/><polyline class="line" points="${line}"/><circle class="last" cx="${last[0]}" cy="${last[1]}" r="2.4"/></svg>`;
   };
   U.kpi = (o) => {
     const top = `<div class="kpi-label">${esc(o.label)}<span class="kpi-source">${esc(o.source || '')}</span></div>`;
