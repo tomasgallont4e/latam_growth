@@ -3,7 +3,7 @@
    Daily metrics follow the period selector; snapshots (tables pulled for a fixed window) show their own window. */
 
 const LAUNCH = '2026-10-01';
-const S = { data: null, tab: 'overview', period: 'launch', from: LAUNCH, to: today(), exInt: true };
+const S = { data: null, tab: 'overview', period: 'launch', from: LAUNCH, to: today(), exInt: true, goalCountry: 'Colombia' };
 const main = document.getElementById('main');
 
 // ---------- utils
@@ -75,6 +75,21 @@ function source(key) { return S.data.sources.find((s) => s.key === key) || { sta
 function phAccounts(ext) {
   if (!has('posthog', 'ph_new_persons')) return null;
   return msum('posthog', 'ph_new_persons', (r) => !ext || r.dim_value !== 'Internal');
+}
+function phActivated() {
+  // The connector stores the first matching "Proyecto creado (clic)" Action per
+  // person. It already applies PostHog's test-account filter, so do not try to
+  // infer an additional internal/external split from the dashboard toggle.
+  if (!has('posthog', 'ph_activated_users')) return null;
+  return msum('posthog', 'ph_activated_users');
+}
+function allMetric(metric) { return M().filter((r) => r.metric === metric && inRange(r.date)).reduce((sum, r) => sum + r.value, 0); }
+function countryMetric(metric, country) {
+  return M().filter((r) => r.source === 'ga4' && r.metric === metric && r.dim === 'country' && r.dim_value === country && inRange(r.date)).reduce((sum, r) => sum + r.value, 0);
+}
+function countrySnapshot(country) {
+  const s = snap('ga4', 'countries');
+  return s && (s.rows || []).find((r) => r.country === country);
 }
 function ga4Event(name) {
   if (has('ga4', 'ga_event')) return { count: msum('ga4', 'ga_event', (r) => r.dim_value === name), users: null, label: win(S.from, S.to) };
@@ -164,7 +179,7 @@ function kpis() {
     gt ? `<div class="kpi"><span class="lbl">Engagement rate</span><span class="val">${pct(gt.engagement_rate)}</span><span class="ctx">${fmt(gt.engaged_sessions)} engaged sessions${gt.avg_engagement_sec ? ` · ${gt.avg_engagement_sec}s avg` : ''}</span><span class="ctx">${srcTag('ga4', snapLabel(ga))}</span></div>` : '',
     su ? `<div class="kpi"><span class="lbl">Sign-up submits</span><span class="val">${fmt(su.count)}</span><span class="ctx">${su.users != null ? `${fmt(su.users)} users · ` : ''}includes internal tests</span><span class="ctx">${srcTag('ga4', su.label)}</span></div>` : '',
     `<div class="kpi ${S.exInt && !ext.length ? 'alert' : ''}"><span class="lbl">${S.exInt ? 'External sign-ups' : 'Form sign-ups'}</span><span class="val">${fmt(S.exInt ? ext.length : all.length)}</span><span class="ctx">${S.exInt ? `${all.length - ext.length} internal tests excluded` : `${all.length - ext.length} internal, ${ext.length} external`}</span><span class="ctx">${srcTag('hubspot', 'form')}</span></div>`,
-    ph ? `<div class="kpi"><span class="lbl">${S.exInt ? 'External platform sign-ups' : 'Platform sign-ups'}</span><span class="val">${fmt(phAccounts(S.exInt))}</span><span class="ctx">${S.exInt ? `${fmt(phAccounts(false) - phAccounts(true))} internal excluded` : 'internal and external'} · new people with an email</span><span class="ctx">${srcTag('posthog', win(S.from, S.to))}</span></div>`
+    ph ? `<div class="kpi"><span class="lbl">Platform sign-ups</span><span class="val">${fmt(phAccounts(false))}</span><span class="ctx">New people reported by PostHog; no internal/external split is inferred.</span><span class="ctx">${srcTag('posthog', win(S.from, S.to))}</span></div>`
        : `<div class="kpi pending"><span class="lbl">Platform accounts</span><span class="val">Awaiting PostHog</span><span class="ctx">${srcTag('posthog')}</span><span class="ctx">Sign-ups made directly in the platform</span></div>`,
   ];
   return `<section class="kpis" aria-label="Summary">${tiles.filter(Boolean).join('')}</section>`;
@@ -175,14 +190,15 @@ function funnel() {
   const fs = ga4Event('form_start'), su = ga4Event('sign_up');
   const ext = signups((e) => !S.exInt || !e.internal).length;
   const ph = phAccounts(S.exInt);
+  const activated = phActivated();
   const steps = [
     { name: 'Landing sessions', src: 'HubSpot', n: msum('hubspot', 'sessions') },
     { name: 'Engaged sessions', src: `Google Analytics · ${snapLabel(ga)}`, n: gt ? gt.engaged_sessions : null },
     { name: 'Started the sign-up form', src: `Google Analytics · users`, n: fs ? (fs.users != null ? fs.users : fs.count) : null },
     { name: 'Submitted the sign-up', src: `Google Analytics · users`, n: su ? (su.users != null ? su.users : su.count) : null },
     { name: S.exInt ? 'External sign-ups' : 'Form sign-ups', src: 'HubSpot form', n: ext },
-    { name: S.exInt ? 'External platform sign-ups' : 'Platform sign-ups', src: 'PostHog · any entry point', n: ph, pending: ph == null },
-    { name: 'Activated (first project)', src: 'PostHog · event not tracked yet', n: null, pending: true },
+    { name: 'Platform sign-ups', src: 'PostHog · any entry point', n: ph, pending: ph == null },
+    { name: 'Activation proxy (first project click)', src: 'PostHog · Action “Proyecto creado (clic)”', n: activated, pending: activated == null },
   ];
   const top = Math.max(1, steps[0].n || 1);
   let prev = null;
@@ -191,7 +207,7 @@ function funnel() {
     if (s.n != null) prev = s;
     return `<div class="fstep ${s.pending ? 'pending' : ''}"><span class="name">${esc(s.name)}<small>${esc(s.src)}</small></span><span class="fbar">${s.pending ? '' : `<i style="width:${Math.max(0.5, ((s.n || 0) / top) * 100)}%"></i>`}</span><span class="n">${s.pending ? 'pending' : fmt(s.n)}</span>${conv ? `<span class="conv">${conv}</span>` : ''}</div>`;
   });
-  return `<section class="card">${head('Funnel', 'From a visit to an active account. Each step shows the tool it comes from; Google Analytics steps include internal tests.')}<div class="funnel">${rows.join('')}</div></section>`;
+  return `<section class="card">${head('Funnel', 'From a visit to an active account. Activation is the first “Proyecto creado (clic)” Action per person; it is a click proxy, not a confirmed backend creation.')}<div class="funnel">${rows.join('')}</div></section>`;
 }
 
 function readings() {
@@ -213,8 +229,61 @@ function dailyCard() {
     </form></section>`;
 }
 
+// The shared 500K plan is intentionally separate from the editable monthly
+// targets below. It is a top-down scale scenario, not a claim that every
+// country already has verified accounts attributed to it.
+function goalMetric(label, target, actual, note) {
+  return `<div class="goal-metric"><span>${esc(label)}</span><b>${esc(target)}</b><em>${actual == null ? 'No live value yet' : `Actual ${esc(actual)}`}</em><small>${esc(note)}</small></div>`;
+}
+function goalPanels() {
+  const p = S.data.goalPlan;
+  if (!p) return '';
+  const accounts = phAccounts(false);
+  const landing = msum('hubspot', 'sessions');
+  const impressions = allMetric('ad_impressions');
+  const spend = allMetric('ad_spend');
+  const conversion = landing && accounts != null ? accounts / landing : null;
+  const impressionVisit = impressions && landing ? landing / impressions : null;
+  const markets = Object.keys(p.countries || {});
+  const country = markets.includes(S.goalCountry) ? S.goalCountry : markets[0];
+  const target = p.countries[country] || 0;
+  const liveSessions = countryMetric('ga_geo_sessions', country);
+  const liveUsers = countryMetric('ga_geo_users', country);
+  const liveEngaged = countryMetric('ga_geo_engaged_sessions', country);
+  const snapshot = countrySnapshot(country);
+  const sessions = liveSessions || (snapshot && snapshot.sessions) || null;
+  const users = liveUsers || (snapshot && snapshot.users) || null;
+  const engagement = sessions && liveEngaged ? liveEngaged / sessions : null;
+  const forms = signups((e) => e.country === country && (!S.exInt || !e.internal)).length;
+  const plannedSessions = target ? p.landing_sessions * target / p.verified_users : null;
+  const options = markets.map((name) => `<option value="${esc(name)}" ${name === country ? 'selected' : ''}>${esc(name)}</option>`).join('');
+  return `<details class="goal-panel"><summary><span><b>LATAM 500K goal</b><small>Shared top-down funnel and live progress</small></span><span class="goal-cta">500,000 verified users · View plan</span></summary><div class="goal-body">
+    <p class="note">This scale scenario starts with verified users and derives the traffic, media and efficiency required. It does not replace the monthly targets below.</p>
+    <div class="goal-grid">
+      ${goalMetric('Verified users', fmt(p.verified_users), accounts == null ? null : fmt(accounts), 'PostHog new people across all countries.')}
+      ${goalMetric('Landing sessions', fmt(p.landing_sessions), fmt(landing), 'Traffic required at the planned conversion.')}
+      ${goalMetric('Visit to verified user', pct(p.visit_to_signup), conversion == null ? null : pct(conversion), 'Verified users divided by landing sessions.')}
+      ${goalMetric('Impression to landing visit', pct(p.impression_to_visit), impressionVisit == null ? null : pct(impressionVisit), 'Link traffic efficiency; not generic CTR.')}
+      ${goalMetric('Paid impressions', fmt(p.impressions), impressions ? fmt(impressions) : null, 'Reach needed for the planned traffic.')}
+      ${goalMetric('Paid media budget', money(p.paid_budget), spend ? money(spend) : null, `Planned paid cost per sign-up ${money(p.paid_cps)}.`)}
+    </div>
+  </div></details>
+  <details class="goal-panel"><summary><span><b>Country goal</b><small>${esc(country)} within the LATAM plan</small></span><span class="goal-cta">${fmt(target)} verified users · View country</span></summary><div class="goal-body">
+    <label class="goal-select">Country <select id="goal-country" aria-label="Country goal">${options}</select></label>
+    <p class="note">The target is this market's allocation from the 500K scenario. Actuals appear only when a source can genuinely resolve a country.</p>
+    <div class="goal-grid">
+      ${goalMetric('Verified-user target', fmt(target), null, 'Allocated share of the LATAM plan.')}
+      ${goalMetric('Planned landing sessions', fmt(plannedSessions), sessions == null ? null : fmt(sessions), 'Actual traffic comes from GA4.')}
+      ${goalMetric('GA4 users', 'Traffic readout', users == null ? null : fmt(users), 'Users observed in this country.')}
+      ${goalMetric('GA4 engagement rate', 'Quality readout', engagement == null ? null : pct(engagement), 'Engaged sessions divided by sessions.')}
+      ${goalMetric('HubSpot form sign-ups', 'Lead readout', fmt(forms), 'Contacts with a matching CRM country.')}
+      ${goalMetric('Verified accounts by country', 'Identity coverage', null, 'Requires country code on the verified PostHog/backend account.')}
+    </div>
+  </div></details>`;
+}
+
 function viewOverview() {
-  return `${kpis()}<div class="grid g32">${funnel()}${readings()}</div>${dailyCard()}`;
+  return `${goalPanels()}${kpis()}<div class="grid g32">${funnel()}${readings()}</div>${dailyCard()}`;
 }
 
 function viewAcquisition() {
@@ -249,11 +318,8 @@ const EVENT_INFO = {
   page_view: 'Page view', session_start: 'Session started', user_engagement: 'Page in focus for 1s or more', first_visit: 'First visit of a user', scroll: 'Scrolled 90% of the page',
 };
 function viewConversion() {
-  // Landing events: use the widest window snapshot (the seed baseline is a fixed window; live pulls
-  // widen over time), and a later sub-window if one exists to show what happened recently.
-  const evsnaps = S.data.snapshots.filter((s) => s.source === 'ga4' && s.key === 'events');
-  const all = evsnaps.slice().sort((a, b) => diffDays(b.from, b.to) - diffDays(a.from, a.to) || (a.from < b.from ? -1 : 1))[0] || null;
-  const late = evsnaps.find((s) => all && s !== all && s.to === all.to && s.from > all.from) || null;
+  const all = snap('ga4', 'events', { from: LAUNCH, to: '2026-10-14' }) || snap('ga4', 'events');
+  const late = S.data.snapshots.find((s) => s.source === 'ga4' && s.key === 'events' && all && s.from > all.from && s.to === all.to);
   const lateMap = late ? Object.fromEntries(late.rows.map((r) => [r.event, r.count])) : {};
   const KEY = ['form_start', 'sign_up', 'login', 'generate_lead'];
   const evRows = all ? all.rows.slice().sort((a, b) => (KEY.includes(b.event) - KEY.includes(a.event)) || b.count - a.count) : [];
@@ -265,7 +331,7 @@ function viewConversion() {
       ${all ? table([{ t: 'Event', f: (r) => `<code>${esc(r.event)}</code>${KEY.includes(r.event) ? ' <span class="pill info">key</span>' : ''}<br><small style="color:var(--muted)">${esc(EVENT_INFO[r.event] || '')}</small>` }, { t: 'Events', num: 1, f: (r) => fmt(r.count) }, { t: 'Users', num: 1, f: (r) => fmt(r.users) }, ...(late ? [{ t: `Since ${dshort(late.from)}`, num: 1, f: (r) => fmt(lateMap[r.event] || 0) }] : [])], evRows) : emptyState('ga4')}
       ${late ? `<p class="note">Every sign_up, login and form_start happened before ${dshort(late.from)}, on the tracking test days.</p>` : ''}</section>
     <section class="card">${head('Sign-up log', `${shown.length} shown${S.exInt && list.length > shown.length ? `, ${list.length - shown.length} internal tests hidden` : ''} · ${win(S.from, S.to)}`, srcTag('hubspot', 'form'))}
-      ${shown.length ? table([{ t: 'Date', f: (r) => dshort(r.date) }, { t: 'Form', k: 'form' }, { t: 'Channel', f: (r) => esc(r.channel || r.source || '') }, { t: 'Country', k: 'country' }, { t: 'Type', f: (r) => (r.internal ? '<span class="pill mute">Internal test</span>' : '<span class="pill ok">External</span>') }], shown.slice().sort((a, b) => (a.date < b.date ? 1 : -1)), (r) => (r.internal ? 'internal' : ''))
+      ${shown.length ? table([{ t: 'Date', f: (r) => dshort(r.date) }, { t: 'Form', k: 'form' }, { t: 'Source', k: 'source' }, { t: 'Country', k: 'country' }, { t: 'Type', f: (r) => (r.internal ? '<span class="pill mute">Internal test</span>' : '<span class="pill ok">External</span>') }], shown.slice().sort((a, b) => (a.date < b.date ? 1 : -1)), (r) => (r.internal ? 'internal' : ''))
         : `<div class="empty"><b>No external sign-ups in this period.</b> Turn off "Exclude internal tests" to see the ${list.length} test entries.</div>`}</section>
   </div>
   <div class="grid g2">
@@ -282,14 +348,16 @@ function viewConversion() {
 
 function platformCard() {
   if (!has('posthog', 'ph_new_persons')) return `<section class="card">${head('Platform sign-ups and activation', 'Accounts created directly in the product do not pass through the landing form', srcTag('posthog'))}${emptyState('posthog', 'Accounts created, first project, first build and returning users will appear here')}</section>`;
-  const days_ = byDay('posthog', 'ph_new_persons', S.from, S.to, 'type');
-  const rows = Object.entries(days_).map(([d, v]) => ({ d, ext: v.External || 0, int: v.Internal || 0, site: msum('posthog', 'ph_site_users', () => true, d, d), cta: msum('posthog', 'ph_cta_users', () => true, d, d), reg: msum('posthog', 'ph_registration_users', () => true, d, d) })).filter((r) => r.ext || r.int || r.site || r.reg).reverse();
-  const ref = snap('posthog', 'new_people_by_source'), ctry = snap('posthog', 'countries');
-  return `<section class="card span-all">${head('Platform sign-ups', 'New people identified with an email in the platform, from any entry point (site, landing, Google sign-up)', srcTag('posthog', win(S.from, S.to)))}
-    ${table([{ t: 'Date', f: (r) => dshort(r.d) }, { t: 'Site visitors', num: 1, f: (r) => fmt(r.site) }, { t: 'Clicked a CTA', num: 1, f: (r) => fmt(r.cta) }, { t: 'Started sign-up', num: 1, f: (r) => fmt(r.reg) }, { t: 'External sign-ups', num: 1, f: (r) => (r.ext ? `<b>${fmt(r.ext)}</b>` : '0') }, { t: 'Internal', num: 1, f: (r) => fmt(r.int) }], rows)}
-    <p class="note">Site visitors are people who viewed think4ever.com that day; visitors, clicks and sign-ups are counted per person and per day.</p></section>
-  ${ref ? `<section class="card">${head('Where external sign-ups came from', 'First referrer of each new external person', srcTag('posthog', snapLabel(ref)))}${table([{ t: 'Came from', k: 'source' }, { t: 'People', num: 1, f: (r) => fmt(r.people) }, { t: 'Countries', k: 'countries' }], ref.rows)}<p class="note">${esc(ref.note || '')}</p></section>` : ''}
-  ${ctry ? `<section class="card">${head('Platform interest by country', 'think4ever.com visitors, CTA clicks and sign-up starts per person', srcTag('posthog', snapLabel(ctry)))}${table([{ t: 'Country', k: 'country' }, { t: 'Site visitors', num: 1, f: (r) => fmt(r.site_users) }, { t: 'Clicked a CTA', num: 1, f: (r) => fmt(r.cta) }, { t: 'Started sign-up', num: 1, f: (r) => fmt(r.reg) }, { t: 'External sign-ups', num: 1, f: (r) => fmt(r.ext_signups) }], ctry.rows)}</section>` : ''}`;
+  const people = byDay('posthog', 'ph_new_persons', S.from, S.to);
+  const active = byDay('posthog', 'ph_active_users', S.from, S.to);
+  const activated = byDay('posthog', 'ph_activated_users', S.from, S.to);
+  const rows = [...new Set([...Object.keys(people), ...Object.keys(active), ...Object.keys(activated)])].sort().reverse()
+    .map((d) => ({ d, people: people[d] || 0, active: active[d] || 0, activated: activated[d] || 0 }));
+  const events = byDim('posthog', 'ph_event', S.from, S.to).sort((a, b) => b[1] - a[1]);
+  return `<section class="card span-all">${head('Platform activity', 'Live daily totals from the configured PostHog project', srcTag('posthog', win(S.from, S.to)))}
+    ${table([{ t: 'Date', f: (r) => dshort(r.d) }, { t: 'New people', num: 1, f: (r) => r.people ? `<b>${fmt(r.people)}</b>` : '0' }, { t: 'Active people', num: 1, f: (r) => fmt(r.active) }, { t: 'First project click', num: 1, f: (r) => fmt(r.activated) }], rows)}
+    <p class="note">“First project click” is the first matching “Proyecto creado (clic)” Action per person, with PostHog test accounts filtered. It is a proxy and does not confirm that a project was created. These totals otherwise come directly from PostHog.</p></section>
+  ${events.length ? `<section class="card">${head('Platform events', 'Events captured by PostHog during the selected period', srcTag('posthog', win(S.from, S.to)))}${table([{ t: 'Event', f: (r) => `<code>${esc(r[0])}</code>` }, { t: 'Occurrences', num: 1, f: (r) => fmt(r[1]) }], events)}</section>` : ''}`;
 }
 function channelCard(key, title, metricsHint) {
   const rows = byDim(key, 'ad_spend', S.from, S.to);
@@ -474,126 +542,6 @@ function adFromForm(form) {
   return o;
 }
 
-// ---------- Goals (color-coded targets per metric, cadence and grouping)
-const GOAL = { data: null, edit: null, arch: false };
-const GOAL_STATE = { met: ['ok', 'Goal met'], on: ['ok', 'On pace'], watch: ['warn', 'Watch'], behind: ['crit', 'Behind pace'] };
-const GOAL_COLOR = { met: 'var(--ok)', on: 'var(--navy-2)', watch: 'var(--warn)', behind: 'var(--bad)' };
-async function loadGoals() {
-  try { GOAL.data = await api('api/goals'); } catch (e) { if (e.message !== 'code') toast(e.message); }
-  if (S.tab === 'goals') render();
-}
-function goalFromForm(form) {
-  const o = {};
-  for (const [k, v] of new FormData(form).entries()) o[k] = typeof v === 'string' ? v.trim() : v;
-  if (o.target !== undefined && o.target !== '') o.target = Number(o.target);
-  return o;
-}
-// The values a grouping can take, straight from the data loaded so far.
-function goalGroups(metricKey) {
-  const spec = GOAL.data.metrics[metricKey] || {};
-  if (metricKey === 'external_signups') return [...new Set(S.data.events.filter((e) => e.kind === 'form_signup').map((e) => e.channel || e.source || '').filter(Boolean))].sort();
-  const srcs = spec.sources || (spec.source ? [spec.source] : []);
-  return [...new Set(M().filter((r) => srcs.includes(r.source) && r.metric === spec.metric && r.dim_value).map((r) => r.dim_value))].sort();
-}
-function goalActual(g) {
-  const w = g.window, to = today();
-  const spec = GOAL.data.metrics[g.metric] || {};
-  // undefined (not null) so msum's default filter applies when the goal is overall.
-  const grp = g.grouping !== 'overall' ? (r) => (r.dim_value || '') === g.group : undefined;
-  if (g.metric === 'external_signups') {
-    return S.data.events.filter((e) => e.kind === 'form_signup' && e.date >= w.from && e.date <= to && !e.internal
-      && (g.grouping !== 'channel' || (e.channel || e.source || '') === g.group)).length;
-  }
-  if (g.metric === 'platform_signups') return msum('posthog', 'ph_new_persons', (r) => r.dim_value !== 'Internal', w.from, to);
-  if (g.metric === 'ga4_sessions') {
-    // Daily metrics exist once the GA4 connector runs; the seed baseline is snapshot-only, so the
-    // channels table (its own window, best overlap) is the fallback.
-    if (has('ga4', 'ga_sessions')) return msum('ga4', 'ga_sessions', grp, w.from, to);
-    const ch = snap('ga4', 'channels');
-    const row = ch && ch.rows.find((r) => !grp || r.channel === g.group);
-    return row ? (row.sessions || 0) : 0;
-  }
-  return (spec.sources || [spec.source]).reduce((s, k) => s + msum(k, spec.metric, grp, w.from, to), 0);
-}
-// Pace mirrors lib/goals.js statusOf: green at or above the expected value, amber within 15% below, red further behind.
-function goalStatus(g, actual) {
-  const w = g.window;
-  const elapsed = Math.min(w.total_days, Math.max(1, diffDays(w.from, today()) + 1));
-  const expected = (g.target * elapsed) / w.total_days;
-  return { key: actual >= g.target ? 'met' : actual >= expected ? 'on' : actual >= expected * 0.85 ? 'watch' : 'behind', expected, elapsed };
-}
-function goalRing(share, color) {
-  const p = Math.max(0, Math.min(1, share));
-  const C = 2 * Math.PI * 26;
-  return `<svg class="goal-ring" viewBox="0 0 64 64" role="img" aria-label="${Math.round(p * 100)}% of target">
-    <circle cx="32" cy="32" r="26" class="ring-bg"></circle>
-    <circle cx="32" cy="32" r="26" class="ring-fg" style="stroke:${color};stroke-dasharray:${(p * C).toFixed(1)} ${C.toFixed(1)}"></circle>
-    <text x="32" y="37" text-anchor="middle">${Math.round(p * 100)}%</text></svg>`;
-}
-function goalTile(g) {
-  const spec = GOAL.data.metrics[g.metric] || {};
-  const actual = goalActual(g);
-  const st = goalStatus(g, actual);
-  const [cls, label] = GOAL_STATE[st.key];
-  const share = g.target ? actual / g.target : 0;
-  const paceShare = g.target ? st.expected / g.target : 0;
-  const daysLeft = Math.max(0, diffDays(today(), g.window.end));
-  const num = (v) => (g.metric === 'ad_spend' ? money(v) : fmt(v));
-  return `<div class="goal ${st.key}${g.cadence === 'custom' ? ' big' : ''}">
-    <div class="g-top"><div><div class="g-name">${esc(g.name)}</div>
-      <div class="g-chips"><span class="pill info">${esc(g.window.label)}</span>
-        <span class="pill mute">${esc(GOAL.data.group_label[g.grouping] || g.grouping)}${g.group ? ` · ${esc(g.group)}` : ''}</span>
-        ${g.example ? '<span class="pill mute">Example</span>' : ''}</div></div>
-      <span class="pill ${cls}">${label}</span></div>
-    <div class="g-body">
-      <div class="g-main">
-        <div class="g-actual">${num(actual)}</div>
-        <div class="g-target">of ${num(g.target)} · ${esc(spec.hint || '')}</div>
-        <div class="g-pace"><i style="width:${Math.min(100, share * 100).toFixed(1)}%;background:${GOAL_COLOR[st.key]}"></i><b style="left:${Math.min(99.5, paceShare * 100).toFixed(1)}%"></b></div>
-        <div class="g-note"><span>expected by today: <b>${num(Math.round(st.expected * 10) / 10)}</b></span><span>${daysLeft} day${daysLeft === 1 ? '' : 's'} left</span></div>
-      </div>
-      ${goalRing(share, GOAL_COLOR[st.key])}
-    </div>
-    ${g.example ? '' : `<div class="g-act"><button type="button" class="btn secondary" data-goal-edit="${esc(g.id)}">Edit</button><button type="button" class="btn secondary" data-goal-arch="${esc(g.id)}">${g.status === 'archived' ? 'Restore' : 'Archive'}</button></div>`}
-  </div>`;
-}
-function goalForm(p) {
-  const A = GOAL.data;
-  const spec = A.metrics[p.metric] || {};
-  const groupings = spec.groupings || ['overall'];
-  const groups = goalGroups(p.metric);
-  const f = (k, label, inner, hint) => `<label class="${['name', 'notes'].includes(k) ? 'wide' : ''}"><span>${esc(label)}</span>${inner}${hint ? `<small>${esc(hint)}</small>` : ''}</label>`;
-  const grp = (p.grouping || 'overall');
-  return `<section class="card">${head(p.id ? 'Edit goal' : 'New goal', 'A goal tracks one metric for a calendar month or quarter, overall or for one source, channel or campaign. The tile colors by pace against the target.')}
-  <form id="goal-form" class="goal-form" data-id="${esc(p.id || '')}">
-    ${f('name', 'Goal name (optional)', `<input name="name" type="text" value="${esc(p.name || '')}" placeholder="External sign-ups in the month">`)}
-    ${f('metric', 'What it measures', `<select name="metric">${Object.entries(A.metrics).map(([k, m]) => `<option value="${esc(k)}"${p.metric === k ? ' selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`, spec.hint)}
-    ${f('cadence', 'Cadence', `<select name="cadence">${Object.entries(A.cadences).map(([k, t]) => `<option value="${esc(k)}"${(p.cadence || 'monthly') === k ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`)}
-    ${(p.cadence || 'monthly') === 'custom' ? f('start', 'Window start', `<input name="start" type="date" value="${esc(p.start || '')}" required>`) + f('end', 'Window end', `<input name="end" type="date" value="${esc(p.end || '')}" required>`) : ''}
-    ${f('grouping', 'Grouping', `<select name="grouping">${groupings.map((k) => `<option value="${esc(k)}"${grp === k ? ' selected' : ''}>${esc(A.group_label[k] || k)}</option>`).join('')}</select>`)}
-    ${grp !== 'overall' ? f('group', 'Value', `<select name="group" required>${groups.length ? groups.map((v) => `<option value="${esc(v)}"${p.group === v ? ' selected' : ''}>${esc(v)}</option>`).join('') : '<option value="">No values in the data yet</option>'}</select>`, 'Values come from the data loaded so far.') : ''}
-    ${f('target', 'Target', `<input name="target" type="number" min="0" step="any" value="${p.target != null ? esc(p.target) : ''}" required>`)}
-    ${f('notes', 'Notes (optional)', `<textarea name="notes" rows="2">${esc(p.notes || '')}</textarea>`)}
-    <div class="wide form-row"><button class="btn">${p.id ? 'Save goal' : 'Add goal'}</button><button type="button" class="btn secondary" data-goal-cancel>Cancel</button></div>
-  </form></section>`;
-}
-function viewGoals() {
-  if (!GOAL.data) { loadGoals(); return '<p class="loading">Loading goals…</p>'; }
-  const list = GOAL.data.goals.filter((g) => GOAL.arch || g.status !== 'archived');
-  const counts = { met: 0, on: 0, watch: 0, behind: 0 };
-  for (const g of list) counts[goalStatus(g, goalActual(g)).key] += 1;
-  return `<section class="card">${head('Goals', 'Targets per metric, per calendar month or quarter, overall or by source, channel and campaign. Green: at or above the expected value for today. Amber: within 15% below. Red: further behind.', `<div class="form-row"><button type="button" class="btn" data-goal-new>New goal</button><label class="switch"><input type="checkbox" id="goal-arch"${GOAL.arch ? ' checked' : ''}> Show archived</label></div>`)}
-    <div class="goal-summary">
-      <span class="goal-chip ok"><b>${counts.met}</b> met</span>
-      <span class="goal-chip ok"><b>${counts.on}</b> on pace</span>
-      <span class="goal-chip warn"><b>${counts.watch}</b> watch</span>
-      <span class="goal-chip crit"><b>${counts.behind}</b> behind</span>
-    </div></section>
-  ${GOAL.edit ? goalForm(GOAL.edit) : ''}
-  ${list.length ? `<div class="goal-grid">${list.map(goalTile).join('')}</div>`
-    : '<section class="card"><div class="empty"><b>No goals yet.</b> Leadership sets them with <b>New goal</b>; the examples show how each one reads once loaded.</div></section>'}`;
-}
-
 // ---------- CSV
 function parseCSV(text) {
   const rows = [];
@@ -616,7 +564,7 @@ function toCSV() {
 }
 
 // ---------- render and events
-const VIEWS = { overview: viewOverview, acquisition: viewAcquisition, conversion: viewConversion, goals: viewGoals, channels: viewChannels, ads: viewAds, sources: viewSources };
+const VIEWS = { overview: viewOverview, acquisition: viewAcquisition, conversion: viewConversion, channels: viewChannels, ads: viewAds, sources: viewSources };
 function render() {
   document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === S.tab));
   main.innerHTML = VIEWS[S.tab]();
@@ -693,14 +641,6 @@ main.addEventListener('submit', async (e) => {
     AD.edit = null; AD.sel = r.id; await loadAds();
   } catch (err) { toast(err.message); }
 });
-main.addEventListener('submit', async (e) => {
-  if (e.target.id !== 'goal-form') return;
-  const id = e.target.dataset.id, body = goalFromForm(e.target);
-  try {
-    await api(id ? `api/goals/${encodeURIComponent(id)}` : 'api/goals', { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
-    toast(id ? 'Goal saved' : 'Goal added'); GOAL.edit = null; await loadGoals();
-  } catch (err) { toast(err.message); }
-});
 main.addEventListener('input', (e) => {
   const t = e.target; if (!t.dataset || !t.dataset.max) return;
   const c = main.querySelector(`[data-count="${t.name}"]`);
@@ -708,18 +648,8 @@ main.addEventListener('input', (e) => {
 });
 main.addEventListener('change', (e) => {
   const t = e.target;
+  if (t.id === 'goal-country') { S.goalCountry = t.value; render(); return; }
   if (t.id === 'ad-arch') { AD.arch = t.checked; render(); return; }
-  if (t.id === 'goal-arch') { GOAL.arch = t.checked; render(); return; }
-  const gform = t.closest && t.closest('#goal-form');
-  if (gform) {
-    // The fields change with the metric and grouping: keep what was typed and draw the form again.
-    if (t.name === 'metric' || t.name === 'grouping' || t.name === 'cadence') {
-      const cur = goalFromForm(gform);
-      GOAL.edit = { ...GOAL.edit, ...cur, group: t.name === 'grouping' && cur.grouping === 'overall' ? '' : GOAL.edit.group, id: gform.dataset.id || undefined };
-      render();
-    }
-    return;
-  }
   const form = t.closest && t.closest('#ad-form'); if (!form) return;
   if (t.name === 'persona') { const u = form.elements.utm_content; if (u && (!u.value || /^p\d\d$/.test(u.value))) u.value = t.value; }
   if (t.name === 'platform') {
@@ -769,15 +699,6 @@ main.addEventListener('click', async (e) => {
 main.addEventListener('click', async (e) => {
   const del = e.target.closest('[data-del-note]');
   if (del) { try { await api('api/notes/' + encodeURIComponent(del.dataset.delNote), { method: 'DELETE' }); toast('Note removed'); await load(); } catch (err) { toast(err.message); } return; }
-  let gl;
-  if ((gl = e.target.closest('[data-goal-new]'))) { GOAL.edit = { metric: 'landing_sessions', cadence: 'monthly', grouping: 'overall' }; render(); main.querySelector('#goal-form input')?.focus(); return; }
-  if ((gl = e.target.closest('[data-goal-cancel]'))) { GOAL.edit = null; render(); return; }
-  if ((gl = e.target.closest('[data-goal-edit]'))) { GOAL.edit = { ...GOAL.data.goals.find((x) => x.id === gl.dataset.goalEdit) }; render(); main.querySelector('#goal-form')?.scrollIntoView({ behavior: 'smooth' }); return; }
-  if ((gl = e.target.closest('[data-goal-arch]'))) {
-    const goal = GOAL.data.goals.find((x) => x.id === gl.dataset.goalArch);
-    try { await api(`api/goals/${encodeURIComponent(goal.id)}`, { method: 'PUT', body: JSON.stringify({ status: goal.status === 'archived' ? 'active' : 'archived' }) }); toast(goal.status === 'archived' ? 'Goal restored' : 'Goal archived'); await loadGoals(); } catch (err) { toast(err.message); }
-    return;
-  }
   const sync = e.target.closest('[data-sync]');
   if (sync) { sync.disabled = true; sync.textContent = 'Syncing…'; try { const r = await api('api/sync/' + sync.dataset.sync, { method: 'POST' }); toast(`Synced: ${r.metrics} rows`); await load(); } catch (err) { toast(err.message); sync.disabled = false; sync.textContent = 'Sync now'; } return; }
   if (e.target.id === 'dl-csv') {

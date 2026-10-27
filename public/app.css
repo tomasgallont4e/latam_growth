@@ -68,6 +68,26 @@ a { color: var(--navy-2); }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; min-width: 0; }
 .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .card-head p { margin: 2px 0 0; color: var(--text-2); font-size: 12.5px; }
+.goal-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.goal-panel summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; cursor: pointer; padding: 15px 18px; }
+.goal-panel summary::-webkit-details-marker { display: none; }
+.goal-panel summary > span:first-child { display: grid; gap: 2px; }
+.goal-panel summary b { font: 700 16px var(--font-head); }
+.goal-panel summary small { color: var(--text-2); font-size: 12px; }
+.goal-panel[open] summary { background: var(--surface-2); border-bottom: 1px solid var(--line); }
+.goal-cta { color: var(--navy-2); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.goal-body { padding: 16px 18px 18px; }
+.goal-body .note { margin-top: 0; }
+.goal-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--line); border-radius: 8px; margin-top: 14px; }
+.goal-metric { display: grid; align-content: start; gap: 4px; min-height: 116px; padding: 13px 14px; border-left: 1px solid var(--line); border-top: 1px solid var(--line); }
+.goal-metric:nth-child(3n + 1) { border-left: 0; }
+.goal-metric:nth-child(-n + 3) { border-top: 0; }
+.goal-metric > span { color: var(--text-2); font-size: 11px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; }
+.goal-metric b { font: 700 20px/1.2 var(--font-head); }
+.goal-metric em { color: var(--navy-2); font-size: 12px; font-style: normal; font-weight: 600; }
+.goal-metric small { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.goal-select { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 12px; font-weight: 650; }
+.goal-select select { min-width: 160px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: 7px; padding: 6px 8px; color: var(--text); }
 .src { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-2); white-space: nowrap; }
 .src::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--navy-2); }
 .src.pending::before { background: var(--warn); }
@@ -167,6 +187,11 @@ tr.internal td { color: var(--muted); }
   .kpi:nth-child(4) { border-left: 0; }
   .kpi:nth-child(n+4) { border-top: 1px solid var(--line); }
   .g3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .goal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .goal-metric:nth-child(3n + 1) { border-left: 1px solid var(--line); }
+  .goal-metric:nth-child(2n + 1) { border-left: 0; }
+  .goal-metric:nth-child(-n + 3) { border-top: 1px solid var(--line); }
+  .goal-metric:nth-child(-n + 2) { border-top: 0; }
 }
 @media (max-width: 820px) {
   .top { padding-inline: 16px; }
@@ -177,6 +202,10 @@ tr.internal td { color: var(--muted); }
   .kpi:nth-child(-n+2) { border-top: 0; }
   .kpi:nth-child(even) { border-left: 1px solid var(--line); }
   .fstep { grid-template-columns: minmax(110px, 1fr) minmax(0, 1.4fr) 52px; }
+  .goal-panel summary { align-items: flex-start; flex-direction: column; }
+  .goal-grid { grid-template-columns: 1fr; }
+  .goal-metric, .goal-metric:nth-child(n) { border-left: 0; border-top: 1px solid var(--line); }
+  .goal-metric:first-child { border-top: 0; }
   .defs div { grid-template-columns: 1fr; gap: 2px; }
 }
 
@@ -225,47 +254,5 @@ tr.sel td { background: var(--info-soft); }
 .history b { color: var(--text); font-weight: 600; }
 
 /* Roles: read sees everything and changes nothing; ads also works in the ad loader */
-body[data-role="read"] :is(#note-form, #csv-form, [data-sync], [data-del-note], [data-ad-new], [data-ad-edit], [data-ad-dup], [data-ad-arch], [data-ad-sign], [data-ad-unsign], [data-ad-send], #ad-form, [data-goal-new], [data-goal-edit], [data-goal-arch], #goal-form),
-body[data-role="ads"] :is(#note-form, #csv-form, [data-sync], [data-del-note], [data-goal-new], [data-goal-edit], [data-goal-arch], #goal-form) { display: none !important; }
-
-/* Goals (color-coded targets by cadence and grouping) */
-.goal-summary { display: flex; flex-wrap: wrap; gap: 8px; }
-.goal-chip { display: inline-flex; align-items: baseline; gap: 7px; border-radius: 8px; padding: 6px 12px; font-weight: 600; font-size: 13px; }
-.goal-chip b { font: 800 19px/1 var(--font-head); font-variant-numeric: tabular-nums; }
-.goal-chip.ok { background: var(--ok-soft); color: var(--ok); }
-.goal-chip.warn { background: var(--warn-soft); color: var(--warn); }
-.goal-chip.crit { background: var(--bad-soft); color: var(--bad); }
-.goal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 350px), 1fr)); gap: 14px; }
-.goal.big { grid-column: 1 / -1; }
-.goal.big .g-actual { font-size: 44px; }
-.goal.big .g-pace { height: 12px; }
-.goal { border: 1px solid var(--line); border-left: 5px solid var(--navy-3); border-radius: var(--radius); padding: 15px 16px; background: var(--surface); display: grid; gap: 12px; min-width: 0; align-content: start; }
-.goal.met { border-left-color: var(--ok); background: var(--ok-soft); }
-.goal.on { border-left-color: var(--ok); }
-.goal.watch { border-left-color: var(--warn); background: var(--warn-soft); }
-.goal.behind { border-left-color: var(--bad); background: var(--bad-soft); }
-.goal .g-top { display: flex; justify-content: space-between; gap: 8px; align-items: start; }
-.goal .g-name { font: 700 15px/1.3 var(--font-head); }
-.goal .g-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-.goal .g-body { display: flex; align-items: center; gap: 14px; }
-.goal .g-main { flex: 1; min-width: 0; display: grid; gap: 5px; }
-.goal .g-actual { font: 800 36px/1.05 var(--font-head); font-variant-numeric: tabular-nums; }
-.goal .g-target { color: var(--text-2); font-size: 12.5px; }
-.goal .g-pace { position: relative; height: 10px; background: var(--surface-2); border-radius: 3px; margin-top: 4px; }
-.goal.met .g-pace, .goal.watch .g-pace, .goal.behind .g-pace { background: var(--surface); }
-.goal .g-pace i { display: block; height: 100%; border-radius: 3px; min-width: 2px; transition: width .3s; }
-.goal .g-pace b { position: absolute; top: -3px; width: 2px; height: 16px; background: var(--orange); }
-.goal .g-note { font-size: 12px; color: var(--text-2); display: flex; gap: 4px 12px; flex-wrap: wrap; }
-.goal .g-note b { color: var(--text); }
-.goal .g-act { display: flex; gap: 8px; }
-.goal .g-act .btn { padding: 4px 10px; }
-.goal-ring { width: 78px; height: 78px; flex-shrink: 0; }
-.goal-ring .ring-bg { fill: none; stroke: var(--surface-2); stroke-width: 7; }
-.goal.met .goal-ring .ring-bg, .goal.watch .goal-ring .ring-bg, .goal.behind .goal-ring .ring-bg { stroke: var(--surface); }
-.goal-ring .ring-fg { fill: none; stroke-width: 7; stroke-linecap: round; transform: rotate(-90deg); transform-origin: 32px 32px; transition: stroke-dasharray .4s; }
-.goal-ring text { font: 700 13px var(--font-head); fill: var(--text); }
-.goal-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 12px 14px; }
-.goal-form label { display: grid; gap: 4px; font-size: 12.5px; color: var(--text-2); min-width: 0; align-content: start; }
-.goal-form .wide { grid-column: 1 / -1; }
-.goal-form input, .goal-form select, .goal-form textarea { border: 1px solid var(--line-strong); background: var(--surface); color: var(--text); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 13px; min-width: 0; width: 100%; }
-.goal-form small { color: var(--muted); }
+body[data-role="read"] :is(#note-form, #csv-form, [data-sync], [data-del-note], [data-ad-new], [data-ad-edit], [data-ad-dup], [data-ad-arch], [data-ad-sign], [data-ad-unsign], [data-ad-send], #ad-form),
+body[data-role="ads"] :is(#note-form, #csv-form, [data-sync], [data-del-note]) { display: none !important; }

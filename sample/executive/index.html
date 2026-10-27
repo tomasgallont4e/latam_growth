@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Executive · LATAM Growth</title>
+  <script>
+    try {
+      var savedTheme = localStorage.getItem('t4e-exec-theme');
+      if (savedTheme === 'dark' || savedTheme === 'light') document.documentElement.dataset.theme = savedTheme;
+    } catch (e) {}
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap">
+  <link rel="stylesheet" href="preview.css?v=18">
+</head>
+<body>
+  <header class="top">
+    <div class="top-row">
+      <div class="brand">
+        <span class="t4e-word">think<b>4</b>ever</span>
+        <span class="brand-sep" aria-hidden="true"></span>
+        <span class="brand-title">Executive</span>
+      </div>
+      <div class="controls">
+        <label class="ctl" for="period">Period
+          <select id="period" aria-label="Period">
+            <option value="d30">Last 30 days</option>
+          </select>
+        </label>
+        <a class="ctl" href="classic/" style="text-decoration:none">Classic dashboard</a>
+        <div class="theme-switch" role="group" aria-label="Theme">
+          <button type="button" data-theme-pick="dark">Dark</button>
+          <button type="button" data-theme-pick="light">Light</button>
+        </div>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Views">
+      <button type="button" data-page="overview" class="active">Overview</button>
+      <button type="button" data-page="marketing">Marketing</button>
+      <button type="button" data-page="growth">Growth</button>
+      <button type="button" data-page="core">Core product</button>
+      <button type="button" data-page="economics">Unit economics</button>
+      <button type="button" data-page="targets">Targets</button>
+      <button type="button" data-page="sources">Data sources</button>
+    </nav>
+  </header>
+  <div class="layout">
+    <aside class="countries" aria-label="Countries">
+      <h2>Countries</h2>
+      <p class="aside-note">Targets stay app-wide. Checking countries changes the actuals.</p>
+      <label class="chk all"><input type="checkbox" id="all" checked> All</label>
+      <div id="country-list"></div>
+    </aside>
+    <main id="main" class="main">
+      <p class="loading">Loading…</p>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="preview.js?v=17"></script>
+</body>
+</html>

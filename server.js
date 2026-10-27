@@ -1,16 +1,19 @@
 'use strict';
-require('dotenv').config();
-
 const path = require('path');
+// The process manager can start Node from another working directory. Load the
+// service's .env beside this file rather than resolving it from process.cwd().
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const store = require('./lib/store');
 const seed = require('./lib/seed');
 const ingest = require('./lib/ingest');
 const CATALOG = require('./lib/sources');
-const { connectors, configured } = require('./lib/connectors');
+const { connectors, configured, REQUIRED } = require('./lib/connectors');
 const auth = require('./lib/auth');
 const ads = require('./lib/adloader');
 const goals = require('./lib/goals');
+const executive = require('./lib/executive');
+const targets = require('./lib/targets');
 
 const app = express();
 app.set('trust proxy', true);
@@ -23,7 +26,11 @@ app.get(['/health', '/api/health'], async (req, res) => {
 
 // Login: every page and API route below needs a session (DASH_USERS in the service variables).
 auth.mount(app);
-app.use(express.static(path.join(__dirname, 'public')));
+// The public dashboard is the application's active interface. The executive
+// prototype stays available for comparison without replacing the live route.
+app.use('/data', (req, res) => res.status(404).json({ error: 'not found' }));
+app.use('/executive', express.static(path.join(__dirname, 'sample', 'executive'), { redirect: false }));
+app.use(express.static(path.join(__dirname, 'public'), { redirect: false }));
 
 // Optional team code: when TEAM_CODE is set, the API asks for it.
 app.use('/api', (req, res, next) => {
@@ -55,7 +62,73 @@ app.get('/api/data', async (req, res, next) => {
       notes: clean(await store.list('note')),
       sources: await sourcesView(),
       synclog: clean(await store.list('synclog')).slice(-30).reverse(),
+      goalPlan: await targets.getPlan(store),
     });
+  } catch (e) { next(e); }
+});
+
+// Executive view: built only from real rows (connectors, CSV loads, daily routine).
+app.get('/api/executive', async (req, res, next) => {
+  try {
+    const clean = (rows) => rows.map(({ _at, ...r }) => r);
+    const data = await executive.build(store);
+    data.sources = await sourcesView();
+    data.synclog = clean(await store.list('synclog')).slice(-30).reverse().map((r) => ({
+      ...r, rows: r.rows != null ? r.rows : (Number(r.metrics) || 0) + (Number(r.events) || 0) + (Number(r.snapshots) || 0),
+    }));
+    res.json(data);
+  } catch (e) { next(e); }
+});
+
+// The scale plan is persisted separately from monthly operating targets. The
+// UI reads this endpoint through api/data, so editing Targets updates Overview
+// without changing source code or redeploying a different goal value.
+app.get('/api/goal-plan', async (req, res, next) => {
+  try { res.json(await targets.getPlan(store)); } catch (e) { next(e); }
+});
+app.put('/api/goal-plan', async (req, res, next) => {
+  try { res.json(await targets.savePlan(store, req.body || {}, req.user)); }
+  catch (e) { e.status ? res.status(e.status).json({ error: e.message }) : next(e); }
+});
+
+// Shared monthly operating targets. They back the existing Target cards and
+// the CSV workflow in the active dashboard.
+app.get('/api/targets', async (req, res, next) => {
+  try {
+    const month = String(req.query.month || '');
+    if (!targets.monthOk(month)) return res.status(400).json({ error: 'month must be YYYY-MM' });
+    res.json({ metrics: targets.METRICS, targets: await targets.monthly(store, month) });
+  } catch (e) { next(e); }
+});
+app.get('/api/targets/template', (req, res) => {
+  const month = targets.monthOk(req.query.month) ? req.query.month : new Date().toISOString().slice(0, 7);
+  const lines = Object.keys(targets.METRICS).map((key) => `${month},${key},`);
+  res.type('text/csv').send(`month,metric_key,target_value\n${lines.join('\n')}\n`);
+});
+app.post('/api/targets/import', async (req, res, next) => {
+  try {
+    const csv = req.body && req.body.csv;
+    if (typeof csv !== 'string' || csv.length > 500000) return res.status(400).json({ error: 'CSV is required' });
+    res.json(req.body.confirm ? await targets.applyImport(store, csv, req.user) : await targets.previewImport(store, csv));
+  } catch (e) { next(e); }
+});
+app.put('/api/targets/:id', async (req, res, next) => {
+  try {
+    const [month, metric] = String(req.params.id || '').split('|');
+    const value = targets.validateTarget(month, metric, req.body && req.body.target_value);
+    if (value == null) return res.status(400).json({ error: 'Invalid target' });
+    const id = `${month}|${metric}`;
+    const row = { month, metric_key: metric, target_value: value, updated_by: req.user, updated_at: new Date().toISOString() };
+    await store.upsert('target', id, row);
+    res.json({ id, ...row });
+  } catch (e) { next(e); }
+});
+app.delete('/api/targets/:id', async (req, res, next) => {
+  try {
+    const [month, metric] = String(req.params.id || '').split('|');
+    if (!targets.monthOk(month) || !targets.METRICS[metric]) return res.status(400).json({ error: 'Invalid target' });
+    await store.remove('target', `${month}|${metric}`);
+    res.json({ ok: true });
   } catch (e) { next(e); }
 });
 
@@ -63,7 +136,7 @@ app.get('/api/data', async (req, res, next) => {
 app.post('/api/ingest', async (req, res, next) => {
   try {
     const key = process.env.INGEST_KEY;
-    if (key && req.get('x-ingest-key') !== key) return res.status(401).json({ error: 'ingest key' });
+    if (key && !req.user && req.get('x-ingest-key') !== key) return res.status(401).json({ error: 'ingest key' });
     res.json(await ingest(req.body, req.get('x-load-how') === 'csv' ? 'csv' : 'api'));
   } catch (e) { e.status ? res.status(e.status).json({ error: e.message }) : next(e); }
 });
@@ -259,9 +332,23 @@ async function autoSync() {
 
 (async () => {
   await store.init();
-  const n = await seed();
+  const liveSources = new Set(Object.keys(connectors).filter(configured));
+  console.log('connector configuration:', Object.fromEntries(
+    Object.keys(connectors).map((key) => [key, configured(key)])
+  ));
+  // Safe setup diagnostic: names only, never the values of tokens or secrets.
+  // This makes a missing service variable actionable in deployment logs.
+  for (const key of Object.keys(connectors)) {
+    const missing = (REQUIRED[key] || []).filter((name) => !String(process.env[name] || '').trim());
+    if (missing.length) console.warn(`connector ${key} missing variables: ${missing.join(', ')}`);
+  }
+  const n = await seed(liveSources);
   if (n) console.log(`Seed loaded for ${n} source(s)`);
   app.listen(PORT, () => console.log(`Growth dashboard (${store.kind}) listening on ${PORT}${auth.configured() ? '' : ' (locked: DASH_USERS not set)'}`));
-  setTimeout(autoSync, 20e3);
+  if (process.env.AUTO_SYNC === '0') {
+    console.log('Automatic connector sync disabled; use Sync now to refresh data.');
+    return;
+  }
+  void autoSync();
   setInterval(autoSync, Math.max(1, Number(process.env.SYNC_EVERY_HOURS || 6)) * 3600e3);
 })().catch((e) => { console.error('Boot failed:', e); process.exit(1); });
