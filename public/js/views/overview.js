@@ -73,7 +73,9 @@
     const days = U.days(S.from, S.to);
     const hasSess = D.has('hubspot', 'sessions');
     const sess = D.sessions(), pSess = prev ? D.sessions(prev.from, prev.to) : null;
-    const ga = D.snap('ga4', 'totals'), gt = ga && ga.rows && ga.rows[0];
+    const g = D.ga();
+    const gaUsersDay = D.byDay('ga4', 'ga_users');
+    const dailyUsers = (f, t) => D.sum('ga4', 'ga_users', null, f, t);
     const form = D.forms().length, pForm = prev ? D.forms(prev.from, prev.to).length : null;
     const plat = D.platform(), pPlat = prev ? D.platform(prev.from, prev.to) : null;
     const total = form + (plat || 0), pTotal = prev ? pForm + (pPlat || 0) : null;
@@ -90,28 +92,16 @@
         : U.kpi({ label: 'Platform Sign-ups', source: 'PostHog', awaiting: 'PostHog' }),
       hasSess ? U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', value: U.pct(rate), delta: U.delta(rate, pRate), spark: days.map((d) => (sessDay[d] ? (suDay[d].form + suDay[d].platform) / sessDay[d] : 0)), compare: cmp })
         : U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', awaiting: 'HubSpot' }),
-      hasSess ? U.kpi({ label: 'Landing Sessions', source: 'HubSpot', value: U.fmt(sess), delta: U.delta(sess, pSess), spark: days.map((d) => sessDay[d]), compare: cmp })
-        : U.kpi({ label: 'Landing Sessions', source: 'HubSpot', awaiting: 'HubSpot' }),
-      gt ? U.kpi({ label: 'Unique Visitors', source: 'GA4', value: U.fmt(gt.users), delta: U.delta(null, null), compare: `GA4 window ${U.win(ga.from, ga.to)} · ${U.fmt(gt.new_users)} new` })
+      hasSess ? U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', value: U.fmt(sess), delta: U.delta(sess, pSess), spark: days.map((d) => sessDay[d]), compare: cmp })
+        : U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', awaiting: 'HubSpot' }),
+      g ? U.kpi({ label: 'Unique Visitors', source: 'GA4', value: U.fmt(g.users), delta: U.delta(dailyUsers(S.from, S.to), prev ? dailyUsers(prev.from, prev.to) : null), spark: days.map((d) => gaUsersDay[d]), compare: `${g.usersExact ? 'GA4 total' : 'Sum of daily users'}${g.newUsers != null ? ` · ${U.fmt(g.newUsers)} new` : ''} · ${cmp}` })
         : U.kpi({ label: 'Unique Visitors', source: 'GA4', awaiting: 'GA4' }),
     ], 6);
-
-    // Sign-ups by persona (utm_content p01–p13): whether the launch reaches the audience it was designed for.
-    const personas = {};
-    for (const e of D.forms()) { const c = String(e.utm_content || '').trim(); if (c) personas[c] = (personas[c] || 0) + 1; }
-    const pRows = Object.entries(personas).sort((a, b) => b[1] - a[1]);
-    const personaTotal = pRows.reduce((s, r) => s + r[1], 0);
-    const personaCard = U.card({
-      title: 'Sign-ups by persona', sub: pRows.length ? `External sign-ups carrying a persona code in utm_content · ${U.fmt(personaTotal)} of ${U.fmt(form)}` : 'Every ad piece carries its persona (p01–p13) in utm_content',
-      right: U.srcPill('hubspot', 'utm_content'),
-      body: pRows.length ? C.hbars(pRows, personaTotal)
-        : `${U.empty('No persona-tagged sign-ups yet', 'Sign-ups show here per persona once campaigns with utm_content run, so leadership can see which audience the launch actually reaches.', 'users')}`,
-    });
 
     const goals = A.targets.strip(['total_signups', 'platform_signups', 'visit_to_signup_rate', 'landing_sessions', 'unique_visitors', 'engagement_rate']);
 
     const ch = D.channels();
-    const mix = U.card({ title: 'Channel mix', sub: `Share of landing sessions · <span class="mono">${U.fmt(sess)} sessions</span>`, right: U.srcPill('hubspot'), body: hasSess ? C.mix(ch) : U.awaiting('hubspot') });
+    const mix = U.card({ title: 'Channel mix', sub: `Share of landing sessions · <span class="mono">${U.fmt(sess)} sessions</span>`, right: U.srcPill('hubspot', 'todo el sitio'), body: hasSess ? C.mix(ch) : U.awaiting('hubspot') });
 
     const notes = ((S.data.notes) || []).filter((n) => n.date >= S.from && n.date <= S.to).sort((a, b) => (a.date < b.date ? -1 : 1));
     const daily = D.dailyChannels();
@@ -149,7 +139,7 @@
     return goalPanels()
       + U.section('Launch at a glance', `Six numbers, sign-ups first · ${U.win(S.from, S.to)} · ${cmp}`, kpis)
       + goals
-      + `<section class="section grid-2-1">${personaCard}${mix}</section>`
+      + `<section class="section">${mix}</section>`
       + `<section class="section">${chart}</section>`
       + `<section class="section grid-2-1">${funnel}${readings}</section>`;
   }

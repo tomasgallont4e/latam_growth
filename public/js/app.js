@@ -87,16 +87,82 @@
     const row = (s.rows || []).find((r) => r.event === name) || { count: 0, users: 0 };
     return { count: row.count, users: row.users, label: U.win(s.from, s.to) };
   };
+  // ---------- GA4 by period (built from the daily metrics the connector stores)
+  const gaTot = () => { const s = D.snap('ga4', 'totals'); return s && s.rows && s.rows[0] ? { s, t: s.rows[0] } : null; };
+  // GA4 user counts are not additive across days. The exact GA4 total is used only when the
+  // period contains the whole synced window; otherwise users are the sum of daily users.
+  D.gaCovers = (from = S.from, to = S.to) => {
+    const g = gaTot(); if (!g) return false;
+    return from <= g.s.from && D.sum('ga4', 'ga_sessions', null, U.addDays(to, 1), g.s.to) === 0;
+  };
+  D.ga = (from = S.from, to = S.to) => {
+    const has = D.has('ga4', 'ga_sessions'), g = gaTot();
+    if (!has && !g) return null;
+    const exact = D.gaCovers(from, to);
+    if (!has) {
+      if (!exact) return null;
+      return { sessions: +g.t.sessions, engaged: +g.t.engaged_sessions, rate: +g.t.engagement_rate, users: +g.t.users, usersExact: true, newUsers: +g.t.new_users };
+    }
+    const sessions = D.sum('ga4', 'ga_sessions', null, from, to), engaged = D.sum('ga4', 'ga_engaged_sessions', null, from, to);
+    return {
+      sessions, engaged, rate: sessions ? engaged / sessions : null,
+      users: exact ? Number(g.t.users) : D.sum('ga4', 'ga_users', null, from, to), usersExact: exact,
+      newUsers: D.has('ga4', 'ga_new_users') ? D.sum('ga4', 'ga_new_users', null, from, to) : exact ? Number(g.t.new_users) : null,
+    };
+  };
+  D.group = (rows, keyFn, fields) => {
+    const m = new Map();
+    for (const r of rows) {
+      const k = keyFn(r); if (k == null) continue;
+      const o = m.get(k) || Object.assign({ key: k }, ...fields.map((f) => ({ [f]: 0 })));
+      fields.forEach((f) => { o[f] += Number(r[f]) || 0; });
+      m.set(k, o);
+    }
+    return [...m.values()];
+  };
+  D.gaChannels = (from = S.from, to = S.to) => {
+    const out = {};
+    for (const [metric, f] of [['ga_sessions', 'sessions'], ['ga_engaged_sessions', 'engaged_sessions'], ['ga_users', 'users']]) {
+      for (const r of D.M()) if (r.source === 'ga4' && r.metric === metric && inR(r.date, from, to)) {
+        const k = r.dim_value || '(not set)';
+        out[k] = out[k] || { channel: k, sessions: 0, engaged_sessions: 0, users: 0 };
+        out[k][f] += Number(r.value) || 0;
+      }
+    }
+    return Object.values(out).sort((a, b) => b.sessions - a.sessions);
+  };
+  D.gaEvents = (from = S.from, to = S.to) => D.byDim('ga4', 'ga_event', from, to).map(([event, count]) => ({ event, count }));
+  D.gaCountries = (from = S.from, to = S.to) => {
+    const out = {};
+    for (const [metric, f] of [['ga_geo_sessions', 'sessions'], ['ga_geo_users', 'users'], ['ga_geo_engaged_sessions', 'engaged_sessions'], ['ga_geo_key_events', 'key_events']]) {
+      for (const r of D.M()) if (r.source === 'ga4' && r.metric === metric && inR(r.date, from, to)) {
+        const k = r.dim_value || '(not set)';
+        out[k] = out[k] || { country: k, sessions: 0, users: 0, engaged_sessions: 0, key_events: 0 };
+        out[k][f] += Number(r.value) || 0;
+      }
+    }
+    return Object.values(out);
+  };
+  // GA4 sessions by UTM / landing page / city for the period (snapshot rows carry their date).
+  D.utmRows = (from = S.from, to = S.to) => {
+    const s = D.snap('ga4', 'utm_attribution');
+    return s ? (s.rows || []).filter((r) => inR(r.date, from, to)) : [];
+  };
+  D.path = (p) => String(p || '(not set)').split('?')[0] || '/';
+  // Persona = the pNN prefix of utm_content (p03, p03_video_a -> p03).
+  D.persona = (v) => { const m = /^p(\d{1,2})(?!\d)/i.exec(String(v || '').trim()); return m ? `p${m[1].padStart(2, '0')}` : null; };
+  D.formPersona = (e) => D.persona(e.first_utm_content) || D.persona(e.utm_content);
+  D.formCampaign = (e) => e.first_utm_campaign || e.utm_campaign || '';
   D.PAID = ['meta', 'linkedin', 'google_ads'];
   D.anyPaid = () => D.M().some((r) => D.PAID.includes(r.source) && /^ad_/.test(r.metric));
   D.paidSum = (metric, from = S.from, to = S.to, only) => (only ? [only] : D.PAID).reduce((s, k) => s + D.sum(k, metric, null, from, to), 0);
   D.funnel = (from = S.from, to = S.to) => {
-    const ga = D.snap('ga4', 'totals', from, to), gt = ga && ga.rows && ga.rows[0];
+    const gaF = D.ga(from, to);
     const fs = D.ga4Event('form_start', from, to), su = D.ga4Event('sign_up', from, to);
     const users = (e) => (e ? (e.users != null ? e.users : e.count) : null);
     return [
-      { name: 'Landing sessions', src: 'HubSpot', n: D.has('hubspot', 'sessions') ? D.sessions(from, to) : null },
-      { name: 'Engaged sessions', src: 'GA4', n: gt ? gt.engaged_sessions : null },
+      { name: 'Landing sessions', src: 'HubSpot · todo el sitio', n: D.has('hubspot', 'sessions') ? D.sessions(from, to) : null },
+      { name: 'Engaged sessions', src: 'GA4', n: gaF ? gaF.engaged : null },
       { name: 'Form start', src: 'GA4', n: users(fs) },
       { name: 'Sign-up submit', src: 'GA4', n: users(su) },
       { name: S.exInt ? 'External form sign-ups' : 'Form sign-ups', src: 'HubSpot', n: D.forms(from, to).length },
@@ -106,11 +172,10 @@
   };
   // Actual value of a targeted metric for a date range (used by the monthly goals).
   D.actual = (key, from, to) => {
-    const ga = () => { const s = D.snapIn('ga4', 'totals', from, to); return s && s.rows && s.rows[0]; };
     switch (key) {
       case 'landing_sessions': return D.has('hubspot', 'sessions') ? D.sessions(from, to) : null;
-      case 'unique_visitors': { const g = ga(); return g ? Number(g.users) : null; }
-      case 'engagement_rate': { const g = ga(); return g ? Number(g.engagement_rate) : null; }
+      case 'unique_visitors': { const g = D.ga(from, to); return g ? g.users : null; }
+      case 'engagement_rate': { const g = D.ga(from, to); return g ? g.rate : null; }
       case 'total_signups': return D.signups(from, to);
       case 'platform_signups': return D.platform(from, to);
       case 'visit_to_signup_rate': { const s = D.sessions(from, to); return s ? D.signups(from, to) / s : null; }

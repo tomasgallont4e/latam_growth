@@ -14,7 +14,7 @@ Every distributable link must include these fields in lowercase, with no spaces:
 utm_source    platform or publisher: linkedin, instagram, facebook, google, email
 utm_medium    distribution method: paid_social, organic_social, cpc, email, partner
 utm_campaign  stable campaign identifier: latam_co_launch
-utm_content   unique piece identifier: p03_video_a, p03_carousel_b
+utm_content   persona code + piece: p03 or p03_video_a (always starts with pNN, p01–p13)
 utm_term      optional audience or keyword: bogota_founders
 utm_id        optional immutable campaign ID
 ```
@@ -24,6 +24,8 @@ Example:
 ```text
 https://go.think4ever.com/latam?utm_source=linkedin&utm_medium=paid_social&utm_campaign=latam_co_launch&utm_content=p03_video_a&utm_term=bogota_founders
 ```
+
+**Persona standard:** `utm_content` always starts with the persona code `pNN` (`p01`–`p13`), optionally followed by `_` and the piece name (`p03`, `p03_video_a`, `p03_carousel_b`). The dashboard groups sign-ups and sessions by that prefix, so `p03_video_a` and `p03_carousel_b` both count for persona `p03`. A value without the prefix is shown in the campaign tables but not in "Sign-ups by persona".
 
 Do not reuse one `utm_content` value for more than one creative. Keep the same `utm_campaign` in the advertising platform and in the destination URL. Preserve platform click IDs (`gclid`, `fbclid`, `msclkid`) when the platform appends them.
 
@@ -104,3 +106,16 @@ If the landing and portal are different domains, pass the stored attribution val
 8. Use **Data Sources → Sync now** for GA4 and PostHog. In **Marketing campaigns → Campaign attribution**, verify the GA4 session row and, after project creation, the confirmed-project row.
 
 Historical traffic without UTMs will remain `(not set)`; this is expected and should not be backfilled with guesses.
+
+## 6. Domain filter (SITE_HOSTS)
+
+The dashboard measures only the landing, the portal and the main site. The list lives in the service variable `SITE_HOSTS` (default `think4ever.com,www.think4ever.com,go.think4ever.com,portal.think4ever.com`).
+
+| Connector | What is filtered |
+|---|---|
+| GA4 | Every report (channels, events, countries, daily countries, totals, UTM) uses a `hostName` filter on `SITE_HOSTS`. |
+| PostHog | Events and active users: `$host` in `SITE_HOSTS`, or no `$host` (backend events from the portal). New people, their country and UTM: only people with at least one event on `SITE_HOSTS` since `LAUNCH_DATE`. The activation Action is filtered the same way; `project_created` is never filtered. |
+| HubSpot sign-ups | Both forms, but only when the contact's `hs_analytics_first_url`, `hs_analytics_last_url` or `landing_page` is on `SITE_HOSTS`. Contacts created by API without any web visit are left out. |
+| HubSpot traffic | Not filterable through HubSpot's API. Kept and labelled "todo el sitio" in the views and on Data Sources. |
+
+Syncs run one at a time per source ("Sync now" answers 409 while a sync is running), and sign-up events are keyed by the HubSpot contact id, so repeated syncs replace rows instead of duplicating them.

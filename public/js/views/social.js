@@ -2,6 +2,14 @@
 /* Social and Paid: spend, clicks, CTR and cost per sign-up (costs read inverted: a drop is good),
    spend by platform, daily spend, per-platform campaigns, LinkedIn organic, Clarity and ad library checks. */
 (function (A) {
+  // Followers is a running total (not additive): take the latest value up to 1 day after the period end,
+  // because the connector stamps it with the UTC date (a day ahead in LATAM evenings).
+  function addDay(iso, n) { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+  function lastFollowers() {
+    const lim = addDay(A.S.to, 1);
+    const fol = A.D.M().filter((r) => r.source === 'linkedin' && r.metric === 'followers' && r.date <= lim).sort((a, b) => (a.date < b.date ? -1 : 1));
+    return fol[fol.length - 1] || null;
+  }
   function platformDetail(p) {
     const U = A.ui, D = A.D;
     const rows = D.byDim(p.key, 'ad_spend');
@@ -18,25 +26,38 @@
       ], r));
     }
     const other = [...new Set(D.M().filter((x) => x.source === p.key).map((x) => x.metric))];
-    if (other.length) return U.details(`${p.name} metrics`, `${other.length} metrics`, U.table([{ t: 'Metric', k: 'm' }, { t: 'Total in period', num: 1, f: (x) => U.fmt(x.v) }], other.map((m) => ({ m: m.replace(/_/g, ' '), v: D.sum(p.key, m) }))));
+    if (other.length) {
+      const rows = other.map((m) => {
+        if (p.key === 'linkedin' && m === 'followers') { const l = lastFollowers(); return { m: 'followers (latest total)', v: l ? l.value : null, d: l ? l.date : null, latest: true }; }
+        return { m: m.replace(/_/g, ' '), v: D.sum(p.key, m) };
+      });
+      return U.details(`${p.name} metrics`, `${other.length} metrics`, U.table([{ t: 'Metric', k: 'm' }, { t: 'Total in period', num: 1, f: (x) => (x.latest ? `${U.fmt(x.v)}${x.d ? ` <span class="card-note">on ${U.dshort(x.d)}</span>` : ''}` : U.fmt(x.v)) }], rows));
+    }
     const s = D.source(p.key);
     return U.details(p.name, s.state === 'connected' ? 'No rows in this period' : 'Awaiting data', `<div class="pad">${U.awaiting(p.key, s.provides)}${s.connect ? `<p class="card-note">How to connect: ${U.esc(s.connect)}</p>` : ''}</div>`);
   }
   function linkedinOrganic() {
     const U = A.ui, D = A.D;
+    const S = A.S;
     const posts = D.snap('linkedin', 'posts');
-    if (!posts) return '';
     const tot = D.snap('linkedin', 'page_totals'), loc = D.snap('linkedin', 'follower_locations');
     const t = tot && tot.rows && tot.rows[0];
-    const fol = D.M().filter((r) => r.source === 'linkedin' && r.metric === 'followers').sort((a, b) => (a.date < b.date ? -1 : 1));
-    const last = fol[fol.length - 1];
+    const last = lastFollowers();
+    const hasDaily = D.has('linkedin', 'new_followers');
+    if (!posts && !t && !last && !hasDaily) return '';
+    const cards = [];
+    if (last || t) cards.push(U.kpi({ label: 'Followers', source: 'LinkedIn', value: U.fmt(last ? last.value : t.followers), compare: last ? `Latest total · on ${U.dshort(last.date)}` : U.win(tot.from, tot.to) }));
+    if (hasDaily) cards.push(U.kpi({ label: 'New followers', source: 'LinkedIn', value: U.fmt(D.sum('linkedin', 'new_followers')), compare: `Net gains · ${U.win(S.from, S.to)}` }));
+    else if (t) cards.push(U.kpi({ label: 'New followers', source: '30 days', value: U.fmt(t.new_followers), compare: t.new_followers_change ? `${U.esc(t.new_followers_change)} vs prior 30 days` : '' }));
+    if (t) {
+      cards.push(U.kpi({ label: 'Post impressions', source: '30 days', value: U.fmt(t.impressions), compare: t.impressions_change ? `${U.esc(t.impressions_change)} vs prior 30 days` : '' }));
+      cards.push(U.kpi({ label: 'Page views', source: '30 days', value: U.fmt(t.page_views), compare: t.page_views_change ? `${U.esc(t.page_views_change)} vs prior 30 days` : '' }));
+    }
+    const tiles = cards.length ? U.kpiRow(cards, cards.length) : '';
+    if (!posts) {
+      return U.section('LinkedIn organic', `Think4Ever Global page · ${U.win(S.from, S.to)}${loc ? ` · followers in ${(loc.rows || []).slice(0, 4).map((r) => U.esc(r.location)).join(', ')}` : ''}`, tiles);
+    }
     const hasAdmin = (posts.rows || []).some((r) => r.impressions != null);
-    const tiles = t ? U.kpiRow([
-      U.kpi({ label: 'Followers', source: 'LinkedIn', value: U.fmt(last ? last.value : t.followers), compare: last ? `on ${U.dshort(last.date)}` : U.win(tot.from, tot.to) }),
-      U.kpi({ label: 'New followers', source: '30 days', value: U.fmt(t.new_followers), compare: t.new_followers_change ? `${U.esc(t.new_followers_change)} vs prior 30 days` : '' }),
-      U.kpi({ label: 'Post impressions', source: '30 days', value: U.fmt(t.impressions), compare: t.impressions_change ? `${U.esc(t.impressions_change)} vs prior 30 days` : '' }),
-      U.kpi({ label: 'Page views', source: '30 days', value: U.fmt(t.page_views), compare: t.page_views_change ? `${U.esc(t.page_views_change)} vs prior 30 days` : '' }),
-    ], 4) : '';
     const table = hasAdmin
       ? U.table([{ t: 'Date', f: (r) => `<span class="mono">${U.dshort(r.date)}</span>` }, { t: 'Post', k: 'title' }, { t: 'Impressions', num: 1, f: (r) => U.fmt(r.impressions) }, { t: 'Clicks', num: 1, f: (r) => U.fmt(r.clicks) }, { t: 'CTR', num: 1, f: (r) => U.pct(r.ctr) }, { t: 'Reactions', num: 1, f: (r) => U.fmt(r.reactions) }, { t: 'Engagement', num: 1, f: (r) => U.pct(r.engagement_rate) }], posts.rows || [])
       : U.table([{ t: 'Date', f: (r) => `<span class="mono">${U.dshort(r.date)}</span>` }, { t: 'Post', k: 'title' }, { t: 'Reactions', num: 1, f: (r) => U.fmt(r.reactions) }, { t: 'Comments', num: 1, f: (r) => U.fmt(r.comments) }, { t: 'Reposts', num: 1, f: (r) => U.fmt(r.reposts) }], posts.rows || []);
