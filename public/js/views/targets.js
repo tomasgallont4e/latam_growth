@@ -188,7 +188,13 @@
     const goals = rows ? (rows.length
       ? U.section(`Goal completion · ${level} · ${U.monthName(month)}`, 'Actual month to date vs target · pace to month end for counts', `<div class="goal-row">${Object.keys(M).map((k) => T.goal(k, month, country)).filter(Boolean).map(T.card).join('')}</div>`)
       : U.section(`Goal completion · ${level} · ${U.monthName(month)}`, '', `<div class="goal-empty"><span>${U.icon('bullseye')} No targets for ${level} in ${U.monthName(month)} yet. Download the template, fill in the values and upload it, or set a value in the table below.</span></div>`)) : '';
-    const tableRows = Object.keys(M).map((k) => ({ key: k, m: M[k], t: rows ? rows.find((r) => r.metric_key === k) : null, g: T.goal(k, month, country) }));
+    // The real month-to-date actual shows even before a target is set, so the table is never a wall of dashes.
+    const today = U.today(), first = `${month}-01`, last = U.endOfMonth(month);
+    const mTo = first > today ? null : (last < today ? last : today);
+    const tableRows = Object.keys(M).map((k) => {
+      const g = T.goal(k, month, country);
+      return { key: k, m: M[k], t: rows ? rows.find((r) => r.metric_key === k) : null, g, a: g ? g.actual : (mTo == null ? null : T.actual(k, country, first, mTo)) };
+    });
     const table = U.card({
       title: `Targets for ${level} · ${U.monthName(month)}`, sub: `${rows ? rows.length : 0} of ${Object.keys(M).length} metrics have a target`,
       body: !rows ? '<div class="skeleton" style="height:180px"></div>' : U.table([
@@ -196,7 +202,7 @@
         { t: 'Target', num: 1, f: (r) => (TV.editing === r.key
           ? `<form class="inline-edit" data-t-form="${U.esc(r.key)}"><input name="v" value="${r.t ? U.esc(r.m.kind === 'rate' ? `${+(r.t.target_value * 100).toFixed(2)}%` : r.t.target_value) : ''}" placeholder="${r.m.kind === 'rate' ? '45%' : r.m.kind === 'money' ? '500' : '1000'}" aria-label="Target for ${U.esc(r.m.label)}" required><button class="btn btn-primary btn-sm">Save</button><button type="button" class="btn btn-ghost btn-sm" data-t-cancel-edit>Cancel</button></form>`
           : r.t ? `<b>${U.value(r.m.kind, r.t.target_value)}</b>` : '<span class="text-muted">Not set</span>') },
-        { t: 'Actual MTD', num: 1, f: (r) => (r.g && r.g.actual != null ? U.value(r.m.kind, r.g.actual) : '–') },
+        { t: 'Actual MTD', num: 1, f: (r) => (r.a != null ? U.value(r.m.kind, r.a) : '–') },
         { t: '% of goal', num: 1, f: (r) => (r.g && r.g.ratio != null ? U.pct(r.g.ratio, 0) : '–') },
         { t: 'Status', f: (r) => (r.g ? T.statusPill(r.g) : U.pill('neutral', 'No target')) },
         { t: 'Updated', f: (r) => (r.t ? `<small>${U.esc(r.t.updated_by)}<br>${U.esc(U.stamp(r.t.updated_at))}</small>` : '') },
