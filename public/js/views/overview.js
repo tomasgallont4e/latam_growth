@@ -1,0 +1,85 @@
+
+'use strict';
+/* Overview: the CEO glance. Five KPIs with % change, month goals, channel mix, daily sessions with timeline notes,
+   the visit-to-active-account funnel and what the data says. */
+(function (A) {
+  const TONE = { crit: 'bad', bad: 'bad', warn: 'watch', watch: 'watch', info: 'watch', ok: 'good', good: 'good' };
+  function insight(o) {
+    const ic = { bad: 'triangle-exclamation', watch: 'eye', good: 'arrow-trend-up' }[o.tone];
+    const lb = { bad: 'Critical', watch: 'Watch', good: 'Good' }[o.tone];
+    return `<div class="insight"><span class="insight-icon ${o.tone}">${A.ui.icon(ic)}</span><p><span class="tone ${o.tone}">${lb}</span>${o.html}</p></div>`;
+  }
+
+  function render() {
+    const U = A.ui, C = A.charts, D = A.D, S = A.S;
+    const prev = D.prev();
+    const cmp = prev ? `vs previous ${prev.len} days` : 'Since launch · no comparison';
+    const days = U.days(S.from, S.to);
+    const hasSess = D.has('hubspot', 'sessions');
+    const sess = D.sessions(), pSess = prev ? D.sessions(prev.from, prev.to) : null;
+    const ga = D.snap('ga4', 'totals'), gt = ga && ga.rows && ga.rows[0];
+    const form = D.forms().length, pForm = prev ? D.forms(prev.from, prev.to).length : null;
+    const plat = D.platform(), pPlat = prev ? D.platform(prev.from, prev.to) : null;
+    const total = form + (plat || 0), pTotal = prev ? pForm + (pPlat || 0) : null;
+    const rate = sess ? total / sess : null, pRate = prev && pSess ? pTotal / pSess : null;
+    const sessDay = D.byDay('hubspot', 'sessions');
+    const suDay = D.dailySignups();
+
+    const kpis = U.kpiRow([
+      hasSess ? U.kpi({ label: 'Landing Sessions', source: 'HubSpot', value: U.fmt(sess), delta: U.delta(sess, pSess), spark: days.map((d) => sessDay[d]), compare: cmp })
+        : U.kpi({ label: 'Landing Sessions', source: 'HubSpot', awaiting: 'HubSpot' }),
+      gt ? U.kpi({ label: 'Unique Visitors', source: 'GA4', value: U.fmt(gt.users), delta: U.delta(null, null), compare: `GA4 window ${U.win(ga.from, ga.to)} · ${U.fmt(gt.new_users)} new` })
+        : U.kpi({ label: 'Unique Visitors', source: 'GA4', awaiting: 'GA4' }),
+      gt ? U.kpi({ label: 'Engagement Rate', source: 'GA4', value: U.pct(gt.engagement_rate), delta: U.delta(null, null), compare: `${U.fmt(gt.engaged_sessions)} engaged sessions · ${U.win(ga.from, ga.to)}` })
+        : U.kpi({ label: 'Engagement Rate', source: 'GA4', awaiting: 'GA4' }),
+      U.kpi({ label: 'Total Sign-ups', source: 'HubSpot + PostHog', value: U.fmt(total), hero: true, delta: U.delta(total, pTotal), spark: days.map((d) => suDay[d].form + suDay[d].platform), compare: `${U.fmt(form)} form + ${plat == null ? 'PostHog pending' : `${U.fmt(plat)} platform`} · ${cmp}` }),
+      hasSess ? U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', value: U.pct(rate), delta: U.delta(rate, pRate), spark: days.map((d) => (sessDay[d] ? (suDay[d].form + suDay[d].platform) / sessDay[d] : 0)), compare: cmp })
+        : U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', awaiting: 'HubSpot' }),
+    ]);
+
+    const goals = A.targets.strip(['landing_sessions', 'unique_visitors', 'engagement_rate', 'total_signups', 'visit_to_signup_rate']);
+
+    const ch = D.channels();
+    const mix = U.card({ title: 'Channel mix', sub: `Share of landing sessions · <span class="mono">${U.fmt(sess)} sessions</span>`, right: U.srcPill('hubspot'), body: hasSess ? C.mix(ch) : U.awaiting('hubspot') });
+
+    const notes = ((S.data.notes) || []).filter((n) => n.date >= S.from && n.date <= S.to).sort((a, b) => (a.date < b.date ? -1 : 1));
+    const daily = D.dailyChannels();
+    const chart = U.card({
+      cls: 'chart-card', title: 'Daily sessions by channel', sub: 'Stacked in fixed channel order · numbered markers are timeline notes',
+      right: `<button type="button" class="btn btn-secondary btn-sm" data-go="notes">${U.icon('message', 'fa-regular')} Timeline Notes</button>`,
+      body: (hasSess ? C.stacked({ dates: days, keys: C.CHANNELS, value: (d, i) => daily[d][i], notes, label: `Daily sessions by channel, ${U.win(S.from, S.to)}` }) : U.awaiting('hubspot'))
+        + `<ul class="notes-chips">${notes.length ? notes.map((n, i) => `<li class="note-chip"><span class="note-idx">${i + 1}</span><span class="mono">${U.dshort(n.date)}</span><span class="note-type note-${U.esc(n.kind || 'other')}">${U.esc(n.kind || 'other')}</span><span class="note-txt">${U.esc(n.label)}</span></li>`).join('') : '<li class="text-muted">No timeline notes in this period.</li>'}</ul>`,
+    });
+
+    const steps = D.funnel();
+    const funnel = U.card({ cls: 'chart-card', title: 'Visit-to-active-account funnel', sub: `7 steps · count, % of step 1 and step-to-step % · internal tests ${S.exInt ? 'excluded' : 'included'}`, right: U.pill('neutral', 'GA4 · HubSpot · PostHog'), body: C.funnel(steps) });
+
+    const items = [];
+    const w = C.weakest(steps);
+    if (w > 0) items.push({ tone: 'bad', html: `Only <b>${U.pct(steps[w].n / steps[w - 1].n)}</b> of ${U.esc(steps[w - 1].name.toLowerCase())} reach ${U.esc(steps[w].name.toLowerCase())}: the weakest step in the funnel.` });
+    if (plat == null) items.push({ tone: 'watch', html: '<b>Platform sign-ups</b> are awaiting PostHog, so total sign-ups only count the landing form.' });
+    if (hasSess && sess) {
+      let top = 0; ch.forEach((v, i) => { if (v > ch[top]) top = i; });
+      const pch = prev ? D.channels(prev.from, prev.to)[top] : null;
+      items.push({ tone: 'good', html: `${U.esc(C.CHANNELS[top].name)} leads with <b>${U.fmt(ch[top])}</b> sessions (${U.pct(ch[top] / sess)} share)${pch ? `, ${ch[top] >= pch ? 'up' : 'down'} ${U.pct(Math.abs(ch[top] - pch) / pch)} vs previous period.` : '.'}` });
+    }
+    const internal = D.formsAll().length - D.forms().length;
+    if (internal > 0) items.push({ tone: 'watch', html: `<b>${internal}</b> think4ever.com test sign-ups are ${S.exInt ? 'excluded from' : 'included in'} the counts.` });
+    const rs = D.snap('research', 'readings');
+    if (rs) for (const r of rs.rows || []) items.push({ tone: TONE[r.tone] || 'watch', html: `<b>${U.esc(r.title)}</b> ${U.esc(r.text)}` });
+    const order = { bad: 0, watch: 1, good: 2 };
+    items.sort((a, b) => order[a.tone] - order[b.tone]);
+    const readings = U.card({
+      title: 'What the data says', sub: `Computed from the live numbers${rs ? ` and the Research reading · ${U.win(rs.from, rs.to)}` : ''}`,
+      body: items.length ? `<div class="insights">${items.slice(0, 3).map(insight).join('')}</div>${items.length > 3 ? `<details class="more"><summary>${U.icon('chevron-right')}More readings <span class="pill pill-neutral">${items.length - 3}</span></summary><div class="insights">${items.slice(3).map(insight).join('')}</div></details>` : ''}`
+        : U.empty('No readings yet', 'Readings appear as soon as the sources send data.'),
+    });
+
+    return U.section('Launch at a glance', `Five numbers that summarise the LATAM launch · ${U.win(S.from, S.to)} · ${cmp}`, kpis)
+      + goals
+      + `<section class="section">${mix}</section>`
+      + `<section class="section">${chart}</section>`
+      + `<section class="section grid-2-1">${funnel}${readings}</section>`;
+  }
+  A.views.overview = { title: 'Overview', render };
+})(window.App);
