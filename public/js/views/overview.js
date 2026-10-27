@@ -10,6 +10,62 @@
     return `<div class="insight"><span class="insight-icon ${o.tone}">${A.ui.icon(ic)}</span><p><span class="tone ${o.tone}">${lb}</span>${o.html}</p></div>`;
   }
 
+  // The plan is intentionally separate from monthly targets. It starts with
+  // the 500K verified-user outcome and shows the traffic/media inputs implied
+  // by that scenario. Live values retain their source labels and are never
+  // fabricated for a country that has not been identified by a source.
+  function goalMetric(label, target, actual, note) {
+    const U = A.ui;
+    return `<div class="plan-metric"><span>${U.esc(label)}</span><b>${U.esc(target)}</b><em>${actual == null ? 'No live value yet' : `Actual ${U.esc(actual)}`}</em><small>${U.esc(note)}</small></div>`;
+  }
+
+  function goalPanels() {
+    const U = A.ui, D = A.D, S = A.S, p = S.data && S.data.goalPlan;
+    if (!p) return '';
+    const accounts = D.platform();
+    const landing = D.sessions();
+    const impressions = D.anyPaid() ? D.paidSum('ad_impressions') : null;
+    const spend = D.anyPaid() ? D.paidSum('ad_spend') : null;
+    const conversion = landing && accounts != null ? accounts / landing : null;
+    const impressionVisit = impressions && landing ? landing / impressions : null;
+    const markets = Object.keys(p.countries || {});
+    if (!markets.length) return '';
+    const country = markets.includes(S.goalCountry) ? S.goalCountry : markets[0];
+    const target = Number(p.countries[country]) || 0;
+    const geoSessions = D.countryMetric('ga_geo_sessions', country);
+    const geoUsers = D.countryMetric('ga_geo_users', country);
+    const geoEngaged = D.countryMetric('ga_geo_engaged_sessions', country);
+    const snapshot = D.countrySnapshot(country);
+    const sessions = geoSessions || (snapshot && Number(snapshot.sessions)) || null;
+    const users = geoUsers || (snapshot && Number(snapshot.users)) || null;
+    const engagement = sessions && geoEngaged ? geoEngaged / sessions : null;
+    const forms = D.forms().filter((e) => e.country === country).length;
+    const plannedSessions = target ? Number(p.landing_sessions) * target / Number(p.verified_users) : null;
+    const options = markets.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('');
+
+    return `<section class="section goal-plan-section"><details class="goal-panel"><summary><span><b>LATAM 500K goal</b><small>Top-down funnel and live progress</small></span><span class="goal-summary">500,000 verified users <i>View plan</i></span></summary><div class="goal-body">
+      <p>This is a planning scenario: it starts with 500,000 verified users and derives the required traffic, media and efficiency. It does not replace the monthly targets below.</p>
+      <div class="plan-grid">
+        ${goalMetric('Verified users', U.fmt(p.verified_users), accounts == null ? null : U.fmt(accounts), 'PostHog new people across active markets.')}
+        ${goalMetric('Landing sessions', U.fmt(p.landing_sessions), U.fmt(landing), 'Traffic required at the planned conversion.')}
+        ${goalMetric('Visit to verified user', U.pct(p.visit_to_signup), conversion == null ? null : U.pct(conversion), 'Verified users divided by landing sessions.')}
+        ${goalMetric('Impression to landing visit', U.pct(p.impression_to_visit), impressionVisit == null ? null : U.pct(impressionVisit), 'Link efficiency, not generic platform CTR.')}
+        ${goalMetric('Paid impressions', U.fmt(p.impressions), impressions == null ? null : U.fmt(impressions), 'Reach required for the planned traffic.')}
+        ${goalMetric('Paid media budget', U.money(p.paid_budget), spend == null ? null : U.money(spend), `Planned cost per sign-up: ${U.money(p.paid_cps)}.`)}
+      </div></div></details>
+      <details class="goal-panel"><summary><span><b>Country goal</b><small>${U.esc(country)} within the LATAM plan</small></span><span class="goal-summary">${U.fmt(target)} verified users <i>View country</i></span></summary><div class="goal-body">
+        <label class="goal-select">Country <select id="goal-country" aria-label="Country goal">${options}</select></label>
+        <p>Country traffic comes from GA4. Verified accounts remain blank until the product or PostHog sends a trusted country code for each account.</p>
+        <div class="plan-grid">
+          ${goalMetric('Verified-user target', U.fmt(target), null, 'This market’s allocation within the 500K plan.')}
+          ${goalMetric('Planned landing sessions', U.fmt(plannedSessions), sessions == null ? null : U.fmt(sessions), 'Actual sessions come from GA4.')}
+          ${goalMetric('GA4 users', 'Traffic readout', users == null ? null : U.fmt(users), 'Users observed in this country.')}
+          ${goalMetric('GA4 engagement rate', 'Quality readout', engagement == null ? null : U.pct(engagement), 'Engaged sessions divided by sessions.')}
+          ${goalMetric('HubSpot form sign-ups', 'Lead readout', U.fmt(forms), 'Contacts with a matching CRM country.')}
+          ${goalMetric('Verified accounts by country', 'Identity coverage', null, 'Requires a country code on the verified account.')}
+        </div></div></details></section>`;
+  }
+
   function render() {
     const U = A.ui, C = A.charts, D = A.D, S = A.S;
     const prev = D.prev();
@@ -75,11 +131,17 @@
         : U.empty('No readings yet', 'Readings appear as soon as the sources send data.'),
     });
 
-    return U.section('Launch at a glance', `Five numbers that summarise the LATAM launch · ${U.win(S.from, S.to)} · ${cmp}`, kpis)
+    return goalPanels()
+      + U.section('Launch at a glance', `Five numbers that summarise the LATAM launch · ${U.win(S.from, S.to)} · ${cmp}`, kpis)
       + goals
       + `<section class="section">${mix}</section>`
       + `<section class="section">${chart}</section>`
       + `<section class="section grid-2-1">${funnel}${readings}</section>`;
   }
-  A.views.overview = { title: 'Overview', render };
+  function mount(el) {
+    el.addEventListener('change', (e) => {
+      if (e.target.id === 'goal-country') { A.S.goalCountry = e.target.value; A.render(); }
+    });
+  }
+  A.views.overview = { title: 'Overview', render, mount };
 })(window.App);

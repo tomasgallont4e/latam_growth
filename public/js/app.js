@@ -4,7 +4,7 @@
 (function (A) {
   const U = A.ui;
   const LAUNCH = A.LAUNCH = '2026-10-01';
-  const S = A.S = { data: null, tab: 'overview', period: '28', from: LAUNCH, to: U.today(), exInt: true, me: null };
+  const S = A.S = { data: null, tab: 'overview', period: '28', from: LAUNCH, to: U.today(), exInt: true, me: null, goalCountry: 'Colombia' };
 
   // ---------- data helpers
   const D = A.D = {};
@@ -26,6 +26,18 @@
     const out = {};
     for (const r of D.M()) if (r.source === src && r.metric === metric && inR(r.date, from, to)) out[r.dim_value || 'Total'] = (out[r.dim_value || 'Total'] || 0) + (Number(r.value) || 0);
     return Object.entries(out).sort((a, b) => b[1] - a[1]);
+  };
+  // GA4 stores daily country rows independently of its aggregate snapshots.
+  // They are the only live country readout we currently have; do not infer an
+  // account country from a PostHog person without an explicit country property.
+  D.countryMetric = (metric, country, from = S.from, to = S.to) => D.sum(
+    'ga4', metric,
+    (r) => r.dim === 'country' && r.dim_value === country,
+    from, to,
+  );
+  D.countrySnapshot = (country, from = S.from, to = S.to) => {
+    const s = D.snap('ga4', 'countries', from, to);
+    return s && (s.rows || []).find((r) => r.country === country);
   };
   // Snapshot (table pulled for a fixed window): exact window first, then the best overlap, then the latest.
   D.snap = (src, key, from = S.from, to = S.to) => {
