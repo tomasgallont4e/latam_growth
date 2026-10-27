@@ -12,6 +12,7 @@ const { connectors, configured, REQUIRED } = require('./lib/connectors');
 const auth = require('./lib/auth');
 const ads = require('./lib/adloader');
 const executive = require('./lib/executive');
+const targets = require('./lib/targets');
 
 const app = express();
 app.set('trust proxy', true);
@@ -60,7 +61,7 @@ app.get('/api/data', async (req, res, next) => {
       notes: clean(await store.list('note')),
       sources: await sourcesView(),
       synclog: clean(await store.list('synclog')).slice(-30).reverse(),
-      goalPlan: executive.GOAL_PLAN,
+      goalPlan: await targets.getPlan(store),
     });
   } catch (e) { next(e); }
 });
@@ -78,30 +79,55 @@ app.get('/api/executive', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// Shared monthly targets (start blank). Stored as kind 'target', one row per month. Writes are admin-only (auth rules).
+// The scale plan is persisted separately from monthly operating targets. The
+// UI reads this endpoint through api/data, so editing Targets updates Overview
+// without changing source code or redeploying a different goal value.
+app.get('/api/goal-plan', async (req, res, next) => {
+  try { res.json(await targets.getPlan(store)); } catch (e) { next(e); }
+});
+app.put('/api/goal-plan', async (req, res, next) => {
+  try { res.json(await targets.savePlan(store, req.body || {}, req.user)); }
+  catch (e) { e.status ? res.status(e.status).json({ error: e.message }) : next(e); }
+});
+
+// Shared monthly operating targets. They back the existing Target cards and
+// the CSV workflow in the active dashboard.
 app.get('/api/targets', async (req, res, next) => {
   try {
-    const out = {};
-    for (const t of await store.list('target')) out[t._k] = t.values || {};
-    res.json(out);
+    const month = String(req.query.month || '');
+    if (!targets.monthOk(month)) return res.status(400).json({ error: 'month must be YYYY-MM' });
+    res.json({ metrics: targets.METRICS, targets: await targets.monthly(store, month) });
   } catch (e) { next(e); }
 });
-app.put('/api/targets', async (req, res, next) => {
+app.get('/api/targets/template', (req, res) => {
+  const month = targets.monthOk(req.query.month) ? req.query.month : new Date().toISOString().slice(0, 7);
+  const lines = Object.keys(targets.METRICS).map((key) => `${month},${key},`);
+  res.type('text/csv').send(`month,metric_key,target_value\n${lines.join('\n')}\n`);
+});
+app.post('/api/targets/import', async (req, res, next) => {
   try {
-    const body = req.body && typeof req.body === 'object' ? req.body : {};
-    const keep = {};
-    for (const [month, vals] of Object.entries(body).slice(0, 60)) {
-      if (!/^\d{4}-\d{2}$/.test(month) || !vals || typeof vals !== 'object') continue;
-      const clean = {};
-      for (const [id, v] of Object.entries(vals)) {
-        const n = Number(v);
-        if (/^[a-z0-9_]{1,40}$/.test(id) && v !== null && v !== '' && Number.isFinite(n) && n >= 0) clean[id] = n;
-      }
-      if (Object.keys(clean).length) keep[month] = clean;
-    }
-    for (const t of await store.list('target')) if (!keep[t._k]) await store.remove('target', t._k);
-    for (const [month, values] of Object.entries(keep)) await store.upsert('target', month, { values, by: req.user, at: new Date().toISOString() });
-    res.json(keep);
+    const csv = req.body && req.body.csv;
+    if (typeof csv !== 'string' || csv.length > 500000) return res.status(400).json({ error: 'CSV is required' });
+    res.json(req.body.confirm ? await targets.applyImport(store, csv, req.user) : await targets.previewImport(store, csv));
+  } catch (e) { next(e); }
+});
+app.put('/api/targets/:id', async (req, res, next) => {
+  try {
+    const [month, metric] = String(req.params.id || '').split('|');
+    const value = targets.validateTarget(month, metric, req.body && req.body.target_value);
+    if (value == null) return res.status(400).json({ error: 'Invalid target' });
+    const id = `${month}|${metric}`;
+    const row = { month, metric_key: metric, target_value: value, updated_by: req.user, updated_at: new Date().toISOString() };
+    await store.upsert('target', id, row);
+    res.json({ id, ...row });
+  } catch (e) { next(e); }
+});
+app.delete('/api/targets/:id', async (req, res, next) => {
+  try {
+    const [month, metric] = String(req.params.id || '').split('|');
+    if (!targets.monthOk(month) || !targets.METRICS[metric]) return res.status(400).json({ error: 'Invalid target' });
+    await store.remove('target', `${month}|${metric}`);
+    res.json({ ok: true });
   } catch (e) { next(e); }
 });
 

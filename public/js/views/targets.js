@@ -86,6 +86,35 @@
 
   // ---------- Targets screen
   const TV = { month: null, preview: null, csv: null, fileName: '', editing: null, busy: false };
+  const PV = { plan: null, loading: false, saving: false };
+  const PLAN_FIELDS = [
+    ['verified_users', 'Verified users', 'count'], ['landing_sessions', 'Landing sessions', 'count'],
+    ['visit_to_signup', 'Visit to verified user', 'rate'], ['impressions', 'Paid impressions', 'count'],
+    ['impression_to_visit', 'Impression to landing visit', 'rate'], ['paid_budget', 'Paid media budget', 'money'],
+    ['paid_cps', 'Planned cost per sign-up', 'money'], ['activation_7d', 'Activation within 7 days', 'rate'],
+    ['valid_signups', 'Valid sign-ups', 'rate'],
+  ];
+  async function ensurePlan() {
+    if (PV.plan || PV.loading) return;
+    PV.loading = true;
+    try { PV.plan = await A.api('api/goal-plan'); }
+    catch (e) { if (e.message !== 'code') U.toast(`Scale plan: ${e.message}`, 'error'); }
+    finally { PV.loading = false; }
+    if (A.S.data) A.render();
+  }
+  function planForm() {
+    if (!PV.plan) { ensurePlan(); return U.section('LATAM scale targets', 'Loading the persistent global and country targets…', '<div class="skeleton" style="height:220px"></div>'); }
+    const p = PV.plan;
+    const field = ([key, label, kind]) => `<label class="field"><span>${U.esc(label)}${kind === 'rate' ? ' (decimal or %)' : ''}</span><input name="plan:${U.esc(key)}" value="${U.esc(kind === 'rate' ? `${+(Number(p[key]) * 100).toFixed(4)}%` : p[key])}" inputmode="decimal" required></label>`;
+    const countries = Object.entries(p.countries || {}).sort((a, b) => a[0].localeCompare(b[0]));
+    const countryRows = countries.map(([country, target]) => `<tr><td>${U.esc(country)}</td><td><input name="country:${U.esc(country)}" value="${U.esc(target)}" inputmode="numeric" aria-label="Target for ${U.esc(country)}"></td></tr>`).join('');
+    return U.section('LATAM scale targets', 'Persistent targets for the 500K plan. Overview reads these values directly; save here to change the global or country goal.',
+      `<form class="card" id="plan-form"><div class="card-header"><div><div class="card-title">${U.esc(p.label || 'LATAM scale goal')}</div><div class="card-sub">Global target and country allocation. The country values can sum differently while you model scenarios; the dashboard shows the allocation you save.</div></div><button class="btn btn-primary"${PV.saving ? ' disabled' : ''}>${U.icon('floppy-disk')} ${PV.saving ? 'Saving…' : 'Save scale targets'}</button></div>
+        <div class="ad-form">${PLAN_FIELDS.map(field).join('')}</div>
+        <div class="card-header mt-16"><div><div class="card-title">Verified-user target by country</div><div class="card-sub">Traffic uses GA4 country data. Account-country actuals require a trusted country code from product or PostHog.</div></div></div>
+        <div class="tbl-wrap"><table><thead><tr><th>Country</th><th class="td-num">Verified-user target</th></tr></thead><tbody>${countryRows}</tbody></table></div>
+      </form>`);
+  }
   function previewBox() {
     const p = TV.preview; if (!p) return '';
     const ST = { ok: ['success', 'OK'], overwrite: ['warning', 'Overwrite'], error: ['error', 'Error'], skip: ['neutral', 'Skipped'] };
@@ -134,10 +163,23 @@
         { t: '', num: 1, f: (r) => (TV.editing === r.key ? '' : `<div class="row-actions"><button type="button" class="ghost-icon-btn" data-t-edit="${U.esc(r.key)}" aria-label="${r.t ? 'Edit' : 'Set'} ${U.esc(r.m.label)} target" title="${r.t ? 'Edit' : 'Set'}">${U.icon(r.t ? 'pen' : 'plus')}</button>${r.t ? `<button type="button" class="ghost-icon-btn danger" data-t-del="${r.t.id}" aria-label="Delete ${U.esc(r.m.label)} target" title="Delete">${U.icon('trash-can', 'fa-regular')}</button>` : ''}</div>`) },
       ], tableRows),
     });
-    return `${head}${TV.preview ? `<section class="section">${previewBox()}</section>` : ''}${goals}<section class="section">${table}</section>`;
+    return `${planForm()}${head}${TV.preview ? `<section class="section">${previewBox()}</section>` : ''}${goals}<section class="section">${table}</section>`;
   }
   async function afterChange(msg) { U.toast(msg); TV.editing = null; T.refresh(TV.month); }
   function mount(el) {
+    el.addEventListener('submit', async (e) => {
+      if (e.target.id !== 'plan-form') return;
+      e.preventDefault();
+      const f = e.target, values = new FormData(f), current = PV.plan || {}, body = { countries: {} };
+      for (const [key] of PLAN_FIELDS) body[key] = values.get(`plan:${key}`);
+      for (const country of Object.keys(current.countries || {})) body.countries[country] = values.get(`country:${country}`);
+      PV.saving = true; A.render();
+      try {
+        PV.plan = await A.api('api/goal-plan', { method: 'PUT', body: JSON.stringify(body) });
+        await A.load(); U.toast('Scale targets saved');
+      } catch (err) { if (err.message !== 'code') U.toast(err.message, 'error'); }
+      finally { PV.saving = false; if (A.S.data) A.render(); }
+    });
     el.querySelector('#t-month').addEventListener('change', (e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { TV.month = e.target.value; TV.editing = null; T.ensure(TV.month); A.render(); } });
     el.querySelector('#t-file').addEventListener('change', async (e) => {
       const file = e.target.files[0]; if (!file) return;
