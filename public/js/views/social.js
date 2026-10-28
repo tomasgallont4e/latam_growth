@@ -68,18 +68,19 @@
   function render() {
     const U = A.ui, C = A.charts, D = A.D, S = A.S;
     const prev = D.prev();
-    const cmp = prev ? `vs previous ${prev.len} days` : 'Since launch · no comparison';
-    const days = U.days(S.from, S.to);
+    const cmp = D.versus();
+    const grain = D.grainName();
+    const ticks = D.ticks();
     const any = D.anyPaid();
     const m = (from, to) => {
       const spend = D.paidSum('ad_spend', from, to), imp = D.paidSum('ad_impressions', from, to), clk = D.paidSum('ad_clicks', from, to), su = D.signups(from, to);
       return { spend, imp, clk, ctr: imp ? clk / imp : null, cpc: clk ? spend / clk : null, cps: spend && su ? spend / su : null };
     };
     const cur = m(S.from, S.to), p = prev ? m(prev.from, prev.to) : {};
-    const spendDay = Object.fromEntries(C.PLATFORMS.map((pf) => [pf.key, D.byDay(pf.key, 'ad_spend')]));
+    const spendDay = Object.fromEntries(C.PLATFORMS.map((pf) => [pf.key, D.rollNum(D.byDay(pf.key, 'ad_spend'))]));
     const aw = 'Meta, LinkedIn or Google Ads';
     const kpis = U.kpiRow(any ? [
-      U.kpi({ label: 'Ad Spend', source: 'All platforms', value: U.money(cur.spend), hero: true, delta: U.delta(cur.spend, p.spend, { invert: true }), spark: days.map((d) => C.PLATFORMS.reduce((s, pf) => s + spendDay[pf.key][d], 0)), compare: cmp }),
+      U.kpi({ label: 'Ad Spend', source: 'All platforms', value: U.money(cur.spend), hero: true, delta: U.delta(cur.spend, p.spend, { invert: true }), spark: ticks.map((d) => C.PLATFORMS.reduce((s, pf) => s + (spendDay[pf.key][d] || 0), 0)), compare: cmp }),
       U.kpi({ label: 'Impressions', source: 'All platforms', value: U.fmt(cur.imp), delta: U.delta(cur.imp, p.imp), compare: cmp }),
       U.kpi({ label: 'Clicks', source: 'All platforms', value: U.fmt(cur.clk), delta: U.delta(cur.clk, p.clk), compare: cmp }),
       U.kpi({ label: 'Click-through Rate', source: 'Derived', value: U.pct(cur.ctr), delta: U.delta(cur.ctr, p.ctr), compare: 'Clicks / impressions' }),
@@ -91,7 +92,7 @@
     const bars = C.PLATFORMS.map((pf) => ({ name: pf.name, color: pf.color, value: D.sum(pf.key, 'ad_spend'), label: U.money(D.sum(pf.key, 'ad_spend')), extra: prev ? U.delta(D.sum(pf.key, 'ad_spend'), D.sum(pf.key, 'ad_spend', null, prev.from, prev.to), { invert: true }) : '' }));
     const byPlat = U.card({ title: 'Spend by platform', sub: `${U.money(cur.spend)} total · share and % change`, body: any ? C.hbars(bars, cur.spend) : U.empty('No ad spend yet', 'Spend by platform appears with the first campaign.', 'sack-dollar') });
     const clicksMix = U.card({ title: 'Clicks by platform', sub: `${U.fmt(cur.clk)} clicks`, body: any ? C.mix(C.PLATFORMS.map((pf) => D.sum(pf.key, 'ad_clicks')), C.PLATFORMS, 'clicks') : U.empty('No clicks yet', '', 'arrow-pointer') });
-    const chart = U.card({ cls: 'chart-card', title: 'Daily spend by platform', sub: U.win(S.from, S.to), body: any ? C.stacked({ dates: days, keys: C.PLATFORMS, value: (d, i) => spendDay[C.PLATFORMS[i].key][d], label: 'Daily ad spend by platform', fmt: (v) => `$${U.fmt(v)}` }) : U.empty('No spend in this period', 'The chart switches on with the first campaign that sends data.', 'chart-column') });
+    const chart = U.card({ cls: 'chart-card', title: `${grain} spend by platform`, sub: `One bar per ${D.grainBar()} · since launch · ${U.win(S.from, S.to)}`, body: any ? C.stacked({ dates: ticks, keys: C.PLATFORMS, value: (d, i) => spendDay[C.PLATFORMS[i].key][d], label: `${grain} ad spend by platform`, fmt: (v) => `$${U.fmt(v)}` }) : U.empty('No spend since launch', 'The chart switches on with the first campaign that sends data.', 'chart-column') });
 
     const cl = D.snap('clarity', 'live_insights'), libs = D.snap('research', 'ad_libraries');
     const details = `<div class="detail-group">

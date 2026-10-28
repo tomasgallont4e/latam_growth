@@ -9,27 +9,28 @@
   function render() {
     const U = A.ui, C = A.charts, D = A.D, S = A.S;
     const prev = D.prev();
-    const cmp = prev ? `vs previous ${prev.len} days` : 'Since launch · no comparison';
-    const days = U.days(S.from, S.to);
+    const cmp = D.versus();
+    const grain = D.grainName();
+    const ticks = D.ticks();
     const all = D.formsAll(), shown = D.forms();
     const form = shown.length, pForm = prev ? D.forms(prev.from, prev.to).length : null;
     const plat = D.platform(), pPlat = prev ? D.platform(prev.from, prev.to) : null;
     const total = form + (plat || 0), pTotal = prev ? pForm + (pPlat || 0) : null;
     const sess = D.sessions(), pSess = prev ? D.sessions(prev.from, prev.to) : null;
     const rate = sess ? total / sess : null, pRate = prev && pSess ? pTotal / pSess : null;
-    const su = D.dailySignups();
+    const su = D.rollSignups(D.dailySignups());
 
     const kpis = U.kpiRow([
-      U.kpi({ label: 'Total Sign-ups', source: 'HubSpot + PostHog', value: U.fmt(total), hero: true, delta: U.delta(total, pTotal), spark: days.map((d) => su[d].form + su[d].platform), compare: cmp }),
-      U.kpi({ label: S.exInt ? 'External Form Sign-ups' : 'Form Sign-ups', source: 'HubSpot', value: U.fmt(form), delta: U.delta(form, pForm), spark: days.map((d) => su[d].form), compare: `${all.length - shown.length} internal tests ${S.exInt ? 'excluded' : 'included'}` }),
-      plat != null ? U.kpi({ label: 'Platform Sign-ups', source: 'PostHog', value: U.fmt(plat), delta: U.delta(plat, pPlat), spark: days.map((d) => su[d].platform), compare: 'Accounts created in the product, any entry point' }) : U.kpi({ label: 'Platform Sign-ups', source: 'PostHog', awaiting: 'PostHog' }),
+      U.kpi({ label: 'Total Sign-ups', source: 'HubSpot + PostHog', value: U.fmt(total), hero: true, delta: U.delta(total, pTotal), spark: ticks.map((d) => su[d].form + su[d].platform), compare: cmp }),
+      U.kpi({ label: S.exInt ? 'External Form Sign-ups' : 'Form Sign-ups', source: 'HubSpot', value: U.fmt(form), delta: U.delta(form, pForm), spark: ticks.map((d) => su[d].form), compare: `${all.length - shown.length} internal tests ${S.exInt ? 'excluded' : 'included'}` }),
+      plat != null ? U.kpi({ label: 'Platform Sign-ups', source: 'PostHog', value: U.fmt(plat), delta: U.delta(plat, pPlat), spark: ticks.map((d) => su[d].platform), compare: 'Accounts created in the product, any entry point' }) : U.kpi({ label: 'Platform Sign-ups', source: 'PostHog', awaiting: 'PostHog' }),
       D.has('hubspot', 'sessions') ? U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', value: U.pct(rate), delta: U.delta(rate, pRate), compare: `${U.fmt(total)} sign-ups / ${U.fmt(sess)} sessions` }) : U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', awaiting: 'HubSpot' }),
     ], 4);
     const goals = A.targets.strip(['total_signups', 'platform_signups', 'visit_to_signup_rate']);
 
     const funnel = U.card({ cls: 'chart-card', title: 'Visit-to-active-account funnel', sub: `Count, % of step 1 and step-to-step % · internal tests ${S.exInt ? 'excluded' : 'included'}`, body: C.funnel(D.funnel()) });
     const keys = [{ name: S.exInt ? 'External form sign-ups' : 'Form sign-ups', color: 'var(--series-a)' }, { name: 'Platform sign-ups', color: 'var(--series-b)' }];
-    const chart = U.card({ cls: 'chart-card', title: 'Daily sign-ups by type', sub: `${U.win(S.from, S.to)} · landing form (HubSpot) and platform (PostHog)`, body: C.stacked({ dates: days, keys, value: (d, i) => (i ? su[d].platform : su[d].form), label: 'Daily sign-ups by type' }) });
+    const chart = U.card({ cls: 'chart-card', title: `${grain} sign-ups by type`, sub: `One bar per ${D.grainBar()} · since launch · ${U.win(S.from, S.to)} · landing form (HubSpot) and platform (PostHog)`, body: C.stacked({ dates: ticks, keys, value: (d, i) => (i ? su[d].platform : su[d].form), label: `${grain} sign-ups by type` }) });
 
     const KEY = ['form_start', 'sign_up', 'login', 'generate_lead'];
     const hasEv = D.has('ga4', 'ga_event');

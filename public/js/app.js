@@ -4,7 +4,7 @@
 (function (A) {
   const U = A.ui;
   const LAUNCH = A.LAUNCH = '2026-10-01';
-  const S = A.S = { data: null, tab: 'overview', period: '28', from: LAUNCH, to: U.today(), exInt: true, me: null, goalCountry: 'Colombia' };
+  const S = A.S = { data: null, tab: 'overview', grain: 'day', from: LAUNCH, to: U.today(), exInt: true, me: null, goalCountry: 'Colombia' };
 
   // ---------- data helpers
   const D = A.D = {};
@@ -54,11 +54,63 @@
   D.platform = (from = S.from, to = S.to) => (D.has('posthog', 'ph_new_persons') ? D.sum('posthog', 'ph_new_persons', (r) => !S.exInt || r.dim_value !== 'Internal', from, to) : null);
   D.sessions = (from = S.from, to = S.to) => D.sum('hubspot', 'sessions', null, from, to);
   D.signups = (from = S.from, to = S.to) => D.forms(from, to).length + (D.platform(from, to) || 0);
-  D.prev = () => {
-    if (S.period === 'launch' || S.from <= LAUNCH) return null;
-    const len = U.diffDays(S.from, S.to) + 1;
-    return { from: U.addDays(S.from, -len), to: U.addDays(S.from, -1), len };
+  const GRAIN_META = {
+    day: { name: 'Daily', bar: 'day' },
+    week: { name: 'Weekly', bar: 'week' },
+    biweek: { name: 'Bi-weekly', bar: 'two weeks' },
+    month: { name: 'Monthly', bar: 'month' },
+    quarter: { name: 'Quarterly', bar: 'quarter' },
+    year: { name: 'Yearly', bar: 'year' },
   };
+  D.grain = () => (GRAIN_META[S.grain] ? S.grain : 'day');
+  D.grainName = () => GRAIN_META[D.grain()].name;
+  D.grainBar = () => GRAIN_META[D.grain()].bar;
+  D.ticks = (from = S.from, to = S.to) => U.ticks(from, to, D.grain(), LAUNCH);
+  const bucketOf = (d) => U.bucketKey(d, D.grain(), LAUNCH);
+  // Sum a day-keyed number map onto the active temporality. Daily keeps one point per day.
+  D.series = (byDay) => {
+    const ticks = D.ticks();
+    if (D.grain() === 'day') return ticks.map((t) => Number(byDay && byDay[t]) || 0);
+    const sums = Object.fromEntries(ticks.map((t) => [t, 0]));
+    for (const [d, v] of Object.entries(byDay || {})) {
+      const k = bucketOf(d);
+      if (sums[k] != null) sums[k] += Number(v) || 0;
+    }
+    return ticks.map((t) => sums[t]);
+  };
+  D.seriesRate = (numDay, denDay) => {
+    const n = D.series(numDay), d = D.series(denDay);
+    return n.map((v, i) => (d[i] ? v / d[i] : 0));
+  };
+  D.rollNum = (byDay) => {
+    if (D.grain() === 'day') return byDay;
+    const out = Object.fromEntries(D.ticks().map((t) => [t, 0]));
+    for (const [d, v] of Object.entries(byDay || {})) if (out[bucketOf(d)] != null) out[bucketOf(d)] += Number(v) || 0;
+    return out;
+  };
+  D.rollChannels = (byDay) => {
+    if (D.grain() === 'day') return byDay;
+    const out = Object.fromEntries(D.ticks().map((t) => [t, Array(8).fill(0)]));
+    for (const [d, arr] of Object.entries(byDay || {})) {
+      const bucket = out[bucketOf(d)];
+      if (bucket) arr.forEach((v, i) => { bucket[i] += Number(v) || 0; });
+    }
+    return out;
+  };
+  D.rollSignups = (byDay) => {
+    if (D.grain() === 'day') return byDay;
+    const out = Object.fromEntries(D.ticks().map((t) => [t, { form: 0, platform: 0 }]));
+    for (const [d, row] of Object.entries(byDay || {})) {
+      const bucket = out[bucketOf(d)];
+      if (!bucket) continue;
+      bucket.form += row.form || 0;
+      bucket.platform += row.platform || 0;
+    }
+    return out;
+  };
+  // The window is always launch through today, so there is no earlier stretch to compare.
+  D.prev = () => null;
+  D.versus = () => 'Since launch';
   D.channels = (from = S.from, to = S.to) => {
     const out = Array(8).fill(0);
     for (const r of D.M()) if (r.source === 'hubspot' && r.metric === 'sessions' && inR(r.date, from, to)) out[A.charts.channelOf(r.dim_value)] += Number(r.value) || 0;
@@ -161,6 +213,24 @@
   D.PAID = ['meta', 'linkedin', 'google_ads'];
   D.anyPaid = () => D.M().some((r) => D.PAID.includes(r.source) && /^ad_/.test(r.metric));
   D.paidSum = (metric, from = S.from, to = S.to, only) => (only ? [only] : D.PAID).reduce((s, k) => s + D.sum(k, metric, null, from, to), 0);
+  // Paid impressions from Meta, LinkedIn and Google Ads, plus organic LinkedIn post impressions.
+  // Organic Meta and Google Search impressions are not connected, so they are never filled in.
+  D.impressionParts = (from = S.from, to = S.to) => {
+    const names = { linkedin: 'LinkedIn', meta: 'Meta', google_ads: 'Google' };
+    return D.PAID.map((key) => ({
+      key,
+      name: names[key] || key,
+      paid: D.sum(key, 'ad_impressions', null, from, to),
+      organic: key === 'linkedin' ? D.sum('linkedin', 'post_impressions', null, from, to) : null,
+      organicKnown: key === 'linkedin' && D.has('linkedin', 'post_impressions'),
+    }));
+  };
+  D.impressions = (from = S.from, to = S.to) => {
+    const parts = D.impressionParts(from, to);
+    const known = parts.some((p) => D.has(p.key, 'ad_impressions') || p.organicKnown);
+    if (!known) return null;
+    return parts.reduce((s, p) => s + p.paid + (p.organicKnown ? p.organic : 0), 0);
+  };
   D.funnel = (from = S.from, to = S.to) => {
     const gaF = D.ga(from, to);
     const fs = D.ga4Event('form_start', from, to), su = D.ga4Event('sign_up', from, to);
@@ -188,6 +258,7 @@
       case 'cps': { const s = D.signups(from, to); const spend = D.anyPaid() ? D.paidSum('ad_spend', from, to) : null; return spend && s ? spend / s : null; }
       // Activation: share of new platform people whose first "Proyecto creado" action is in the window.
       case 'activation_7d': { const base = D.platform(from, to); if (!base) return null; const act = D.sum('posthog', 'ph_activated_users', null, from, to); return act / base; }
+      case 'total_impressions': return D.impressions(from, to);
       case 'ad_spend_budget': return D.anyPaid() ? D.paidSum('ad_spend', from, to) : null;
       case 'clicks': return D.anyPaid() ? D.paidSum('ad_clicks', from, to) : null;
       case 'ctr': { const i = D.paidSum('ad_impressions', from, to); return i ? D.paidSum('ad_clicks', from, to) / i : null; }
@@ -204,32 +275,24 @@
   };
   A.footer = () => {
     const last = ((S.data && S.data.sources) || []).filter((s) => s.last_sync).map((s) => s.last_sync).sort().pop();
-    document.getElementById('foot').textContent = `Period ${U.win(S.from, S.to)} · internal tests ${S.exInt ? 'excluded' : 'included'} · last data load ${last ? U.stamp(last) : 'none'} · Research, Think4Ever LATAM`;
+    document.getElementById('foot').textContent = `Since launch ${U.win(S.from, S.to)} · ${D.grainName().toLowerCase()} · internal tests ${S.exInt ? 'excluded' : 'included'} · last data load ${last ? U.stamp(last) : 'none'} · Research, Think4Ever LATAM`;
     const ss = (S.data && S.data.sources) || [];
     document.getElementById('sources-foot').textContent = `${ss.filter((s) => s.state === 'connected').length} of ${ss.length} sources connected`;
   };
-  A.setPeriod = (v) => {
+  A.setGrain = (v) => {
     const sel = document.getElementById('period');
-    if (![...sel.options].some((o) => o.value === v)) v = '28';
-    sel.value = v; S.period = v;
-    document.getElementById('custom-range').hidden = v !== 'custom';
-    const t = U.today();
-    if (v === 'launch') { S.from = LAUNCH; S.to = t; }
-    else if (v === 'custom') {
-      S.from = document.getElementById('from').value || S.from;
-      S.to = document.getElementById('to').value || S.to;
-    } else { S.to = t; S.from = U.addDays(t, -(Number(v) - 1)); }
-    if (S.from > S.to) [S.from, S.to] = [S.to, S.from];
-    document.getElementById('from').value = S.from;
-    document.getElementById('to').value = S.to;
-    A.store('t4e-growth-period', v);
+    if (![...sel.options].some((o) => o.value === v)) v = 'day';
+    sel.value = v;
+    S.grain = v;
+    S.from = LAUNCH;
+    S.to = U.today();
+    A.store('t4e-growth-grain', v);
     if (A.targets) A.targets.ensure(S.to.slice(0, 7));
     if (S.data) A.render();
   };
 
   // ---------- header controls
-  document.getElementById('period').addEventListener('change', (e) => A.setPeriod(e.target.value));
-  ['from', 'to'].forEach((id) => document.getElementById(id).addEventListener('change', () => A.setPeriod('custom')));
+  document.getElementById('period').addEventListener('change', (e) => A.setGrain(e.target.value));
   document.getElementById('ex-int').addEventListener('change', (e) => {
     S.exInt = e.target.checked; A.store('t4e-growth-exclude-internal', S.exInt ? '1' : '0');
     if (S.data) A.render();
@@ -247,7 +310,7 @@
     document.getElementById('ex-int').checked = S.exInt;
     const hash = location.hash.slice(1);
     S.tab = A.resolve(hash || A.store('t4e-growth-tab') || 'overview');
-    A.setPeriod(A.store('t4e-growth-period') || '28');
+    A.setGrain(A.store('t4e-growth-grain') || 'day');
     A.render();
     A.load();
     // The role decides which controls show; the server enforces the same rule on every write.

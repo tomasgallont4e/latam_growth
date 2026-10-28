@@ -4,8 +4,9 @@
   function render() {
     const U = A.ui, C = A.charts, D = A.D, S = A.S;
     const prev = D.prev();
-    const cmp = prev ? `vs previous ${prev.len} days` : 'Since launch · no comparison';
-    const days = U.days(S.from, S.to);
+    const cmp = D.versus();
+    const grain = D.grainName();
+    const ticks = D.ticks();
     const hasSess = D.has('hubspot', 'sessions');
     const ch = D.channels(), total = ch.reduce((a, b) => a + b, 0);
     const pch = prev ? D.channels(prev.from, prev.to) : null, ptotal = pch ? pch.reduce((a, b) => a + b, 0) : null;
@@ -19,25 +20,25 @@
     const sessDay = D.byDay('hubspot', 'sessions');
 
     const kpis = U.kpiRow([
-      hasSess ? U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', value: U.fmt(total), delta: U.delta(total, ptotal), spark: days.map((d) => sessDay[d]), compare: cmp }) : U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', awaiting: 'HubSpot' }),
+      hasSess ? U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', value: U.fmt(total), delta: U.delta(total, ptotal), spark: D.series(sessDay), compare: cmp }) : U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', awaiting: 'HubSpot' }),
       !g ? U.kpi({ label: 'Unique Visitors', source: 'GA4', awaiting: 'GA4' })
         : g.users == null ? U.kpi({ label: 'Unique Visitors', source: 'GA4', value: '–', compare: 'Deduped visitors for this range appear after the next GA4 sync' })
-          : U.kpi({ label: 'Unique Visitors', source: 'GA4', value: U.fmt(g.users), delta: U.delta(g.users, pg && pg.users), spark: gaUsersDay ? days.map((d) => gaUsersDay[d]) : null, compare: `GA4 total for the period · ${cmp}` }),
+          : U.kpi({ label: 'Unique Visitors', source: 'GA4', value: U.fmt(g.users), delta: U.delta(g.users, pg && pg.users), spark: gaUsersDay && D.grain() === 'day' ? U.days(S.from, S.to).map((d) => gaUsersDay[d]) : null, compare: 'GA4 total since launch' }),
       !g ? U.kpi({ label: 'New Users', source: 'GA4', awaiting: 'GA4' })
         : g.newUsers == null ? U.kpi({ label: 'New Users', source: 'GA4', value: '–', compare: 'New users for this range appear after the next GA4 sync' })
-          : U.kpi({ label: 'New Users', source: 'GA4', value: U.fmt(g.newUsers), delta: U.delta(g.newUsers, pg && pg.newUsers), spark: gaNewDay ? days.map((d) => gaNewDay[d]) : null, compare: `${g.usersExact ? 'GA4 total for the period' : 'First visits, one count per day'} · ${cmp}` }),
+          : U.kpi({ label: 'New Users', source: 'GA4', value: U.fmt(g.newUsers), delta: U.delta(g.newUsers, pg && pg.newUsers), spark: gaNewDay ? D.series(gaNewDay) : null, compare: g.usersExact ? 'GA4 total since launch' : 'First visits, one count per day' }),
       !g ? U.kpi({ label: 'Engagement Rate', source: 'GA4', awaiting: 'GA4' })
         : !g.sessions ? U.kpi({ label: 'Engagement Rate', source: 'GA4', value: '–', compare: 'No GA4 sessions in this period' })
-          : U.kpi({ label: 'Engagement Rate', source: 'GA4', value: U.pct(g.rate), delta: U.delta(g.rate, pg && pg.sessions ? pg.rate : null), spark: days.map((d) => (gaSessDay[d] ? gaEngDay[d] / gaSessDay[d] : 0)), compare: `${U.fmt(g.engaged)} engaged of ${U.fmt(g.sessions)} GA4 sessions` }),
+          : U.kpi({ label: 'Engagement Rate', source: 'GA4', value: U.pct(g.rate), delta: U.delta(g.rate, pg && pg.sessions ? pg.rate : null), spark: D.seriesRate(gaEngDay, gaSessDay), compare: `${U.fmt(g.engaged)} engaged of ${U.fmt(g.sessions)} GA4 sessions` }),
       hasSess && total ? U.kpi({ label: 'Top Channel', source: 'HubSpot · todo el sitio', value: U.esc(C.CHANNELS[top].name), small: true, delta: U.delta(ch[top], pch ? pch[top] : null), compare: `${U.fmt(ch[top])} sessions · ${U.pct(ch[top] / total)} share` }) : U.kpi({ label: 'Top Channel', source: 'HubSpot', awaiting: 'HubSpot' }),
     ]);
     const goals = A.targets.strip(['landing_sessions', 'unique_visitors', 'engagement_rate']);
 
     const rows = C.CHANNELS.map((c, i) => ({ name: c.name, color: c.color, value: ch[i], extra: pch ? U.delta(ch[i], pch[i]) : '' })).filter((r) => r.value || (pch && pch[C.CHANNELS.findIndex((c) => c.name === r.name)]));
-    const perf = U.card({ title: 'Sessions by channel', sub: `${U.fmt(total)} sessions · share of total and % change ${prev ? `vs previous ${prev.len} days` : '(no comparison since launch)'}`, right: U.srcPill('hubspot', 'todo el sitio'), body: hasSess ? C.hbars(rows, total) : U.awaiting('hubspot') });
+    const perf = U.card({ title: 'Sessions by channel', sub: `${U.fmt(total)} sessions · share of total · since launch`, right: U.srcPill('hubspot', 'todo el sitio'), body: hasSess ? C.hbars(rows, total) : U.awaiting('hubspot') });
     const mix = U.card({ title: 'Channel mix', sub: 'Share of landing sessions', body: hasSess ? C.mix(ch) : U.awaiting('hubspot') });
-    const daily = D.dailyChannels();
-    const chart = U.card({ cls: 'chart-card', title: 'Daily sessions by channel', sub: U.win(S.from, S.to), body: hasSess ? C.stacked({ dates: days, keys: C.CHANNELS, value: (d, i) => daily[d][i], label: 'Daily sessions by channel' }) : U.awaiting('hubspot') });
+    const daily = D.rollChannels(D.dailyChannels());
+    const chart = U.card({ cls: 'chart-card', title: `${grain} sessions by channel`, sub: `One bar per ${D.grainBar()} · since launch · ${U.win(S.from, S.to)}`, body: hasSess ? C.stacked({ dates: ticks, keys: C.CHANNELS, value: (d, i) => daily[d][i], label: `${grain} sessions by channel` }) : U.awaiting('hubspot') });
 
     // Collapsed detail tables
     const src = D.byDim('hubspot', 'sessions');
