@@ -343,7 +343,15 @@ test('the goal counts accounts created (first identify) without adding registrat
   assert.equal(A.D.accounts(A.S.from, A.S.to, 'Colombia'), 15);
   assert.equal(A.D.accountsCountries()['Brazil'], 6);
   A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  A.testLoad('views/targets.js');
+  A.S.data.metrics.push({ ...metric('ga4', 'ga_geo_sessions', 1000, 'Colombia'), dim: 'country' });
   const html = A.views.overview.render();
+  assert.match(html, /Metrics by country/);
+  assert.match(html, /All metrics by country/);
+  assert.match(html, /Which country metrics have data/);
+  assert.match(html, /Cost per account/);
+  assert.match(html, /Accounts \/ 1,000 sessions/);
+  assert.match(html, /LATAM total/);
   assert.match(html, /Accounts created/);
   assert.match(html, /of 500,000/);
   assert.match(html, /Progress by country/);

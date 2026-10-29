@@ -59,21 +59,71 @@
       <div class="goal-meta"><span><b>${U.pct(ratio)}</b> of the goal</span><span>${U.fmt(Math.max(0, goal - total))} remaining</span></div></div>
       <dl class="acct-hero-side"><div><dt>Gain / loss · by ${U.esc(UNIT[D.grain()])}</dt><dd class="chg-dd">${changeBlock(D.change(D.accountsByDay(from, to)))}</dd></div><div><dt>In this period</dt><dd>${U.fmt(D.accounts())}</dd></div><div><dt>Markets with accounts</dt><dd>${hasSplit ? `${active} of ${rows.length}` : '–'}</dd></div><div><dt>CRM contacts</dt><dd>${U.fmt((D.crmTotal(from, to) || 0))}</dd></div></dl>${trend}</div>`;
 
-    const body = hasSplit ? U.table([
-      { t: 'Country', f: (r) => U.esc(r.name) },
-      { t: 'Accounts', num: 1, f: (r) => (r.accounts == null ? '–' : `<b>${U.fmt(r.accounts)}</b>`) },
-      { t: 'Goal', num: 1, f: (r) => U.fmt(r.target) },
-      { t: '% of goal', num: 1, f: (r) => (r.accounts == null ? '–' : `<span class="cty-pct">${U.pct(r.target ? r.accounts / r.target : null)}</span>${bar(r.target ? r.accounts / r.target : 0)}`) },
+    // ---- Metrics by country: every country-level metric the dashboard has, for the SELECTED range.
+    // Each cell comes from the same function Targets uses (A.targets.actual), so the two screens never disagree.
+    // null shows as a dash and is never filled in; the availability list below says why.
+    const T = A.targets, rf = S.from, rt = S.to;
+    const val = (key, name) => T.actual(key, name, rf, rt);
+    const mrow = (name, isLatam) => {
+      const c = isLatam ? 'LATAM' : name;
+      const acc = isLatam ? D.accounts(rf, rt) : (geoOk ? D.accounts(rf, rt, name) : null);
+      const sess = val('landing_sessions', c);
+      return {
+        name: isLatam ? 'LATAM total' : name, latam: !!isLatam,
+        sessions: sess, users: val('unique_visitors', c), engagement: val('engagement_rate', c),
+        crm: val('crm_contacts', c), reg: isLatam ? D.registrations(rf, rt) : D.registrations(rf, rt, name),
+        accounts: acc, per1k: sess && acc != null ? (acc / sess) * 1000 : null,
+        chg: isLatam ? D.change(D.accountsByDay(from, to)) : (geoOk ? D.change(D.accountsByDay(from, to, name)) : null),
+        spend: val('ad_spend_budget', c), impressions: val('total_impressions', c), clicks: val('clicks', c), ctr: val('ctr', c),
+      };
+    };
+    const mrows = markets.map(([name]) => mrow(name));
+    // Other markets and No country only carry accounts: the other sources do not report them.
+    const tail = [
+      { name: 'Other markets', accounts: other || null }, { name: 'No country on the account', accounts: unknown },
+    ].map((r) => ({ ...r, tail: true }));
+    const latam = mrow('LATAM', true);
+    const dash = '<span class="text-muted">&ndash;</span>';
+    const cell = (fn) => (r) => { const v = fn(r); return v == null || v === '' ? dash : v; };
+    const cols = [
+      { t: 'Country', f: (r) => (r.latam ? `<b>${U.esc(r.name)}</b>` : U.esc(r.name)) },
+      { t: 'Accounts', num: 1, f: cell((r) => (r.accounts == null ? null : `<b>${U.fmt(r.accounts)}</b>`)) },
       { t: `Change · ${UNIT[D.grain()]}`, num: 1, f: (r) => (r.chg ? changeBlock(r.chg, true) : '') },
-      { t: 'Sessions (GA4)', num: 1, f: (r) => U.fmt(r.sessions) },
-      { t: 'Visit to account', num: 1, f: (r) => U.pct(r.rate) },
-    ], [...rows, ...(other ? [{ name: 'Other markets', target: null, accounts: other, sessions: null, rate: null }] : []),
-      { name: 'No country on the account', target: null, accounts: unknown, sessions: null, rate: null }])
-      : U.empty('No country on any account yet', `${U.fmt(total)} accounts exist but none carries a country, so none can be placed in a market. Send a country property with identify (or enable GeoIP), and each market fills in here.`, 'earth-americas');
-    const note = `<p class="card-note" style="padding:0 20px 16px">Goal per country is its share of the 500K plan (editable in Targets). Sessions come from GA4 and are traffic, not accounts.${unmatched.length ? ` Country values that do not match a plan market (shown as Other markets): ${unmatched.slice(0, 8).map(([n, v]) => `${U.esc(n)} (${U.fmt(v)})`).join(', ')}. Plan markets are written in English, e.g. Brazil, Mexico.` : ''}${unknown ? ` ${U.fmt(unknown)} accounts carry no country at all.` : ''}</p>`;
+      { t: 'Registrations started', num: 1, f: cell((r) => (r.reg == null ? null : U.fmt(r.reg))) },
+      { t: 'CRM contacts', num: 1, f: cell((r) => (r.crm == null ? null : U.fmt(r.crm))) },
+      { t: 'Sessions', num: 1, f: cell((r) => (r.sessions == null ? null : U.fmt(r.sessions))) },
+      { t: 'Unique visitors', num: 1, f: cell((r) => (r.users == null ? null : U.fmt(r.users))) },
+      { t: 'Engagement', num: 1, f: cell((r) => (r.engagement == null ? null : U.pct(r.engagement))) },
+      { t: 'Accounts / 1,000 sessions', num: 1, f: cell((r) => (r.per1k == null ? null : U.fmt(r.per1k))) },
+      { t: 'Ad spend', num: 1, f: cell((r) => (r.spend == null ? null : U.money(r.spend))) },
+      { t: 'Impressions', num: 1, f: cell((r) => (r.impressions == null ? null : U.fmt(r.impressions))) },
+      { t: 'Clicks', num: 1, f: cell((r) => (r.clicks == null ? null : U.fmt(r.clicks))) },
+      { t: 'CTR', num: 1, f: cell((r) => (r.ctr == null ? null : U.pct(r.ctr))) },
+    ];
+    const allRows = [...mrows, ...tail, latam];
+    const has = (fn) => allRows.some((r) => !r.tail && !r.latam && fn(r) != null);
+    const STATUS = [
+      ['Accounts created', 'PostHog first identify, country on the person', has((r) => r.accounts), 'No account carries a country yet. Send country with identify.'],
+      ['Registrations started', 'PostHog registration_started, country on the person', has((r) => r.reg), 'Registration coverage or country missing in the last sync.'],
+      ['CRM contacts', 'HubSpot contact country', has((r) => r.crm), 'No HubSpot contacts with a country in this range.'],
+      ['Sessions', 'GA4 geo report', has((r) => r.sessions), 'GA4 country rows not synced yet.'],
+      ['Unique visitors', 'GA4 country snapshot, exact range only', has((r) => r.users), 'Needs a GA4 country snapshot for exactly this date range; daily users are never summed.'],
+      ['Engagement', 'GA4 engaged sessions divided by sessions', has((r) => r.engagement), 'GA4 country engaged sessions not synced yet.'],
+      ['Ad spend, impressions, clicks, CTR', 'Meta and Google Ads country breakdown', has((r) => r.spend), 'No paid country report in this range (ads not running or the report failed). LinkedIn has no country split.'],
+      ['Cost per account', 'Ad spend divided by attributed accounts', false, 'Needs each account attributed to a paid country; not available, so it is not estimated.'],
+      ['Activation (7 days)', 'PostHog action', false, 'No country split and no cohort link to the sign-up yet.'],
+    ];
+    const status = U.table([
+      { t: 'Metric', f: (r) => U.esc(r[0]) }, { t: 'Source', f: (r) => U.esc(r[1]) },
+      { t: 'By country', f: (r) => (r[2] ? U.pill('success', 'Available', true) : U.pill('warning', 'No data', true)) },
+      { t: 'Why a cell is empty', f: (r) => (r[2] ? '' : U.esc(r[3])) },
+    ], STATUS);
+    const note = `<p class="card-note" style="padding:0 20px 16px">Range ${U.win(rf, rt)}. Accounts / 1,000 sessions is a ratio, not a cohort conversion: GA4 sessions and PostHog accounts are not linked person by person.${unmatched.length ? ` Country values that do not match a plan market (counted in Other markets): ${unmatched.slice(0, 8).map(([n, v]) => `${U.esc(n)} (${U.fmt(v)})`).join(', ')}. Plan markets are written in English, e.g. Brazil, Mexico.` : ''}${unknown ? ` ${U.fmt(unknown)} accounts carry no country at all.` : ''}</p>`;
+    const metricsCard = U.card({ cls: 'metrics-card', title: 'All metrics by country', sub: `Selected range ${U.win(rf, rt)} · a dash means the source has no value for that country`, right: U.srcPill('posthog', 'country'), body: U.table(cols, allRows, (r) => (r.latam ? 'row-total' : '')) + note });
+    const statusCard = U.details('Which country metrics have data', `${STATUS.filter((r) => r[2]).length} of ${STATUS.length} available`, status);
     return U.section('LATAM 500K goal', sub, `<div class="card acct-hero-card">${hero}</div>`)
-      + (cards ? U.section('Progress by country', 'Each market against its own goal · same 0–100% axis everywhere, so the gap to the goal reads the same in every card', `<div class="goal-row cty-grid">${cards}</div>`) : '')
-      + U.section('Accounts by country', 'Since launch · same count as above, split by the country on the account', U.card({ title: 'How each market is going', sub: hasSplit ? `${U.fmt(known)} of ${U.fmt(total)} accounts have a country` : '', right: U.srcPill('posthog', 'country'), body: body + (hasSplit ? note : '') }));
+      + (cards ? U.section('Progress by country', 'Each market against its own goal, same 0-100% axis everywhere, so the gap to the goal reads the same in every card', `<div class="goal-row cty-grid">${cards}</div>`) : '')
+      + U.section('Metrics by country', 'Every country-level metric the sources can give, side by side', metricsCard + statusCard);
   }
 
   function render() {
