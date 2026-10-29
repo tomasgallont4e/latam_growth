@@ -40,7 +40,7 @@ test('metric corrections preserve the goal, channel and conversion charts', () =
   assert.match(overview, /Channel mix/);
   assert.match(overview, /aria-label="HubSpot sessions by channel"/);
   assert.match(overview, /Timeline Notes/);
-  assert.match(conversion, /aria-label="Daily CRM contacts"/);
+  assert.match(conversion, /Daily registration starts and accounts created/);
   assert.doesNotMatch(overview, /class="goal-col"/);
   const realZero = A.charts.goalProgress({ dates: ['2026-10-01'], values: [0], goal: 500000 });
   assert.match(realZero, /class="goal-dot"/);
@@ -346,15 +346,17 @@ test('the goal counts accounts created (first identify) without adding registrat
   const html = A.views.overview.render();
   assert.match(html, /Accounts created/);
   assert.match(html, /of 500,000/);
-  assert.match(html, /Sign-ups by country/);
-  assert.match(html, /class="seg"/);
-  assert.match(html, /Brazil: 6/);
-  assert.match(html, /Colombia: 15/);
+  assert.match(html, /New accounts by country/);
+  assert.match(html, /class="hbar-list"/);
+  assert.match(html, /Brazil/);
+  assert.match(html, />6</);
+  assert.match(html, /Colombia/);
+  assert.match(html, />15</);
   assert.doesNotMatch(html, /series-line/);
   assert.doesNotMatch(html, /Brazil · accounts created/);
   assert.doesNotMatch(html, /Progress by country/);
   assert.doesNotMatch(html, /axis fixed at 0/);
-  assert.match(html, /No country on the account/);
+  assert.match(html, /have no country/);
   assert.match(html, /Funnel platform/);
   assert.match(html, /PostHog funnel/);
   assert.doesNotMatch(html, /31 reported|Verified actual pending/);
@@ -451,7 +453,7 @@ function clarityFixture(extra = []) {
   }, ...extra];
 }
 
-test('Landing page is the Clarity reading and leaves Social and Paid in place', () => {
+test('Landing owns Clarity; Social and Paid contains no duplicate landing diagnostics', () => {
   const A = dashboard();
   A.S.data.snapshots = clarityFixture();
   const landing = A.views.landing.render();
@@ -464,14 +466,14 @@ test('Landing page is the Clarity reading and leaves Social and Paid in place', 
   assert.doesNotMatch(landing, /Social and paid at a glance/);
   assert.doesNotMatch(landing, /Ad Spend/);
   assert.match(social, /Social and paid at a glance/);
-  assert.match(social, /Where visitors open the site/);
+  assert.doesNotMatch(social, /Where visitors open the site|Whether the page worked|Which ad, and which page|Microsoft Clarity export/);
 });
 
-test('Clarity section reads where visitors opened the site', () => {
+test('Landing owns the Clarity summary and source rows', () => {
   const A = dashboard();
   A.S.data.snapshots = clarityFixture();
-  const html = A.views.social.render();
-  const section = html.slice(html.indexOf('Where visitors open the site'), html.indexOf('>Details<'));
+  const html = A.views.landing.render();
+  const section = html.slice(html.indexOf('Where visitors open the site'));
   assert.match(section, /Last 72 hours/);
   assert.match(section, /76\.9%/);
   assert.match(section, /Instagram app/);
@@ -480,7 +482,7 @@ test('Clarity section reads where visitors opened the site', () => {
   assert.match(section, /kpi-tile watch[\s\S]*Script errors[\s\S]*8\.2%/);
   assert.match(section, /Campaign and page detail arrives on the next Clarity sync/);
   assert.doesNotMatch(section, /sessionsWithoutMetricPercentage/);
-  assert.match(html, /Microsoft Clarity export/);
+  assert.doesNotMatch(A.views.social.render(), /Microsoft Clarity export/);
 });
 
 test('Clarity breakdowns keep the ad and the login on separate rows', () => {
@@ -506,14 +508,14 @@ test('Clarity breakdowns keep the ad and the login on separate rows', () => {
       ],
     },
   ]);
-  const html = A.views.social.render();
+  const html = A.views.landing.render();
   assert.match(html, /Script errors by app/);
   assert.match(html, /watch-row/);
   assert.match(html, /latam-launch/);
   assert.match(html, />440</);
   assert.match(html, /pill pill-success[\s\S]*Landing/);
   assert.match(html, /pill pill-warning[\s\S]*Login/);
-  assert.doesNotMatch(html.slice(html.indexOf('Where visitors open the site'), html.indexOf('>Details<')), /sessionsWithoutMetricPercentage/);
+  assert.doesNotMatch(html, /sessionsWithoutMetricPercentage/);
 });
 
 test('Clarity refresh stays inside the daily request limit and keeps a failed breakdown', () => {
@@ -539,4 +541,59 @@ test('Clarity refresh stays inside the daily request limit and keeps a failed br
   assert.deepEqual(snaps.map((s) => s.key), ['live_insights', 'by_browser']);
   assert.equal(snaps[1].from, '2026-10-20');
   assert.equal(snaps[1].rows[0].metric, 'ScriptErrorCount');
+});
+
+test('Overview ranks country account growth and lets the CEO select one market', () => {
+  const A = dashboard();
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  A.S.data.snapshots.push({ source: 'posthog', key: 'account_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true, country_available: true }] });
+  A.S.data.metrics = [
+    { ...metric('posthog', 'ph_accounts', 20, 'External'), dim: 'account_type' },
+    { ...metric('posthog', 'ph_accounts_geo', 12, 'Colombia'), dim: 'country' },
+    { ...metric('posthog', 'ph_accounts_geo', 8, 'Brazil'), dim: 'country' },
+    { ...metric('ga4', 'ga_geo_sessions', 300, 'Colombia'), dim: 'country' },
+    { ...metric('ga4', 'ga_geo_sessions', 400, 'Brazil'), dim: 'country' },
+  ];
+  const html = A.views.overview.render();
+  assert.match(html, /New accounts by country/);
+  assert.match(html, /class="hbar-list"/);
+  assert.doesNotMatch(html, /month-to-date total|count starts again at 0/i);
+  assert.match(html, /id="goal-country"/);
+  assert.match(html, /Accounts per 1,000 sessions/);
+  assert.match(html, /GA4 session is a group of interactions/);
+});
+
+test('Acquisition prioritizes GA4 sessions and engagement by channel', () => {
+  const A = dashboard();
+  A.S.data.metrics = [
+    { ...metric('ga4', 'ga_sessions', 140, 'Paid Social'), dim: 'channel' },
+    { ...metric('ga4', 'ga_engaged_sessions', 70, 'Paid Social'), dim: 'channel' },
+    { ...metric('ga4', 'ga_sessions', 20, 'Organic Search'), dim: 'channel' },
+    { ...metric('ga4', 'ga_engaged_sessions', 10, 'Organic Search'), dim: 'channel' },
+  ];
+  const html = A.views.acquisition.render();
+  assert.match(html, /GA4 sessions by channel/);
+  assert.match(html, /Engaged sessions/);
+  assert.match(html, /Engagement rate/);
+  assert.doesNotMatch(html, /Channel mix/);
+  assert.match(A.views.overview.render(), /A GA4 session is a group of interactions/);
+});
+
+test('Conversion highlights the ordered steps, not unclassified observed people or raw GA4 event noise', () => {
+  const A = dashboard();
+  A.S.data.snapshots.push(
+    { source: 'posthog', key: 'registration_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true }] },
+    { source: 'posthog', key: 'account_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true, country_available: true }] },
+  );
+  A.S.data.metrics = [
+    { ...metric('posthog', 'ph_signups', 8, 'External'), dim: 'account_type' },
+    { ...metric('posthog', 'ph_accounts', 5, 'External'), dim: 'account_type' },
+    metric('ga4', 'ga_event', 30, 'page_view'), metric('ga4', 'ga_event', 4, 'form_start'), metric('ga4', 'ga_event', 2, 'sign_up'),
+  ];
+  const html = A.views.conversion.render();
+  assert.match(html, /Registration starts/);
+  assert.match(html, /Accounts created/);
+  assert.doesNotMatch(html, /class="kpi-label">New observed people/);
+  assert.doesNotMatch(html, /page_view/);
+  assert.match(html, /event counts, not unique people/);
 });

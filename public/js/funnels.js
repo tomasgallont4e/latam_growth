@@ -20,7 +20,10 @@
     if (state.platform === 'posthog') {
       const entry = cache.get(key());
       if (!entry) return '<div class="empty-state slim">Loading PostHog funnel…</div>';
-      if (entry.error) return `<div class="empty-state slim"><b>Funnel unavailable</b><span>${U.esc(entry.error)}</span><button class="btn btn-secondary btn-sm" data-funnel-retry>Retry</button></div>`;
+      if (entry.error) {
+        const permanent = /\((?:401|403)\)/.test(entry.error);
+        return `<div class="empty-state slim"><b>Funnel unavailable</b><span>${U.esc(entry.error)}</span>${permanent ? '' : '<button class="btn btn-secondary btn-sm" data-funnel-retry>Retry</button>'}</div>`;
+      }
       if (!entry.data) return '<div class="empty-state slim">Loading PostHog funnel…</div>';
       return nativeBody(entry.data);
     }
@@ -41,7 +44,7 @@
   function render() {
     const U = A.ui;
     const controls = `<div class="funnel-controls"><label>Platform <select aria-label="Funnel platform" data-funnel-platform>${Object.entries(platforms).map(([id, name]) => `<option value="${id}"${id === state.platform ? ' selected' : ''}>${name}</option>`).join('')}</select></label>${state.platform === 'posthog' ? `<label>Funnel <select aria-label="PostHog funnel" data-funnel-path>${Object.entries(paths).map(([id, name]) => `<option value="${id}"${id === state.path ? ' selected' : ''}>${name}</option>`).join('')}</select></label>` : ''}</div>`;
-    return U.card({ cls: 'chart-card', title: 'Funnels by platform', sub: state.platform === 'posthog' ? 'Sign-up = registration_started · missing downstream events remain pending' : 'Each platform keeps its own activity definitions', body: controls + `<div data-platform-funnel>${body()}</div>` });
+    return U.card({ cls: 'chart-card', title: 'Funnels by platform', sub: state.platform === 'posthog' ? 'PostHog: registration_started is the step before account creation (first identify).' : 'Each platform keeps its own activity definitions', body: controls + `<div data-platform-funnel>${body()}</div>` });
   }
   function mount(el) {
     async function load(force = false) {
