@@ -66,6 +66,32 @@
     return `<div class="chart-scroll"><svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(label)}">${g}</svg></div>${C.legend(keys, notes.some((n) => dates.includes(n.date)))}`;
   };
 
+  // Accounts created per day (bars, left axis) and the running total since launch (line, right axis).
+  // The two axes are independent on purpose: against a 500K goal the running total would read as a flat line.
+  C.accountsTrend = ({ dates, daily }) => {
+    if (!dates.length || !daily.some(Boolean)) return U.empty('No accounts yet', 'The curve starts with the first account created.', 'chart-line');
+    let run = 0; const cum = daily.map((v) => (run += v));
+    const W = 1000, H = 240, L = 54, R = 58, T = 16, B = 206;
+    const maxD = niceMax(Math.max(...daily)), maxC = niceMax(cum[cum.length - 1]);
+    const yd = (v) => B - (v / maxD) * (B - T), yc = (v) => B - (v / maxC) * (B - T);
+    const step = (W - L - R) / dates.length, bw = Math.max(1.5, step * 0.62), cx = (j) => L + j * step + step / 2;
+    let g = '';
+    for (let k = 0; k <= 4; k++) {
+      const yy = yd((maxD * k) / 4).toFixed(1);
+      g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text x="${L - 8}" y="${(+yy + 4).toFixed(1)}" text-anchor="end">${U.esc(U.fmt((maxD * k) / 4))}</text><text x="${W - R + 8}" y="${(+yy + 4).toFixed(1)}" text-anchor="start" class="trend-axis-r">${U.esc(U.fmt((maxC * k) / 4))}</text>`;
+    }
+    dates.forEach((d, j) => {
+      g += `<rect class="day-hit" x="${(L + j * step).toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"><title>${U.esc(U.dshort(d))} · ${U.esc(U.fmt(daily[j]))} new · ${U.esc(U.fmt(cum[j]))} total</title></rect>`;
+      if (daily[j]) g += `<rect class="trend-bar" x="${(cx(j) - bw / 2).toFixed(2)}" y="${yd(daily[j]).toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, B - yd(daily[j])).toFixed(2)}"/>`;
+    });
+    const pts = cum.map((v, j) => `${cx(j).toFixed(1)},${yc(v).toFixed(1)}`);
+    g += `<polygon class="trend-area" points="${cx(0).toFixed(1)},${B} ${pts.join(' ')} ${cx(dates.length - 1).toFixed(1)},${B}"/><polyline class="trend-line" points="${pts.join(' ')}"/><circle class="trend-dot" cx="${cx(dates.length - 1).toFixed(1)}" cy="${yc(cum[cum.length - 1]).toFixed(1)}" r="4"/>`;
+    const every = Math.ceil(dates.length / 8);
+    dates.forEach((d, j) => { if (j % every === 0) g += `<text x="${cx(j).toFixed(1)}" y="${H - 8}" text-anchor="middle">${U.esc(U.dshort(d))}</text>`; });
+    return `<div class="chart-scroll"><svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Accounts created per day and running total since launch">${g}</svg></div>
+      <div class="channel-legend trend-legend"><span class="lg-bar">New accounts per day (left axis)</span><span class="lg-line">Running total since launch (right axis)</span></div>`;
+  };
+
   C.mix = (values, keys = C.CHANNELS, unit = 'sessions') => {
     const total = values.reduce((a, b) => a + b, 0);
     if (!total) return U.empty('No sessions in this period', '', 'chart-pie');

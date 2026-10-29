@@ -36,13 +36,15 @@
     const unknown = Math.max(0, total - known);
     const hasSplit = D.has('posthog', 'ph_new_persons_geo') || !!D.snap('posthog', 'countries', from, to);
     const active = rows.filter((r) => r.accounts > 0).length;
+    const daysAll = U.days(from, to), dailyAcc = D.byDay('posthog', 'ph_new_persons', from, to, (r) => !S.exInt || r.dim_value !== 'Internal');
+    const trend = `<div class="goal-hero-trend"><div class="goal-hero-label">Accounts created per day</div>${A.charts.accountsTrend({ dates: daysAll, daily: daysAll.map((d) => dailyAcc[d] || 0) })}</div>`;
     const bar = (r) => `<div class="goal-bar slim" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, r * 100))}"><i style="width:${Math.min(100, Math.max(0, r * 100)).toFixed(1)}%"></i></div>`;
 
     const hero = `<div class="goal-hero"><div class="goal-hero-main"><span class="goal-hero-label">Accounts created</span>
       <div class="goal-nums"><span class="goal-hero-actual">${U.fmt(total)}</span><span class="goal-target">of ${U.fmt(goal)}</span></div>
       <div class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, ratio * 100))}" aria-label="Accounts created toward the goal"><i style="width:${Math.min(100, ratio * 100).toFixed(2)}%"></i></div>
       <div class="goal-meta"><span><b>${U.pct(ratio)}</b> of the goal</span><span>${U.fmt(Math.max(0, goal - total))} remaining</span></div></div>
-      <dl class="goal-hero-side"><div><dt>In this period</dt><dd>${U.fmt(D.platform())}</dd></div><div><dt>Markets with accounts</dt><dd>${hasSplit ? `${active} of ${rows.length}` : '–'}</dd></div><div><dt>Form leads</dt><dd>${U.fmt(D.forms(from, to).length)}</dd></div></dl></div>`;
+      <dl class="goal-hero-side"><div><dt>In this period</dt><dd>${U.fmt(D.platform())}</dd></div><div><dt>Markets with accounts</dt><dd>${hasSplit ? `${active} of ${rows.length}` : '–'}</dd></div><div><dt>Form leads</dt><dd>${U.fmt(D.forms(from, to).length)}</dd></div></dl>${trend}</div>`;
 
     const body = hasSplit ? U.table([
       { t: 'Country', f: (r) => U.esc(r.name) },
