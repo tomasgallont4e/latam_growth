@@ -17,7 +17,7 @@ function dashboard() {
     },
   } });
   App.testLoad = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
-  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'views/social.js', 'views/overview.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
+  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
   }
   App.S.from = '2026-10-01'; App.S.to = '2026-10-28';
@@ -422,4 +422,121 @@ test('goal share chart moves the completion bar with the share of the goal', () 
   const mini = A.charts.goalShare({ dates, daily: [3, 2, 5], goal: 1000, mini: true });
   assert.match(mini, /chart-svg mini/);
   assert.match(A.charts.goalShare({ dates, daily: [1, 1, 1], goal: 0 }), /No goal set/);
+});
+
+function clarityInfo(metric, row) { return { metric, ...row }; }
+
+function clarityFixture(extra = []) {
+  return [{
+    source: 'clarity', key: 'live_insights', from: '2026-10-27', to: '2026-10-29',
+    rows: [
+      clarityInfo('DeadClickCount', { subTotal: 18, pagesViews: 15, sessionsCount: 780, sessionsWithMetricPercentage: 1.9, sessionsWithoutMetricPercentage: 98.1 }),
+      clarityInfo('ExcessiveScroll', { subTotal: 0, pagesViews: 0, sessionsCount: 789, sessionsWithMetricPercentage: 0, sessionsWithoutMetricPercentage: 100 }),
+      clarityInfo('RageClickCount', { subTotal: 0, pagesViews: 0, sessionsCount: 789, sessionsWithMetricPercentage: 0, sessionsWithoutMetricPercentage: 100 }),
+      clarityInfo('QuickbackClick', { subTotal: 1, pagesViews: 1, sessionsCount: 789, sessionsWithMetricPercentage: 0.13, sessionsWithoutMetricPercentage: 99.87 }),
+      clarityInfo('ScriptErrorCount', { subTotal: 69, pagesViews: 65, sessionsCount: 789, sessionsWithMetricPercentage: 8.24, sessionsWithoutMetricPercentage: 91.76 }),
+      clarityInfo('ErrorClickCount', { subTotal: 0, pagesViews: 0, sessionsCount: 789, sessionsWithMetricPercentage: 0, sessionsWithoutMetricPercentage: 100 }),
+      clarityInfo('ScrollDepth', { averageScrollDepth: 14.31 }),
+      clarityInfo('Traffic', { distinctUserCount: 740, totalSessionCount: 789, pagesPerSessionPercentage: 1.0773130544893663 }),
+      clarityInfo('EngagementTime', { totalTime: 83, activeTime: 31 }),
+      clarityInfo('Browser', { name: 'InstagramApp', sessionsCount: 555 }),
+      clarityInfo('Browser', { name: 'ChromeMobile', sessionsCount: 134 }),
+      clarityInfo('Browser', { name: 'FacebookApp', sessionsCount: 52 }),
+      clarityInfo('Browser', { name: 'Chrome', sessionsCount: 22 }),
+      clarityInfo('Browser', { name: 'MobileSafari', sessionsCount: 20 }),
+      clarityInfo('Browser', { name: 'SamsungInternet', sessionsCount: 4 }),
+      clarityInfo('Browser', { name: 'Other', sessionsCount: 2 }),
+      clarityInfo('Device', { name: 'Mobile', sessionsCount: 755 }),
+    ],
+  }, ...extra];
+}
+
+test('Landing page is the Clarity reading and leaves Social and Paid in place', () => {
+  const A = dashboard();
+  A.S.data.snapshots = clarityFixture();
+  const landing = A.views.landing.render();
+  const social = A.views.social.render();
+  assert.equal(A.views.landing.title, 'Landing');
+  assert.match(landing, /Where visitors open the site/);
+  assert.match(landing, /76\.9%/);
+  assert.match(landing, /Whether the page worked/);
+  assert.match(landing, /Which ad, and which page/);
+  assert.doesNotMatch(landing, /Social and paid at a glance/);
+  assert.doesNotMatch(landing, /Ad Spend/);
+  assert.match(social, /Social and paid at a glance/);
+  assert.match(social, /Where visitors open the site/);
+});
+
+test('Clarity section reads where visitors opened the site', () => {
+  const A = dashboard();
+  A.S.data.snapshots = clarityFixture();
+  const html = A.views.social.render();
+  const section = html.slice(html.indexOf('Where visitors open the site'), html.indexOf('>Details<'));
+  assert.match(section, /Last 72 hours/);
+  assert.match(section, /76\.9%/);
+  assert.match(section, /Instagram app/);
+  assert.match(section, /Most visitors open the ad inside Instagram or Facebook on a phone and leave before the first screen/);
+  assert.match(section, /31s active · 1\.1 pages per session/);
+  assert.match(section, /kpi-tile watch[\s\S]*Script errors[\s\S]*8\.2%/);
+  assert.match(section, /Campaign and page detail arrives on the next Clarity sync/);
+  assert.doesNotMatch(section, /sessionsWithoutMetricPercentage/);
+  assert.match(html, /Microsoft Clarity export/);
+});
+
+test('Clarity breakdowns keep the ad and the login on separate rows', () => {
+  const A = dashboard();
+  A.S.data.snapshots = clarityFixture([
+    {
+      source: 'clarity', key: 'by_browser', from: '2026-10-27', to: '2026-10-29',
+      rows: [
+        clarityInfo('ScriptErrorCount', { Browser: 'InstagramApp', sessionsCount: 555, sessionsWithMetricPercentage: 10.1, subTotal: 60 }),
+        clarityInfo('ScriptErrorCount', { Browser: 'ChromeMobile', sessionsCount: 134, sessionsWithMetricPercentage: 1.5, subTotal: 2 }),
+        clarityInfo('ScrollDepth', { Browser: 'InstagramApp', averageScrollDepth: 12 }),
+        clarityInfo('ScrollDepth', { Browser: 'ChromeMobile', averageScrollDepth: 22 }),
+      ],
+    },
+    {
+      source: 'clarity', key: 'by_acquisition', from: '2026-10-27', to: '2026-10-29',
+      rows: [
+        clarityInfo('Traffic', { Channel: 'Social', Campaign: 'latam-launch', Url: 'https://go.think4ever.com/start', totalSessionCount: '400' }),
+        clarityInfo('Traffic', { Channel: 'Social', Campaign: 'latam-launch', Url: 'https://portal.think4ever.com/login', totalSessionCount: '40' }),
+        clarityInfo('ScrollDepth', { Channel: 'Social', Campaign: 'latam-launch', Url: 'https://go.think4ever.com/start', averageScrollDepth: 11 }),
+        clarityInfo('ScriptErrorCount', { Channel: 'Social', Campaign: 'latam-launch', Url: 'https://go.think4ever.com/start', sessionsWithMetricPercentage: 9, sessionsCount: '400' }),
+        clarityInfo('DeadClickCount', { Channel: 'Social', Campaign: 'latam-launch', Url: 'https://go.think4ever.com/start', sessionsWithMetricPercentage: 2, sessionsCount: '400' }),
+      ],
+    },
+  ]);
+  const html = A.views.social.render();
+  assert.match(html, /Script errors by app/);
+  assert.match(html, /watch-row/);
+  assert.match(html, /latam-launch/);
+  assert.match(html, />440</);
+  assert.match(html, /pill pill-success[\s\S]*Landing/);
+  assert.match(html, /pill pill-warning[\s\S]*Login/);
+  assert.doesNotMatch(html.slice(html.indexOf('Where visitors open the site'), html.indexOf('>Details<')), /sessionsWithoutMetricPercentage/);
+});
+
+test('Clarity refresh stays inside the daily request limit and keeps a failed breakdown', () => {
+  const { clarityTtlMs, flattenClarity, assembleClarity } = require('../lib/connectors');
+  const prev = process.env.CLARITY_CACHE_HOURS;
+  process.env.CLARITY_CACHE_HOURS = '3';
+  assert.equal(clarityTtlMs(), 20 * 36e5);
+  process.env.CLARITY_CACHE_HOURS = '48';
+  assert.equal(clarityTtlMs(), 48 * 36e5);
+  if (prev === undefined) delete process.env.CLARITY_CACHE_HOURS;
+  else process.env.CLARITY_CACHE_HOURS = prev;
+
+  const res = [
+    { metricName: 'ScriptErrorCount', information: [{ Browser: 'InstagramApp', sessionsWithMetricPercentage: 8.24 }] },
+    { metricName: 'ExcessiveScroll', information: [{ Browser: 'InstagramApp', subTotal: 1 }] },
+  ];
+  assert.deepEqual(flattenClarity(res, 'by_browser').map((r) => r.metric), ['ScriptErrorCount']);
+  assert.equal(flattenClarity(res, 'live_insights').length, 2);
+  const snaps = assembleClarity('2026-10-27', '2026-10-29', [
+    { key: 'live_insights', rows: [{ metric: 'Traffic' }] },
+    { key: 'by_browser', error: new Error('429') },
+  ], [{ key: 'by_browser', from: '2026-10-20', to: '2026-10-22', rows: [{ metric: 'ScriptErrorCount' }] }]);
+  assert.deepEqual(snaps.map((s) => s.key), ['live_insights', 'by_browser']);
+  assert.equal(snaps[1].from, '2026-10-20');
+  assert.equal(snaps[1].rows[0].metric, 'ScriptErrorCount');
 });

@@ -148,7 +148,7 @@
     if (o.awaiting) {
       return `<div class="kpi-tile">${top}<div class="kpi-awaiting">Awaiting ${esc(o.awaiting)}</div><div class="kpi-compare">${o.compare ? o.compare : `No data yet: connect ${esc(o.awaiting)} on Data Sources`}</div></div>`;
     }
-    return `<div class="kpi-tile">${top}<div class="kpi-value${o.hero ? ' hero' : ''}${o.small ? ' small' : ''}" title="${esc(String(o.value).replace(/<[^>]+>/g, ''))}">${o.value}</div><div class="kpi-foot">${o.delta || ''}${o.spark ? U.spark(o.spark) : ''}</div><div class="kpi-compare">${o.compare || ''}</div></div>`;
+    return `<div class="kpi-tile${o.cls ? ` ${o.cls}` : ''}">${top}<div class="kpi-value${o.hero ? ' hero' : ''}${o.small ? ' small' : ''}" title="${esc(String(o.value).replace(/<[^>]+>/g, ''))}">${o.value}</div><div class="kpi-foot">${o.delta || ''}${o.spark ? U.spark(o.spark) : ''}</div><div class="kpi-compare">${o.compare || ''}</div></div>`;
   };
   U.kpiRow = (tiles, cols) => `<div class="kpi-row${cols ? ` cols-${cols}` : ''}">${tiles.filter(Boolean).join('')}</div>`;
   U.section = (title, sub, body, right = '') => `<section class="section"><div class="section-head"><div><h2 class="section-title">${esc(title)}</h2>${sub ? `<p class="section-sub">${sub}</p>` : ''}</div>${right}</div>${body}</section>`;
