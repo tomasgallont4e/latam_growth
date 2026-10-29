@@ -81,6 +81,19 @@
     }
     return D.sum('posthog', 'ph_accounts', D.peopleFilter, from, to);
   };
+  // Gain or loss on the active temporality (Group by): the last COMPLETE bucket against the one before it,
+  // e.g. daily = yesterday vs the day before, weekly = last full week vs the week before. The bucket in
+  // progress is left out on purpose (a half week always looks like a drop), and a bucket that starts
+  // before launch is not comparable, so it returns { ok: false } instead of a made-up percentage.
+  D.change = (byDay) => {
+    const g = D.grain(), now = U.bucketSpan(U.bucketKey(U.today(), g, LAUNCH));
+    const last = U.bucketSpan(U.bucketKey(U.addDays(now.start, -1), g, LAUNCH));
+    const prior = U.bucketSpan(U.bucketKey(U.addDays(last.start, -1), g, LAUNCH));
+    if (prior.start < LAUNCH) return { ok: false, grain: g, last, prior };
+    const sum = (span) => Object.entries(byDay || {}).reduce((t, [d, v]) => (d >= span.start && d <= span.end ? t + (Number(v) || 0) : t), 0);
+    const cur = sum(last), prev = sum(prior);
+    return { ok: true, grain: g, cur, prev, ratio: prev ? (cur - prev) / prev : null, last, prior };
+  };
   // Every country that has accounts (planned markets and the rest), for the "Other markets" row.
   D.accountsCountries = (from = S.from, to = S.to) => {
     const out = {};

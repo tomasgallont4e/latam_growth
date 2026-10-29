@@ -370,3 +370,40 @@ test('goal share chart keeps a fixed 0-100% axis so the gap to the goal stays vi
   assert.match(mini, /chart-svg mini/);
   assert.match(A.charts.goalShare({ dates, daily: [1, 1, 1], goal: 0 }), /No goal set/);
 });
+
+test('gain/loss follows the temporality: last complete bucket vs the one before, never the bucket in progress', () => {
+  const A = dashboard(), U = A.ui;
+  const day = (n) => U.addDays(U.today(), -n);
+  const byDay = { [day(0)]: 999, [day(1)]: 15, [day(2)]: 10 };
+  A.S.grain = 'day';
+  const d = A.D.change(byDay);
+  assert.equal(d.ok, true); assert.equal(d.cur, 15); assert.equal(d.prev, 10); assert.equal(d.ratio, 0.5);
+  A.S.grain = 'week';
+  const now = U.bucketSpan(U.bucketKey(U.today(), 'week', A.LAUNCH));
+  const last = U.bucketSpan(U.bucketKey(U.addDays(now.start, -1), 'week', A.LAUNCH));
+  const prior = U.bucketSpan(U.bucketKey(U.addDays(last.start, -1), 'week', A.LAUNCH));
+  const w = A.D.change({ [now.start]: 500, [last.start]: 30, [U.addDays(last.start, 3)]: 10, [prior.start]: 80 });
+  if (prior.start < A.LAUNCH) assert.equal(w.ok, false);
+  else { assert.equal(w.cur, 40); assert.equal(w.prev, 80); assert.equal(w.ratio, -0.5); }
+  A.S.grain = 'year';
+  assert.equal(A.D.change(byDay).ok, false);
+});
+
+test('country coverage is only claimed when at least one account carries a country', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test', POSTHOG_PROJECT_CREATED_ENABLED: '0' });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(console, 'warn', () => {});
+  let withCountry = false;
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    const sql = JSON.parse(opts.body).query.query;
+    if (sql.includes("event = '$identify'")) return response({ results: [[date, 'External', withCountry ? 'Colombia' : '', 15]] });
+    return response({ results: [] });
+  });
+  const none = await connectors.posthog();
+  assert.equal(none.snapshots.find((r) => r.key === 'account_coverage').rows[0].available, true);
+  assert.equal(none.snapshots.find((r) => r.key === 'account_coverage').rows[0].country_available, false);
+  assert.equal(none.metrics.filter((r) => r.metric === 'ph_accounts_geo').length, 0);
+  withCountry = true;
+  const some = await connectors.posthog();
+  assert.equal(some.snapshots.find((r) => r.key === 'account_coverage').rows[0].country_available, true);
+});

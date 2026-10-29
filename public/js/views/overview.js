@@ -3,6 +3,17 @@
   // Where the project stands against the LATAM 500K goal. Measurement only: no deadline and no
   // pace. The count is cumulative since launch whatever period is selected, because the goal is a
   // total, and it is people whose account was created (first identify), counted once each.
+  const UNIT = { day: 'day', week: 'week', biweek: 'two weeks', month: 'month', quarter: 'quarter', year: 'year' };
+  // Gain/loss pill for the active temporality: last complete bucket vs the one before it.
+  function changeBlock(ch, compact) {
+    const U = A.ui;
+    if (!ch || !ch.ok) return compact ? '' : `<span class="text-muted">Not enough history yet for a ${U.esc(UNIT[ch ? ch.grain : 'day'])}-over-${U.esc(UNIT[ch ? ch.grain : 'day'])} change</span>`;
+    const span = (b) => U.win(b.start, b.end);
+    const tip = `${span(ch.last)}: ${U.fmt(ch.cur)} vs ${span(ch.prior)}: ${U.fmt(ch.prev)}`;
+    const pill = ch.prev ? U.delta(ch.cur, ch.prev) : (ch.cur ? '<span class="delta delta-up">new</span>' : '<span class="delta delta-neutral">0.0%</span>');
+    return `<span class="chg" title="${U.esc(tip)}">${pill}${compact ? '' : `<small>last full ${U.esc(UNIT[ch.grain])} (${U.esc(span(ch.last))}) vs the ${U.esc(UNIT[ch.grain])} before</small>`}</span>`;
+  }
+
   function accountsGoal() {
     const U = A.ui, D = A.D, S = A.S, p = S.data && S.data.goalPlan;
     if (!p) return '';
@@ -21,12 +32,13 @@
     const rows = markets.map(([name, target]) => {
       const accounts = geoOk ? D.accounts(from, to, name) : null;
       const sessions = D.has('ga4', 'ga_geo_sessions') ? (D.countryMetric('ga_geo_sessions', name, from, to) || null) : null;
-      return { name, target: Number(target) || 0, accounts, sessions, rate: sessions && accounts != null ? accounts / sessions : null };
+      return { name, target: Number(target) || 0, accounts, sessions, rate: sessions && accounts != null ? accounts / sessions : null, chg: geoOk ? D.change(D.accountsByDay(from, to, name)) : null };
     });
     const other = Object.entries(byCountry).filter(([name]) => !planned.has(name)).reduce((s2, [, n]) => s2 + n, 0);
     const known = rows.reduce((s2, r) => s2 + (r.accounts || 0), 0) + other;
     const unknown = Math.max(0, total - known);
     const hasSplit = !!geoOk;
+    const unmatched = Object.entries(byCountry).filter(([name]) => !planned.has(name)).sort((a, b) => b[1] - a[1]);
     const active = rows.filter((r) => r.accounts > 0).length;
     const bar = (r) => `<div class="goal-bar slim" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, r * 100))}"><i style="width:${Math.min(100, Math.max(0, r * 100)).toFixed(1)}%"></i></div>`;
     const daysAll = U.days(from, to), dailyAcc = D.accountsByDay(from, to);
@@ -36,7 +48,7 @@
     const cards = hasSplit ? rows.map((r) => {
       const dd = geoDaily(r.name);
       const share = r.accounts == null || !r.target ? null : r.accounts / r.target;
-      return `<div class="goal-card cty-card"><div class="goal-top"><span>${U.esc(r.name)}</span><span class="cty-share">${U.pct(share)}</span></div>
+      return `<div class="goal-card cty-card"><div class="goal-top"><span>${U.esc(r.name)}</span><span class="cty-share">${changeBlock(D.change(D.accountsByDay(from, to, r.name)), true)} ${U.pct(share)}</span></div>
         <div class="goal-nums"><span class="goal-actual">${r.accounts == null ? '–' : U.fmt(r.accounts)}</span><span class="goal-target">of ${U.fmt(r.target)}</span></div>
         ${dd ? A.charts.goalShare({ dates: daysAll, daily: daysAll.map((d) => dd[d] || 0), goal: r.target, mini: true, label: `${r.name} accounts as a share of its goal` }) : bar(share || 0)}</div>`;
     }).join('') : '';
@@ -45,19 +57,20 @@
       <div class="goal-nums"><span class="acct-hero-actual">${U.fmt(total)}</span><span class="goal-target">of ${U.fmt(goal)}</span></div>
       <div class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, ratio * 100))}" aria-label="Accounts created toward the goal"><i style="width:${Math.min(100, ratio * 100).toFixed(2)}%"></i></div>
       <div class="goal-meta"><span><b>${U.pct(ratio)}</b> of the goal</span><span>${U.fmt(Math.max(0, goal - total))} remaining</span></div></div>
-      <dl class="acct-hero-side"><div><dt>In this period</dt><dd>${U.fmt(D.accounts())}</dd></div><div><dt>Markets with accounts</dt><dd>${hasSplit ? `${active} of ${rows.length}` : '–'}</dd></div><div><dt>CRM contacts</dt><dd>${U.fmt((D.crmTotal(from, to) || 0))}</dd></div></dl>${trend}</div>`;
+      <dl class="acct-hero-side"><div><dt>Gain / loss · by ${U.esc(UNIT[D.grain()])}</dt><dd class="chg-dd">${changeBlock(D.change(D.accountsByDay(from, to)))}</dd></div><div><dt>In this period</dt><dd>${U.fmt(D.accounts())}</dd></div><div><dt>Markets with accounts</dt><dd>${hasSplit ? `${active} of ${rows.length}` : '–'}</dd></div><div><dt>CRM contacts</dt><dd>${U.fmt((D.crmTotal(from, to) || 0))}</dd></div></dl>${trend}</div>`;
 
     const body = hasSplit ? U.table([
       { t: 'Country', f: (r) => U.esc(r.name) },
       { t: 'Accounts', num: 1, f: (r) => (r.accounts == null ? '–' : `<b>${U.fmt(r.accounts)}</b>`) },
       { t: 'Goal', num: 1, f: (r) => U.fmt(r.target) },
       { t: '% of goal', num: 1, f: (r) => (r.accounts == null ? '–' : `<span class="cty-pct">${U.pct(r.target ? r.accounts / r.target : null)}</span>${bar(r.target ? r.accounts / r.target : 0)}`) },
+      { t: `Change · ${UNIT[D.grain()]}`, num: 1, f: (r) => (r.chg ? changeBlock(r.chg, true) : '') },
       { t: 'Sessions (GA4)', num: 1, f: (r) => U.fmt(r.sessions) },
       { t: 'Visit to account', num: 1, f: (r) => U.pct(r.rate) },
     ], [...rows, ...(other ? [{ name: 'Other markets', target: null, accounts: other, sessions: null, rate: null }] : []),
       { name: 'No country on the account', target: null, accounts: unknown, sessions: null, rate: null }])
-      : U.empty('No country split yet', 'PostHog has no country for new accounts. Enable GeoIP or send a country property with identify, and each market fills in here.', 'earth-americas');
-    const note = '<p class="card-note" style="padding:0 20px 16px">Goal per country is its share of the 500K plan (editable in Targets). Sessions come from GA4 and are traffic, not accounts.</p>';
+      : U.empty('No country on any account yet', `${U.fmt(total)} accounts exist but none carries a country, so none can be placed in a market. Send a country property with identify (or enable GeoIP), and each market fills in here.`, 'earth-americas');
+    const note = `<p class="card-note" style="padding:0 20px 16px">Goal per country is its share of the 500K plan (editable in Targets). Sessions come from GA4 and are traffic, not accounts.${unmatched.length ? ` Country values that do not match a plan market (shown as Other markets): ${unmatched.slice(0, 8).map(([n, v]) => `${U.esc(n)} (${U.fmt(v)})`).join(', ')}. Plan markets are written in English, e.g. Brazil, Mexico.` : ''}${unknown ? ` ${U.fmt(unknown)} accounts carry no country at all.` : ''}</p>`;
     return U.section('LATAM 500K goal', sub, `<div class="card acct-hero-card">${hero}</div>`)
       + (cards ? U.section('Progress by country', 'Each market against its own goal · same 0–100% axis everywhere, so the gap to the goal reads the same in every card', `<div class="goal-row cty-grid">${cards}</div>`) : '')
       + U.section('Accounts by country', 'Since launch · same count as above, split by the country on the account', U.card({ title: 'How each market is going', sub: hasSplit ? `${U.fmt(known)} of ${U.fmt(total)} accounts have a country` : '', right: U.srcPill('posthog', 'country'), body: body + (hasSplit ? note : '') }));
