@@ -29,9 +29,12 @@
 
     const funnel = U.card({ cls: 'chart-card', title: 'Measurement stages', sub: 'Independent populations; linked user journeys are required for conversion and drop-off rates. GA4 traffic may include tests.', body: C.funnel(D.funnel()) });
     const periodRows = D.periods().map((p) => ({ ...p, crm: D.crmTotal(p.from, p.to), people: D.platform(p.from, p.to) }));
-    const chart = U.card({ title: `${grain} CRM and product activity`, sub: `Separate counts; do not add contacts and people · ${U.win(S.from, S.to)}`, body: U.table([
+    const chart = U.card({ cls: 'chart-card', title: `${grain} CRM and product activity`, sub: `Separate chart per population; do not add contacts and people · ${U.win(S.from, S.to)}`, body:
+      '<h3>CRM contacts · HubSpot</h3>' + C.stacked({ dates: ticks, keys: [{ name: 'CRM contacts', color: 'var(--series-a)' }], value: (d) => su[d].form, label: `${grain} CRM contacts` })
+      + '<h3>New observed people · PostHog</h3>' + (plat == null ? U.awaiting('posthog', 'Sync PostHog to classify internal accounts') : C.stacked({ dates: ticks, keys: [{ name: 'New observed people', color: 'var(--series-b)' }], value: (d) => su[d].platform, label: `${grain} new observed people` }))
+      + U.details('Activity by period', `${periodRows.length} periods`, U.table([
       { t: 'Period', f: (r) => U.esc(U.win(r.from, r.to)) }, { t: 'CRM contacts', num: 1, f: (r) => U.fmt(r.crm) }, { t: 'New observed people', num: 1, f: (r) => U.fmt(r.people) },
-    ], periodRows) });
+    ], periodRows)) });
 
     const KEY = ['form_start', 'sign_up', 'login', 'generate_lead'];
     const hasEv = D.has('ga4', 'ga_event');

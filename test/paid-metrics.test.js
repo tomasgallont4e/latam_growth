@@ -28,6 +28,23 @@ const date = '2026-10-20';
 const metric = (source, name, value, dim_value = '') => ({ source, metric: name, value, date, dim_value });
 const available = (source, key) => ({ source, key, from: '2026-10-01', to: '2026-10-28', rows: [{ available: true }] });
 
+test('metric corrections preserve the goal, channel and conversion charts', () => {
+  const A = dashboard();
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  A.S.data.metrics = [metric('hubspot', 'sessions', 10, 'direct')];
+  A.S.data.events = [{ kind: 'form_signup', date, internal: false }];
+  const overview = A.views.overview.render(), conversion = A.views.conversion.render();
+  assert.match(overview, /goal-svg/);
+  assert.match(overview, /Verified actual pending/);
+  assert.match(overview, /Channel mix/);
+  assert.match(overview, /aria-label="HubSpot sessions by channel"/);
+  assert.match(overview, /Timeline Notes/);
+  assert.match(conversion, /aria-label="Daily CRM contacts"/);
+  assert.doesNotMatch(overview, /class="goal-dot"|class="goal-col"/);
+  const realZero = A.charts.goalProgress({ dates: ['2026-10-01'], values: [0], goal: 500000 });
+  assert.match(realZero, /class="goal-dot"/);
+});
+
 test('paid matching accepts existing UTM variants and rejects QA and organic visits', () => {
   assert.equal(paid.platform('instagram', 'paid_social'), 'meta');
   assert.equal(paid.platform('LinkedIn', 'paid-social'), 'linkedin');
