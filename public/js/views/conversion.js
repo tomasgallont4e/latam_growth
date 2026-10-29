@@ -15,19 +15,19 @@
     const all = D.formsAll(), shown = D.forms();
     const form = shown.length, pForm = prev ? D.forms(prev.from, prev.to).length : null;
     const plat = D.platform(), pPlat = prev ? D.platform(prev.from, prev.to) : null;
-    const total = D.verified();
+    const total = D.registrations();
     const ga = D.ga();
     const su = D.rollSignups(D.dailySignups());
 
     const kpis = U.kpiRow([
-      U.kpi({ label: 'Verified accounts', source: 'Product verification', value: U.fmt(total), hero: true, compare: 'Canonical registration KPI; pending a trusted verification report' }),
+      U.kpi({ label: 'Sign-ups', source: 'PostHog', value: U.fmt(total), hero: true, compare: 'registration_started · first per person; account_created is a later step' }),
       U.kpi({ label: 'CRM contacts', source: 'HubSpot', value: U.fmt(D.crmTotal()), delta: U.delta(form, pForm), spark: ticks.map((d) => su[d].form), compare: `${all.length - shown.length} internal/QA contacts excluded · contact creation date` }),
       U.kpi({ label: 'New observed people', source: 'PostHog', value: U.fmt(plat), delta: U.delta(plat, pPlat), spark: plat == null ? null : ticks.map((d) => su[d].platform), compare: plat == null ? 'Sync PostHog for internal classification' : 'New person records, not confirmed registrations; may overlap CRM contacts' }),
       U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(ga && ga.rate), compare: ga ? `${U.fmt(ga.engaged)} engaged / ${U.fmt(ga.sessions)} GA4 sessions` : 'Awaiting GA4' }),
     ], 4);
     const goals = A.targets.strip(['total_signups', 'platform_signups', 'visit_to_signup_rate']);
 
-    const funnel = U.card({ cls: 'chart-card', title: 'Measurement stages', sub: 'Independent populations; linked user journeys are required for conversion and drop-off rates. GA4 traffic may include tests.', body: C.funnel(D.funnel()) });
+    const funnel = A.platformFunnels.render();
     const periodRows = D.periods().map((p) => ({ ...p, crm: D.crmTotal(p.from, p.to), people: D.platform(p.from, p.to) }));
     const chart = U.card({ cls: 'chart-card', title: `${grain} CRM and product activity`, sub: `Separate chart per population; do not add contacts and people · ${U.win(S.from, S.to)}`, body:
       '<h3>CRM contacts · HubSpot</h3>' + C.stacked({ dates: ticks, keys: [{ name: 'CRM contacts', color: 'var(--series-a)' }], value: (d) => su[d].form, label: `${grain} CRM contacts` })
@@ -101,5 +101,5 @@
       + `<section class="section grid-2">${funnel}${chart}</section>`
       + U.section('Details', 'Collapsed tables for analysts', details);
   }
-  A.views.conversion = { title: 'Conversion', render };
+  A.views.conversion = { title: 'Conversion', render, mount: (el) => A.platformFunnels.mount(el) };
 })(window.App);

@@ -26,7 +26,15 @@
    missing Action, 508/1752 engagement, 60% vs 0.577% plan, internal filtering, country
    deduplication, no-spend paid sessions, weekly/monthly totals and real zero vs missing.
 
-## Verification contract (pending trusted data)
+## Current sign-up definition (updated from the supplied PostHog funnels)
+
+The dashboard goal and `total_signups` / `platform_signups` use the first
+`registration_started` per person since launch. They do not require `account_created`
+and do not substitute person creation or add CRM contacts. The persisted plan field
+`verified_users` keeps its legacy storage name so saved goals remain intact; the UI
+labels it Sign-ups. See `posthog-funnels.md` for the platform selector and native funnels.
+
+## Optional verification contract (separate from sign-ups)
 
 `posthog` metric `ph_verified_accounts`, split with `dim=account_type` and
 `dim_value=External|Internal|Unknown`, means one confirmed account verification per stable

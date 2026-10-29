@@ -13,6 +13,7 @@ const auth = require('./lib/auth');
 const ads = require('./lib/adloader');
 const executive = require('./lib/executive');
 const targets = require('./lib/targets');
+const funnels = require('./lib/funnels');
 
 const app = express();
 app.set('trust proxy', true);
@@ -64,6 +65,14 @@ app.get('/api/data', async (req, res, next) => {
       goalPlan: await targets.getPlan(store),
     });
   } catch (e) { next(e); }
+});
+
+app.get('/api/funnels/posthog', async (req, res) => {
+  try {
+    const from = String(req.query.from || ''), to = String(req.query.to || '');
+    if (from < (process.env.LAUNCH_DATE || '2026-10-01') || to > new Date().toISOString().slice(0, 10)) return res.status(400).json({ error: 'Date outside launch window' });
+    res.json(await funnels.read(String(req.query.funnel || 'website'), from, to, req.query.exclude !== '0'));
+  } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
 // Executive view: built only from real rows (connectors, CSV loads, daily routine).

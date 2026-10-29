@@ -8,35 +8,30 @@
     const U = A.ui, D = A.D, S = A.S, p = S.data.goalPlan;
     if (!p) return '';
     const goal = Number(p.verified_users), month = S.to.slice(0, 7), first = `${month}-01`, end = S.to;
-    const actual = D.verified(first, end), check = A.measurement.planCheck(p);
+    const actual = D.registrations(first, end), check = A.measurement.planCheck(p);
     let running = 0;
-    const daily = D.dailySignups(first, end);
-    const reportedAvailable = D.crmTotal(first, end) != null && D.platform(first, end) != null;
     const days = U.days(first, end), cumulative = days.map((date) => {
-      running += actual != null
-        ? D.sum('posthog', 'ph_verified_accounts', (r) => r.dim === 'account_type' && (!S.exInt || r.dim_value === 'External'), date, date)
-        : (daily[date].form || 0) + (daily[date].platform || 0);
+      running += D.sum('posthog', 'ph_signups', D.peopleFilter, date, date);
       return running;
     });
-    const chartActual = actual == null ? (reportedAvailable ? running : null) : actual;
     const monthDays = U.days(first, U.endOfMonth(month)).length;
     const hero = U.card({ cls: 'chart-card goal-hero', title: 'Sign-ups vs planned sign-ups',
-      sub: `${U.monthName(month)} · ${actual == null ? 'Reported activity: HubSpot + PostHog, may overlap; not verified accounts' : 'Verified accounts'} · plan from Targets`,
-      right: U.pill('info', chartActual == null ? 'Awaiting data' : `${U.fmt(chartActual)} ${actual == null ? 'reported' : 'verified'} · ${U.pct(A.measurement.ratio(chartActual, goal), 3)} of goal`),
-      body: A.charts.goalProgress({ dates: days, values: chartActual == null ? days.map(() => null) : cumulative, goal, planned: days.map((_, i) => goal * (i + 1) / monthDays), unit: actual == null ? 'reported sign-ups' : 'verified accounts', label: 'Sign-ups vs planned sign-ups' }),
+      sub: `${U.monthName(month)} · PostHog sign-up: registration_started · plan from Targets`,
+      right: U.pill('info', actual == null ? 'Sync PostHog' : `${U.fmt(actual)} sign-ups · ${U.pct(A.measurement.ratio(actual, goal), 3)} of goal`),
+      body: A.charts.goalProgress({ dates: days, values: actual == null ? days.map(() => null) : cumulative, goal, planned: days.map((_, i) => goal * (i + 1) / monthDays), unit: 'sign-ups', label: 'Sign-ups vs planned sign-ups' }),
     });
     const markets = Object.keys(p.countries || {}), country = markets.includes(S.goalCountry) ? S.goalCountry : markets[0];
     if (!country) return `<section class="section">${hero}</section>`;
     const target = Number(p.countries[country]), share = A.measurement.ratio(target, goal), planned = share == null ? null : share * Number(p.landing_sessions);
     const sessions = D.has('ga4', 'ga_geo_sessions') ? D.countryMetric('ga_geo_sessions', country, first, end) : null;
     const engaged = D.has('ga4', 'ga_geo_engaged_sessions') ? D.countryMetric('ga_geo_engaged_sessions', country, first, end) : null;
-    const users = D.countryUsers(country, first, end), verified = D.verified(first, end, country);
+    const users = D.countryUsers(country, first, end), signups = D.registrations(first, end, country);
     const options = markets.map((name) => `<option${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('');
-    const panel = `<details class="goal-panel"><summary><span><b>Country goal</b><small>${U.esc(country)} · ${U.monthName(month)}</small></span><span class="goal-summary">${U.fmt(target)} verified accounts <i>View country</i></span></summary><div class="goal-body">
+    const panel = `<details class="goal-panel"><summary><span><b>Country goal</b><small>${U.esc(country)} · ${U.monthName(month)}</small></span><span class="goal-summary">${U.fmt(target)} sign-ups <i>View country</i></span></summary><div class="goal-body">
       <label class="goal-select">Country <select id="goal-country" aria-label="Country goal">${options}</select></label>
-      <p>Verified-account goals and traffic are separate. Visitors are not registrations. Monthly actuals use ${U.win(first, end)}.</p>
+      <p>Sign-up = first registration_started per person. Monthly actuals use ${U.win(first, end)}.</p>
       <div class="plan-grid">
-        ${planMetric('Verified-account target', target, verified, 'Actual requires verified product accounts with a trusted country; otherwise pending.')}
+        ${planMetric('Sign-up target', target, signups, 'registration_started · person country from PostHog.')}
         ${planMetric('Planned GA4 site sessions', planned, sessions, 'Traffic requirement implied by this market allocation; GA4 configured hosts.')}
         <div class="plan-metric"><span>Unique visitors · GA4</span><b>${U.fmt(users)}</b><small>${users == null ? 'An exact-window country snapshot is required. Daily user counts are never added.' : 'Deduplicated for the month window; not verified accounts.'}</small></div>
         <div class="plan-metric"><span>Engagement · GA4</span><b>${U.pct(A.measurement.ratio(engaged, sessions))}</b><small>Engaged sessions / GA4 sessions in this country.</small></div>
@@ -46,7 +41,7 @@
   }
   function render() {
     const U = A.ui, C = A.charts, D = A.D, S = A.S, ga = D.ga();
-    const crm = D.crmTotal(), people = D.platform(), verified = D.verified();
+    const crm = D.crmTotal(), people = D.platform(), signups = D.registrations();
     const activity = D.rollSignups(D.dailySignups());
     const unknown = D.peopleClassified() ? D.sum('posthog', 'ph_new_persons', (r) => r.dim_value === 'Unknown') : null;
     const kpis = U.kpiRow([
@@ -55,7 +50,7 @@
       U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(ga && ga.rate), spark: ga ? D.seriesRate(D.byDay('ga4', 'ga_engaged_sessions'), D.byDay('ga4', 'ga_sessions')) : null, compare: ga ? `${U.fmt(ga.engaged)} engaged / ${U.fmt(ga.sessions)} GA4 sessions` : 'Awaiting GA4' }),
       U.kpi({ label: 'CRM contacts', source: 'HubSpot', value: U.fmt(crm), spark: crm == null ? null : D.ticks().map((d) => activity[d].form), compare: 'Contact creation date; may overlap product people' }),
       U.kpi({ label: 'New observed people', source: 'PostHog', value: U.fmt(people), spark: people == null ? null : D.series(D.byDay('posthog', 'ph_new_persons', S.from, S.to, D.peopleFilter)), compare: people == null ? 'Sync PostHog to classify internal accounts' : `${S.exInt ? 'Known internal accounts excluded' : 'Internal accounts included'} · ${U.fmt(unknown)} unknown identity class · not verified sign-ups` }),
-      U.kpi({ label: 'Verified accounts', source: 'Product verification', value: U.fmt(verified), compare: 'Canonical 500K outcome · never contacts + people' }),
+      U.kpi({ label: 'Sign-ups', source: 'PostHog', value: U.fmt(signups), spark: signups == null ? null : D.series(D.byDay('posthog', 'ph_signups', S.from, S.to, D.peopleFilter)), compare: 'registration_started · first per person' }),
     ], 3);
     const coverage = U.card({ title: 'Measurement coverage', sub: 'Independent signals; no impression-to-session conversion is inferred', body: U.table([
       { t: 'Signal', k: 'name' }, { t: 'Value', f: (r) => U.fmt(r.value) }, { t: 'Scope', k: 'note' },
@@ -76,12 +71,12 @@
       body: (hasSessions ? C.stacked({ dates: D.ticks(), keys: C.CHANNELS, value: (d, i) => (channels[d] || [])[i] || 0, notes, label: 'HubSpot sessions by channel' }) : U.awaiting('hubspot'))
         + `<ul class="notes-chips">${notes.length ? notes.map((n, i) => `<li class="note-chip"><span class="note-idx">${i + 1}</span><span class="mono">${U.dshort(n.date)}</span><span class="note-txt">${U.esc(n.label)}</span></li>`).join('') : '<li class="text-muted">No timeline notes in this period.</li>'}</ul>`,
     });
-    const stages = U.card({ cls: 'chart-card', title: 'Launch funnel · measurement stages', sub: 'Independent populations; a linked user cohort is required for conversion/drop-off rates', body: C.funnel(D.funnel(), 'Independent measurement stages') });
+    const stages = A.platformFunnels.render();
     const readings = U.card({ cls: 'agent-placeholder', title: 'Coming soon', body: U.empty('Coming soon', 'We are integrating an AI agent to explain the Overview of the data.', 'robot') });
     return goalPanels() + U.section('Launch at a glance', `${S.from} to ${S.to} · counts for the range; charts grouped ${D.grainName().toLowerCase()}`, kpis)
       + A.targets.strip(['total_signups', 'engagement_rate', 'unique_visitors'])
       + `<section class="section">${mix}</section><section class="section">${channelChart}</section><section class="section grid-2-1">${stages}${readings}</section><section class="section">${coverage}</section><section class="section">${chart}</section>`;
   }
-  function mount(el) { el.addEventListener('change', (e) => { if (e.target.id === 'goal-country') { A.S.goalCountry = e.target.value; A.render(); } }); }
+  function mount(el) { A.platformFunnels.mount(el); el.addEventListener('change', (e) => { if (e.target.id === 'goal-country') { A.S.goalCountry = e.target.value; A.render(); } }); }
   A.views.overview = { title: 'Overview', render, mount };
 })(window.App);

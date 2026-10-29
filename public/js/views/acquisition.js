@@ -19,8 +19,7 @@
     let top = 0; ch.forEach((v, i) => { if (v > ch[top]) top = i; });
     const sessDay = D.byDay('hubspot', 'sessions');
 
-    const quality = g && (g.userWarning || g.thresholded) ? `<p class="measurement-note">GA4 reporting needs review: ${g.userWarning ? `${U.fmt(g.newUsers)} new users exceed ${U.fmt(g.users)} total users in the source report. ` : ''}${g.thresholded ? 'The report is subject to thresholding. ' : ''}Original source values are preserved; check reporting identity, filters and source data before interpreting these counts.</p>` : '';
-    const kpis = quality + U.kpiRow([
+    const kpis = U.kpiRow([
       hasSess ? U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', value: U.fmt(total), delta: U.delta(total, ptotal), spark: D.series(sessDay), compare: cmp }) : U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', awaiting: 'HubSpot' }),
       !g ? U.kpi({ label: 'Unique Visitors', source: 'GA4', awaiting: 'GA4' })
         : g.users == null ? U.kpi({ label: 'Unique Visitors', source: 'GA4', value: '–', compare: 'Deduped visitors for this range appear after the next GA4 sync' })

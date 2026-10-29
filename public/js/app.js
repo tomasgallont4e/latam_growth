@@ -63,6 +63,14 @@
     return D.sum('posthog', 'ph_new_persons', D.peopleFilter, from, to);
   };
   D.crmTotal = (from = S.from, to = S.to) => D.formsAll(from, to).length || D.snap('hubspot', 'utm_capture', from, to) || D.has('hubspot', 'sessions') ? D.forms(from, to).length : null;
+  D.registrations = (from = S.from, to = S.to, country) => {
+    if (!D.covered('posthog', 'registration_coverage', from, to)) return null;
+    if (country) {
+      const f = (r) => r.dim === 'country' && r.dim_value === country;
+      return D.sum('posthog', 'ph_signups_geo', f, from, to) + (S.exInt ? 0 : D.sum('posthog', 'ph_signups_geo_internal', f, from, to));
+    }
+    return D.sum('posthog', 'ph_signups', D.peopleFilter, from, to);
+  };
   D.verified = (from = S.from, to = S.to, country) => {
     const coverage = D.covered('posthog', 'verified_accounts', from, to);
     if (!coverage || coverage.unit !== 'verified_account') return null;
@@ -76,7 +84,7 @@
   };
   D.proxy = (from = S.from, to = S.to) => D.covered('posthog', 'activation_action', from, to) || D.has('posthog', 'ph_activated_users') ? D.sum('posthog', 'ph_activated_users', null, from, to) : null;
   D.sessions = (from = S.from, to = S.to) => D.sum('hubspot', 'sessions', null, from, to);
-  D.signups = (from = S.from, to = S.to) => D.verified(from, to);
+  D.signups = (from = S.from, to = S.to) => D.registrations(from, to);
   const GRAIN_META = {
     day: { name: 'Daily', bar: 'day' },
     week: { name: 'Weekly', bar: 'week' },
@@ -334,7 +342,7 @@
       case 'unique_visitors': { const g = D.ga(from, to); return g ? g.users : null; }
       case 'engagement_rate': { const g = D.ga(from, to); return g ? g.rate : null; }
       case 'total_signups': return D.signups(from, to);
-      case 'platform_signups': return D.verified(from, to);
+      case 'platform_signups': return D.registrations(from, to);
       case 'crm_contacts': return D.crmTotal(from, to);
       case 'new_people': return D.platform(from, to);
       case 'visit_to_signup_rate': return null; // Needs accounts linked to the measured session population.

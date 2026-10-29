@@ -6,15 +6,15 @@
   const U = A.ui;
   const T = A.targets = { meta: {}, byMonth: {}, loading: {} };
   const SRC = {
-    landing_sessions: 'GA4', unique_visitors: 'GA4', engagement_rate: 'GA4', total_signups: 'trusted account verification',
-    platform_signups: 'trusted account verification', crm_contacts: 'HubSpot', new_people: 'PostHog', visit_to_signup_rate: 'linked session/account cohort', ad_spend_budget: 'ads platforms', clicks: 'ads platforms', ctr: 'ads platforms',
+    landing_sessions: 'GA4', unique_visitors: 'GA4', engagement_rate: 'GA4', total_signups: 'PostHog registration_started',
+    platform_signups: 'PostHog registration_started', crm_contacts: 'HubSpot', new_people: 'PostHog', visit_to_signup_rate: 'linked session/account cohort', ad_spend_budget: 'ads platforms', clicks: 'ads platforms', ctr: 'ads platforms',
     total_impressions: 'paid ad reports only',
     cps: 'paid UTM contacts + spend', activation_7d: 'mature seven-day signup/project cohort',
   };
   const FALLBACK_META = {
     landing_sessions: { label: 'Site sessions (GA4)', kind: 'count' }, unique_visitors: { label: 'Unique visitors', kind: 'count' },
-    engagement_rate: { label: 'Engagement rate', kind: 'rate' }, total_signups: { label: 'Verified accounts', kind: 'count' },
-    platform_signups: { label: 'Verified accounts (legacy alias)', kind: 'count' }, crm_contacts: { label: 'CRM contacts (HubSpot)', kind: 'count' }, new_people: { label: 'New observed people (PostHog)', kind: 'count' }, visit_to_signup_rate: { label: 'Linked visit-to-verification rate (pending)', kind: 'rate' },
+    engagement_rate: { label: 'Engagement rate', kind: 'rate' }, total_signups: { label: 'Sign-ups (PostHog registration_started)', kind: 'count' },
+    platform_signups: { label: 'Platform sign-ups (same PostHog definition)', kind: 'count' }, crm_contacts: { label: 'CRM contacts (HubSpot)', kind: 'count' }, new_people: { label: 'New observed people (PostHog)', kind: 'count' }, visit_to_signup_rate: { label: 'Linked visit-to-sign-up rate (pending)', kind: 'rate' },
     ad_spend_budget: { label: 'Ad spend budget', kind: 'money' }, clicks: { label: 'Clicks', kind: 'count' }, ctr: { label: 'Click-through rate', kind: 'rate' },
     cps: { label: 'Cost / attributed CRM contact', kind: 'money' }, activation_7d: { label: 'Activation within 7 days', kind: 'rate' },
     total_impressions: { label: 'Paid impressions', kind: 'count' },
@@ -91,7 +91,7 @@
       case 'unique_visitors': return users();
       case 'engagement_rate': { const s = sessions(), e = engaged(); return s ? e / s : null; }
       case 'total_signups':
-      case 'platform_signups': return D.verified(from, to, country);
+      case 'platform_signups': return D.registrations(from, to, country);
       case 'crm_contacts': return D.crmTotal(from, to) == null ? null : formsCountry();
       case 'new_people': return platformCountry();
       case 'visit_to_signup_rate': return null;
@@ -147,10 +147,10 @@
   const TV = { month: null, country: 'LATAM', preview: null, csv: null, fileName: '', editing: null, busy: false };
   const PV = { plan: null, loading: false, saving: false };
   const PLAN_FIELDS = [
-    ['verified_users', 'Verified users', 'count'], ['landing_sessions', 'Landing sessions', 'count'],
-    ['visit_to_signup', 'Visit to verified user', 'rate'], ['impressions', 'Paid impressions', 'count'],
+    ['verified_users', 'Sign-ups', 'count'], ['landing_sessions', 'Landing sessions', 'count'],
+    ['visit_to_signup', 'Visit to sign-up', 'rate'], ['impressions', 'Paid impressions', 'count'],
     ['impression_to_visit', 'Impression to landing visit', 'rate'], ['paid_budget', 'Paid media budget', 'money'],
-    ['paid_cps', 'Planned cost per verified account', 'money'], ['activation_7d', 'Activation within 7 days', 'rate'],
+    ['paid_cps', 'Planned cost per sign-up', 'money'], ['activation_7d', 'Activation within 7 days', 'rate'],
     ['valid_signups', 'Valid sign-ups', 'rate'],
   ];
   async function ensurePlan() {
@@ -165,7 +165,7 @@
     if (!PV.plan) { ensurePlan(); return U.section('LATAM scale targets', 'Loading the persistent global and country targets…', '<div class="skeleton" style="height:220px"></div>'); }
     const p = PV.plan;
     const check = A.measurement.planCheck(p);
-    const consistency = `<div class="measurement-note">Implied by the saved inputs: visit-to-verification ${U.pct(check.derived.visit_to_signup, 3)} · impression-to-visit ${U.pct(check.derived.impression_to_visit, 3)} · cost per verified account ${U.money(check.derived.paid_cps)}.${check.issues.length ? ` <b>Saved assumptions disagree:</b> ${check.issues.map((x) => `${U.esc(x.label)} (${x.key === 'paid_cps' ? U.money(x.saved) : U.pct(x.saved, 3)})`).join(', ')}. Use the button to recalculate, then Save to persist.` : ' Saved assumptions are consistent within rounding.'}${check.allocationMatches ? '' : ` Country allocations total ${U.fmt(check.countryTotal)}, different from the global ${U.fmt(p.verified_users)}.`}<p><button type="button" class="btn btn-secondary btn-sm" data-recalculate-plan>Recalculate implied rates</button></p></div>`;
+    const consistency = `<div class="measurement-note">Implied by the saved inputs: visit-to-sign-up ${U.pct(check.derived.visit_to_signup, 3)} · impression-to-visit ${U.pct(check.derived.impression_to_visit, 3)} · cost per sign-up ${U.money(check.derived.paid_cps)}.${check.issues.length ? ` <b>Saved assumptions disagree:</b> ${check.issues.map((x) => `${U.esc(x.label)} (${x.key === 'paid_cps' ? U.money(x.saved) : U.pct(x.saved, 3)})`).join(', ')}. Use the button to recalculate, then Save to persist.` : ' Saved assumptions are consistent within rounding.'}${check.allocationMatches ? '' : ` Country allocations total ${U.fmt(check.countryTotal)}, different from the global ${U.fmt(p.verified_users)}.`}<p><button type="button" class="btn btn-secondary btn-sm" data-recalculate-plan>Recalculate implied rates</button></p></div>`;
     const field = ([key, label, kind]) => `<label class="field"><span>${U.esc(label)}${kind === 'rate' ? ' (decimal or %)' : ''}</span><input name="plan:${U.esc(key)}" value="${U.esc(kind === 'rate' ? `${+(Number(p[key]) * 100).toFixed(4)}%` : p[key])}" inputmode="decimal" required></label>`;
     const countries = Object.entries(p.countries || {}).sort((a, b) => a[0].localeCompare(b[0]));
     const countryRows = countries.map(([country, target]) => `<tr><td>${U.esc(country)}</td><td><input name="country:${U.esc(country)}" value="${U.esc(target)}" inputmode="numeric" aria-label="Target for ${U.esc(country)}"></td></tr>`).join('');
@@ -173,8 +173,8 @@
       `<form class="card" id="plan-form"><div class="card-header"><div><div class="card-title">${U.esc(p.label || 'LATAM scale goal')}</div><div class="card-sub">Global target and country allocation. The country values can sum differently while you model scenarios; the dashboard shows the allocation you save.</div></div><button class="btn btn-primary"${PV.saving ? ' disabled' : ''}>${U.icon('floppy-disk')} ${PV.saving ? 'Saving…' : 'Save scale targets'}</button></div>
         <div class="ad-form">${PLAN_FIELDS.map(field).join('')}</div>
         ${consistency}
-        <div class="card-header mt-16"><div><div class="card-title">Verified-user target by country</div><div class="card-sub">Traffic uses GA4 country data. Account-country actuals require a trusted country code from product or PostHog.</div></div></div>
-        <div class="tbl-wrap"><table><thead><tr><th>Country</th><th class="td-num">Verified-user target</th></tr></thead><tbody>${countryRows}</tbody></table></div>
+        <div class="card-header mt-16"><div><div class="card-title">Sign-up target by country</div><div class="card-sub">Traffic uses GA4 country data. Sign-up country comes from PostHog person properties.</div></div></div>
+        <div class="tbl-wrap"><table><thead><tr><th>Country</th><th class="td-num">Sign-up target</th></tr></thead><tbody>${countryRows}</tbody></table></div>
       </form>`);
   }
   function previewBox() {

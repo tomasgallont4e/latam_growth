@@ -53,9 +53,9 @@
       <div><dt>Engaged session</dt><dd>Lasted more than 10 seconds, viewed 2 or more pages, or triggered a key event.</dd></div>
       <div><dt>CRM contact (HubSpot)</dt><dd>A contact whose first/last landing URL matches the configured site. Dated by contact creation, not necessarily form submission. Known internal domains/companies and explicit QA medium/campaigns are excluded when the checkbox is active.</dd></div>
       <div><dt>New observed person (PostHog)</dt><dd>A new person record with a site event. Internal/External/Unknown classification uses configured email domains and companies. Unknown identity is shown separately; person creation does not prove registration or verification.</dd></div>
-      <div><dt>Verified accounts / 500K goal</dt><dd>Confirmed, deduplicated product account verifications from a trusted report. Contacts and observed people are never added. Pending until a verification report is supplied.</dd></div>
+      <div><dt>Sign-ups / 500K goal</dt><dd>First registration_started per person since launch in PostHog, excluding qa_probe and project test accounts. account_created is a separate later funnel step. CRM contacts and person creation are not substituted for this event.</dd></div>
       <div><dt>Visit-to-verification / seven-day activation</dt><dd>Requires linked sessions, registrations and dated project events for the same cohort. Independent totals and the click Action cannot supply these rates.</dd></div>
-      <div><dt>Cost per attributed CRM contact</dt><dd>Spend divided by paid UTM contacts for the same reporting channels and dates. This is not cost per verified account. Missing spend or zero contacts leaves cost unavailable.</dd></div>
+      <div><dt>Cost per attributed CRM contact</dt><dd>Spend divided by paid UTM contacts for the same reporting channels and dates. This is not cost per sign-up. Missing spend or zero contacts leaves cost unavailable.</dd></div>
     </dl></div>`;
     return U.section('Data sources', 'Every number in this dashboard comes from one of these tools. Credentials go in the service variables, never in files.', kpis)
       + `<section class="section">${sel ? detail(sel) : ''}<div class="source-grid">${cards}</div></section>`

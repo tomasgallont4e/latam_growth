@@ -17,7 +17,7 @@ function dashboard() {
     },
   } });
   App.testLoad = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
-  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'views/social.js', 'views/overview.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
+  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'views/social.js', 'views/overview.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
   }
   App.S.from = '2026-10-01'; App.S.to = '2026-10-28';
@@ -193,7 +193,7 @@ test('audited 4 CRM + 34 PostHog case never claims 38 verified accounts or 850% 
   assert.equal(A.D.ga().rate, 508 / 1752);
   const conversion = A.views.conversion.render(), overview = A.views.overview.render();
   assert.match(conversion, /29\.0%/);
-  assert.match(overview, /may overlap; not verified accounts/);
+  assert.match(overview, /PostHog sign-up: registration_started/);
   assert.doesNotMatch(conversion + overview, /850|72\.1%|35\.6%|38 sign-ups|Weakest step|drop-off<|continue<|Direct Platform Sign-ups/);
   A.S.exInt = false;
   assert.equal(A.D.platform(), 34);
@@ -263,10 +263,10 @@ test('plan flags 60% against 0.577% implied, without mutating saved targets', ()
   assert.equal(JSON.stringify(p), before);
 });
 
-test('native GA4 new/total mismatch is visible, never clamped or silently recomputed', () => {
+test('native GA4 counts are retained without the removed review banner', () => {
   const A = auditedDashboard(), ga = A.D.ga();
   assert.equal(ga.users, 1599); assert.equal(ga.newUsers, 1792); assert.equal(ga.userWarning, true);
-  assert.match(A.views.acquisition.render(), /GA4 reporting needs review/);
+  assert.doesNotMatch(A.views.acquisition.render(), /GA4 reporting needs review/);
 });
 
 test('verified-account actual needs a trusted report and cannot come from observed people', () => {
@@ -275,7 +275,7 @@ test('verified-account actual needs a trusted report and cannot come from observ
   assert.equal(A.D.verified(), null);
   A.S.data.snapshots.push({ ...available('posthog', 'verified_accounts'), rows: [{ available: true, unit: 'verified_account' }] });
   assert.equal(A.D.verified(), 7);
-  assert.match(A.views.overview.render(), /7 verified · 0\.001% of goal/);
+  assert.doesNotMatch(A.views.overview.render(), /7 verified/);
   const coverage = A.S.data.snapshots.find((s) => s.key === 'verified_accounts').rows[0];
   coverage.country_complete = true;
   A.S.data.metrics.push({ ...metric('posthog', 'ph_verified_accounts_geo', 5, 'Colombia'), dim: 'country' });
@@ -302,6 +302,7 @@ test('PostHog sync classifies people consistently and distinguishes failed Actio
   t.mock.method(console, 'warn', () => {});
   t.mock.method(global, 'fetch', async (url, opts) => {
     const sql = JSON.parse(opts.body).query.query;
+    if (sql.includes("event = 'registration_started'")) return response({ results: [[date, 'External', 'Colombia', 28], [date, 'Internal', 'Colombia', 6]] });
     if (sql.includes('matchesAction')) return failAction ? { ok: false, text: async () => '504 query timed out' } : response({ results: [] });
     if (sql.includes('AS source,')) return response({ results: [[date, 'instagram', 'paid_social', 'launch', 'p01', 'External', 28], [date, '(not set)', '(not set)', '(not set)', '(not set)', 'Internal', 6]] });
     if (sql.includes(' AS c,')) return response({ results: [['Colombia', date, 'External', 28], ['Colombia', date, 'Internal', 6]] });
@@ -317,8 +318,32 @@ test('PostHog sync classifies people consistently and distinguishes failed Actio
   assert.equal(failed.snapshots.find((r) => r.key === 'activation_action').rows[0].available, false);
   const A = dashboard(); A.S.data = { ...A.S.data, metrics: failed.metrics.map((r) => ({ ...r, source: 'posthog' })), snapshots: failed.snapshots.map((r) => ({ ...r, source: 'posthog' })) };
   assert.equal(A.D.platform(), 28); assert.equal(A.D.proxy(), null);
+  assert.equal(A.D.signups(), 28);
+  assert.equal(A.D.registrations(A.S.from, A.S.to, 'Colombia'), 28);
   failAction = false;
   const empty = await connectors.posthog();
   A.S.data.snapshots = empty.snapshots.map((r) => ({ ...r, source: 'posthog' }));
   assert.equal(A.D.proxy(), 0);
+});
+
+test('the goal counts registration_started sign-ups without requiring account_created or adding CRM/new people', () => {
+  const A = auditedDashboard();
+  A.S.data.snapshots.push(available('posthog', 'registration_coverage'));
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_signups', 28, 'External'), dim: 'account_type' });
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_signups', 9, 'Internal'), dim: 'account_type' });
+  assert.equal(A.D.signups(), 28);
+  assert.equal(A.D.actual('total_signups', A.S.from, A.S.to), 28);
+  const html = A.views.overview.render();
+  assert.match(html, /28 sign-ups/);
+  assert.match(html, /registration_started/);
+  assert.match(html, /Funnel platform/);
+  assert.match(html, /PostHog funnel/);
+  assert.doesNotMatch(html, /31 reported|Verified actual pending/);
+  const rendered = A.platformFunnels.nativeBody({ title: 'MVP', from: A.S.from, to: A.S.to, window_days: 14, steps: [{ name: 'marketing_cta_clicked', n: 33 }, { name: 'registration_started', n: 28 }, { name: 'account_created', n: null }] });
+  assert.match(rendered, /84\.8% continue/);
+  assert.match(rendered, /5 drop off/);
+  assert.match(rendered, /Awaiting events/);
+  assert.doesNotMatch(rendered, /28 drop off/);
+  A.S.exInt = false;
+  assert.equal(A.D.signups(), 37);
 });

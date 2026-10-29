@@ -10,7 +10,7 @@
       impression_to_visit: ratio(p.landing_sessions, p.impressions),
       paid_cps: ratio(p.paid_budget, p.verified_users),
     };
-    const labels = { visit_to_signup: 'Visit to verified user', impression_to_visit: 'Impression to landing visit', paid_cps: 'Cost per verified account' };
+    const labels = { visit_to_signup: 'Visit to sign-up', impression_to_visit: 'Impression to landing visit', paid_cps: 'Cost per sign-up' };
     const issues = Object.entries(derived).filter(([key, value]) => value != null && Math.abs(Number(p[key]) - value) > Math.max(key === 'paid_cps' ? 0.02 : 0.00005, value * 0.01))
       .map(([key, implied]) => ({ key, label: labels[key], saved: Number(p[key]), implied }));
     const countryTotal = Object.values(p.countries || {}).reduce((sum, n) => sum + Number(n || 0), 0);
