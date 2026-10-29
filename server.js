@@ -13,6 +13,7 @@ const auth = require('./lib/auth');
 const ads = require('./lib/adloader');
 const executive = require('./lib/executive');
 const targets = require('./lib/targets');
+const funnels = require('./lib/funnels');
 
 const app = express();
 app.set('trust proxy', true);
@@ -64,6 +65,14 @@ app.get('/api/data', async (req, res, next) => {
       goalPlan: await targets.getPlan(store),
     });
   } catch (e) { next(e); }
+});
+
+app.get('/api/funnels/posthog', async (req, res) => {
+  try {
+    const from = String(req.query.from || ''), to = String(req.query.to || '');
+    if (from < (process.env.LAUNCH_DATE || '2026-10-01') || to > new Date().toISOString().slice(0, 10)) return res.status(400).json({ error: 'Date outside launch window' });
+    res.json(await funnels.read(String(req.query.funnel || 'website'), from, to, req.query.exclude !== '0'));
+  } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
 // Executive view: built only from real rows (connectors, CSV loads, daily routine).
@@ -142,11 +151,21 @@ app.post('/api/ingest', async (req, res, next) => {
   } catch (e) { e.status ? res.status(e.status).json({ error: e.message }) : next(e); }
 });
 
+// One sync per source at a time, shared by "Sync now" and the automatic sync, so two
+// overlapping pulls can never write the same source twice.
+const syncing = new Set();
+async function runSync(k) {
+  syncing.add(k);
+  try { return await ingest(await connectors[k](), 'connector'); }
+  finally { syncing.delete(k); }
+}
+
 app.post('/api/sync/:source', async (req, res) => {
   const k = req.params.source;
   if (!connectors[k]) return res.status(404).json({ error: 'No automatic connector for this source' });
   if (!configured(k)) return res.status(409).json({ error: 'Service variables for this source are not set yet' });
-  try { res.json(await ingest(await connectors[k](), 'connector')); }
+  if (syncing.has(k)) return res.status(409).json({ error: 'sync en curso' });
+  try { res.json(await runSync(k)); }
   catch (e) {
     console.error('sync', k, e.message);
     await store.upsert('synclog', `${new Date().toISOString()}|${k}`, { source: k, at: new Date().toISOString(), how: 'connector', error: e.message.slice(0, 300) });
@@ -286,7 +305,8 @@ if (!PORT) { console.error('PORT env var not set; the runtime must inject it.');
 async function autoSync() {
   for (const k of Object.keys(connectors)) {
     if (!configured(k)) continue;
-    try { const r = await ingest(await connectors[k](), 'connector'); console.log('sync', k, r.metrics, r.events); }
+    if (syncing.has(k)) { console.log('sync', k, 'skipped: already running'); continue; }
+    try { const r = await runSync(k); console.log('sync', k, r.metrics, r.events); }
     catch (e) { console.error('sync', k, e.message); }
   }
 }

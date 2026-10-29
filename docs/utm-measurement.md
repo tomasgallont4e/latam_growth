@@ -14,7 +14,7 @@ Every distributable link must include these fields in lowercase, with no spaces:
 utm_source    platform or publisher: linkedin, instagram, facebook, google, email
 utm_medium    distribution method: paid_social, organic_social, cpc, email, partner
 utm_campaign  stable campaign identifier: latam_co_launch
-utm_content   unique piece identifier: p03_video_a, p03_carousel_b
+utm_content   persona code + piece: p03 or p03_video_a (always starts with pNN, p01–p13)
 utm_term      optional audience or keyword: bogota_founders
 utm_id        optional immutable campaign ID
 ```
@@ -24,6 +24,8 @@ Example:
 ```text
 https://go.think4ever.com/latam?utm_source=linkedin&utm_medium=paid_social&utm_campaign=latam_co_launch&utm_content=p03_video_a&utm_term=bogota_founders
 ```
+
+**Persona standard:** `utm_content` always starts with the persona code `pNN` (`p01`–`p13`), optionally followed by `_` and the piece name (`p03`, `p03_video_a`, `p03_carousel_b`). The dashboard groups sign-ups and sessions by that prefix, so `p03_video_a` and `p03_carousel_b` both count for persona `p03`. A value without the prefix is shown in the campaign tables but not in "Sign-ups by persona".
 
 Do not reuse one `utm_content` value for more than one creative. Keep the same `utm_campaign` in the advertising platform and in the destination URL. Preserve platform click IDs (`gclid`, `fbclid`, `msclkid`) when the platform appends them.
 
@@ -104,3 +106,45 @@ If the landing and portal are different domains, pass the stored attribution val
 8. Use **Data Sources → Sync now** for GA4 and PostHog. In **Marketing campaigns → Campaign attribution**, verify the GA4 session row and, after project creation, the confirmed-project row.
 
 Historical traffic without UTMs will remain `(not set)`; this is expected and should not be backfilled with guesses.
+
+### Paid unit costs (Phase 1)
+
+After updating the dashboard, restart the service and sync Meta, GA4 and HubSpot.
+Social and Paid shows CPM, CPC, cost per paid session and cost per attributed form sign-up,
+with a table by paid channel. Existing country selectors, goals and chart grouping are preserved.
+
+- Meta `ad_clicks` now uses `inline_link_clicks`. The explicit `ad_link_clicks` metric marks the new definition;
+  old loads need a sync before the Social and Paid click/CPC cards can be compared. `ad_platform_clicks`
+  preserves all-clicks. Link clicks can lead to destinations within Meta, so they are not landing sessions.
+- GA4 uses a dedicated paginated date/source/medium report for `ga_paid_sessions`, independent of the capped
+  campaign/city/page snapshot. Source aliases (meta/facebook/instagram, linkedin, google) and paid media
+  (`paid_social` / `paid-social`, `cpc`, etc.) are matched consistently. `qa` and organic media are excluded.
+- HubSpot UTM configuration still requires the actual internal field names. Its `utm_capture` snapshot
+  indicates whether source/medium were successfully requested. Missing configuration or a fallback load
+  is not treated as a zero-sign-up report. Existing contacts with UTM pairs also provide attribution evidence.
+- Form costs count attributed HubSpot contacts, preferring a complete first-touch source/medium pair.
+  They do not use global PostHog people or prove a verified account was created. The internal-contact
+  checkbox applies to these forms. QA contacts with paid media need to be identified as internal in CRM;
+  production tests should use `utm_medium=qa`.
+- Costs are spend divided by the matching channel's denominator, over the same selected dates. Missing
+  spend stays unknown; zero denominators give no cost. Global cost cards use only channels reporting spend.
+  Spend is in each advertising account's reported currency; no FX conversion is performed.
+- LinkedIn page analytics remain organic. LinkedIn Ads costs require a daily CSV (`ad_spend`,
+  `ad_impressions`, `ad_clicks`) until an Advertising API connector is added. Meta CSVs must also include
+  `ad_link_clicks` when supplying link-click metrics.
+- Conversion now displays the first matching PostHog Action click per person since launch as a separate
+  project-start proxy, with test accounts excluded by the connector. It is not a confirmed project count
+  or an activation conversion rate for the sign-up cohort. Failed Action queries leave this step pending.
+
+## 6. Domain filter (SITE_HOSTS)
+
+The dashboard measures only the landing, the portal and the main site. The list lives in the service variable `SITE_HOSTS` (default `think4ever.com,www.think4ever.com,go.think4ever.com,portal.think4ever.com`).
+
+| Connector | What is filtered |
+|---|---|
+| GA4 | Every report (channels, events, countries, daily countries, totals, UTM) uses a `hostName` filter on `SITE_HOSTS`. |
+| PostHog | Events and active users: `$host` in `SITE_HOSTS`, or no `$host` (backend events from the portal). New people, their country and UTM: only people with at least one event on `SITE_HOSTS` since `LAUNCH_DATE`. The activation Action is filtered the same way; `project_created` is never filtered. |
+| HubSpot sign-ups | Both forms, but only when the contact's `hs_analytics_first_url`, `hs_analytics_last_url` or `landing_page` is on `SITE_HOSTS`. Contacts created by API without any web visit are left out. |
+| HubSpot traffic | Not filterable through HubSpot's API. Kept and labelled "todo el sitio" in the views and on Data Sources. |
+
+Syncs run one at a time per source ("Sync now" answers 409 while a sync is running), and sign-up events are keyed by the HubSpot contact id, so repeated syncs replace rows instead of duplicating them.
