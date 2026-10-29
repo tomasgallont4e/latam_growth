@@ -9,17 +9,21 @@
     if (!p) return '';
     const goal = Number(p.verified_users), month = S.to.slice(0, 7), first = `${month}-01`, end = S.to;
     const actual = D.verified(first, end), check = A.measurement.planCheck(p);
-    const mismatch = check.issues.length ? `<p class="measurement-note">Plan needs review: ${check.issues.map((x) => `${U.esc(x.label)} saved ${x.key === 'paid_cps' ? U.money(x.saved) : U.pct(x.saved, 3)}, implied by inputs ${x.key === 'paid_cps' ? U.money(x.implied) : U.pct(x.implied, 3)}`).join(' · ')}. Review Targets; saved values have not been changed.</p>` : '';
     let running = 0;
+    const daily = D.dailySignups(first, end);
+    const reportedAvailable = D.crmTotal(first, end) != null && D.platform(first, end) != null;
     const days = U.days(first, end), cumulative = days.map((date) => {
-      running += D.sum('posthog', 'ph_verified_accounts', (r) => r.dim === 'account_type' && (!S.exInt || r.dim_value === 'External'), date, date);
+      running += actual != null
+        ? D.sum('posthog', 'ph_verified_accounts', (r) => r.dim === 'account_type' && (!S.exInt || r.dim_value === 'External'), date, date)
+        : (daily[date].form || 0) + (daily[date].platform || 0);
       return running;
     });
-    const hero = U.card({ cls: 'chart-card goal-hero', title: `LATAM ${U.fmt(goal)} verified-account goal`,
-      sub: `Monthly · ${U.monthName(month)} · one confirmed verification per product account. CRM contacts and PostHog people are not added to this goal.`,
-      right: U.pill(actual == null ? 'neutral' : 'info', actual == null ? 'Verified actual pending' : `${U.fmt(actual)} · ${U.pct(A.measurement.ratio(actual, goal), 3)} of goal`),
-      body: A.charts.goalProgress({ dates: days, values: actual == null ? days.map(() => null) : cumulative, goal, unit: 'verified accounts', label: 'Verified accounts month to date' })
-        + (actual == null ? '<p class="card-note">Verified registration report is not connected. The chart remains visible; missing data is not plotted as zero.</p>' : '') + mismatch,
+    const chartActual = actual == null ? (reportedAvailable ? running : null) : actual;
+    const monthDays = U.days(first, U.endOfMonth(month)).length;
+    const hero = U.card({ cls: 'chart-card goal-hero', title: 'Sign-ups vs planned sign-ups',
+      sub: `${U.monthName(month)} · ${actual == null ? 'Reported activity: HubSpot + PostHog, may overlap; not verified accounts' : 'Verified accounts'} · plan from Targets`,
+      right: U.pill('info', chartActual == null ? 'Awaiting data' : `${U.fmt(chartActual)} ${actual == null ? 'reported' : 'verified'} · ${U.pct(A.measurement.ratio(chartActual, goal), 3)} of goal`),
+      body: A.charts.goalProgress({ dates: days, values: chartActual == null ? days.map(() => null) : cumulative, goal, planned: days.map((_, i) => goal * (i + 1) / monthDays), unit: actual == null ? 'reported sign-ups' : 'verified accounts', label: 'Sign-ups vs planned sign-ups' }),
     });
     const markets = Object.keys(p.countries || {}), country = markets.includes(S.goalCountry) ? S.goalCountry : markets[0];
     if (!country) return `<section class="section">${hero}</section>`;

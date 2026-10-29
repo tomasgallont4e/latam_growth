@@ -35,12 +35,14 @@ test('metric corrections preserve the goal, channel and conversion charts', () =
   A.S.data.events = [{ kind: 'form_signup', date, internal: false }];
   const overview = A.views.overview.render(), conversion = A.views.conversion.render();
   assert.match(overview, /goal-svg/);
-  assert.match(overview, /Verified actual pending/);
+  assert.match(overview, /Sign-ups vs planned sign-ups/);
+  assert.match(overview, /Planned cumulative sign-ups/);
+  assert.doesNotMatch(overview, /Plan needs review/);
   assert.match(overview, /Channel mix/);
   assert.match(overview, /aria-label="HubSpot sessions by channel"/);
   assert.match(overview, /Timeline Notes/);
   assert.match(conversion, /aria-label="Daily CRM contacts"/);
-  assert.doesNotMatch(overview, /class="goal-dot"|class="goal-col"/);
+  assert.doesNotMatch(overview, /class="goal-col"/);
   const realZero = A.charts.goalProgress({ dates: ['2026-10-01'], values: [0], goal: 500000 });
   assert.match(realZero, /class="goal-dot"/);
 });
@@ -191,7 +193,7 @@ test('audited 4 CRM + 34 PostHog case never claims 38 verified accounts or 850% 
   assert.equal(A.D.ga().rate, 508 / 1752);
   const conversion = A.views.conversion.render(), overview = A.views.overview.render();
   assert.match(conversion, /29\.0%/);
-  assert.match(overview, /Verified actual pending/);
+  assert.match(overview, /may overlap; not verified accounts/);
   assert.doesNotMatch(conversion + overview, /850|72\.1%|35\.6%|38 sign-ups|Weakest step|drop-off<|continue<|Direct Platform Sign-ups/);
   A.S.exInt = false;
   assert.equal(A.D.platform(), 34);
@@ -273,7 +275,7 @@ test('verified-account actual needs a trusted report and cannot come from observ
   assert.equal(A.D.verified(), null);
   A.S.data.snapshots.push({ ...available('posthog', 'verified_accounts'), rows: [{ available: true, unit: 'verified_account' }] });
   assert.equal(A.D.verified(), 7);
-  assert.match(A.views.overview.render(), /7 · 0\.001% of goal/);
+  assert.match(A.views.overview.render(), /7 verified · 0\.001% of goal/);
   const coverage = A.S.data.snapshots.find((s) => s.key === 'verified_accounts').rows[0];
   coverage.country_complete = true;
   A.S.data.metrics.push({ ...metric('posthog', 'ph_verified_accounts_geo', 5, 'Colombia'), dim: 'country' });

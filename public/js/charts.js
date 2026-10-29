@@ -81,12 +81,12 @@
 
   // Cumulative month-to-date sign-ups (bars, left) and the same series as a share of the scale goal (line, right).
   // The two axes share a scale, so a bar top and its line point are the same value.
-  C.goalProgress = ({ dates, values, goal, label = 'LATAM 500K goal', unit = 'sign-ups' }) => {
+  C.goalProgress = ({ dates, values, goal, planned, label = 'LATAM 500K goal', unit = 'sign-ups' }) => {
     if (!dates.length || !(goal > 0)) return U.empty('No goal to chart yet', 'The 500K plan sets the line this chart measures against.', 'chart-column');
     const W = 1000, H = 292, L = 54, R = 68, T = 18, B = 256;
     const pending = !values.some((v) => v != null);
     const maxLeft = pending ? goal : niceMax(Math.max(1, ...values));
-    const maxRight = maxLeft / goal;
+    const maxRight = planned ? goal : maxLeft / goal;
     const y = (v) => B - (v / maxLeft) * (B - T);
     const step = (W - L - R) / dates.length;
     const bw = Math.max(2, step * 0.62);
@@ -100,7 +100,7 @@
       const v = (maxLeft * k) / 4, yy = y(v).toFixed(1);
       g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/>`;
       g += `<text x="${L - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${U.esc(U.fmt(v))}</text>`;
-      g += `<text class="axis-pct" x="${W - R + 10}" y="${(y(v) + 4).toFixed(1)}" text-anchor="start">${U.esc(pctAxis((maxRight * k) / 4))}</text>`;
+      g += `<text class="axis-pct" x="${W - R + 10}" y="${(y(v) + 4).toFixed(1)}" text-anchor="start">${U.esc(planned ? U.fmt((maxRight * k) / 4) : pctAxis((maxRight * k) / 4))}</text>`;
     }
     const pts = [];
     dates.forEach((d, j) => {
@@ -114,9 +114,13 @@
       if (v > 0) g += `<rect class="goal-col" x="${x.toFixed(2)}" y="${yy}" width="${bw.toFixed(2)}" height="${Math.max(0.6, (B - y(v)).toFixed(2))}"><title>${U.esc(tip)}</title></rect>`;
       pts.push(`${cx},${yy}`);
     });
-    if (pts.length) g += `<polyline class="goal-line" points="${pts.join(' ')}"/>`;
+    if (planned) {
+      const planPoints = dates.map((d, j) => `${(L + j * step + step / 2).toFixed(2)},${(B - (planned[j] / goal) * (B - T)).toFixed(2)}`);
+      g += `<polyline class="goal-line" points="${planPoints.join(' ')}"><title>Planned sign-ups · right axis</title></polyline>`;
+      dates.forEach((d, j) => { g += `<circle class="goal-dot" cx="${(L + j * step + step / 2).toFixed(2)}" cy="${(B - (planned[j] / goal) * (B - T)).toFixed(2)}" r="3.2"><title>${U.esc(`${U.dshort(d)} · ${U.fmt(planned[j])} planned sign-ups`)}</title></circle>`; });
+    } else if (pts.length) g += `<polyline class="goal-line" points="${pts.join(' ')}"/>`;
     dates.forEach((d, j) => {
-      if (values[j] == null) return;
+      if (planned || values[j] == null) return;
       const v = Number(values[j]) || 0;
       const cx = (L + j * step + step / 2).toFixed(2);
       g += `<circle class="goal-dot" cx="${cx}" cy="${y(v).toFixed(2)}" r="3.2"><title>${U.esc(`${U.dshort(d)} · ${U.fmt(v)} ${unit} · ${pctAxis(v / goal)} of goal`)}</title></circle>`;
@@ -125,8 +129,8 @@
     dates.forEach((d, j) => {
       if (j % every === 0) g += `<text x="${(L + j * step + step / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${U.esc(U.dshort(d))}</text>`;
     });
-    if (pending) g += `<text x="${W / 2}" y="${(T + B) / 2}" text-anchor="middle">Verified actual pending · no observed series</text>`;
-    const legend = `<div class="goal-legend"><span class="swatch-bar">Month-to-date ${U.esc(unit)} (left axis)</span><span class="swatch-line">% of ${U.esc(U.fmt(goal))} goal (right axis)</span></div>`;
+    if (pending) g += `<text x="${W / 2}" y="${(T + B) / 2}" text-anchor="middle">Actual pending</text>`;
+    const legend = `<div class="goal-legend"><span class="swatch-bar">Month-to-date ${U.esc(unit)} (left axis)</span><span class="swatch-line">${planned ? 'Planned cumulative sign-ups' : `% of ${U.esc(U.fmt(goal))} goal`} (right axis)</span></div>`;
     return `<div class="chart-scroll"><svg class="chart-svg goal-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(label)}">${g}</svg></div>${legend}`;
   };
 
