@@ -107,6 +107,35 @@ If the landing and portal are different domains, pass the stored attribution val
 
 Historical traffic without UTMs will remain `(not set)`; this is expected and should not be backfilled with guesses.
 
+### Paid unit costs (Phase 1)
+
+After updating the dashboard, restart the service and sync Meta, GA4 and HubSpot.
+Social and Paid shows CPM, CPC, cost per paid session and cost per attributed form sign-up,
+with a table by paid channel. Existing country selectors, goals and chart grouping are preserved.
+
+- Meta `ad_clicks` now uses `inline_link_clicks`. The explicit `ad_link_clicks` metric marks the new definition;
+  old loads need a sync before the Social and Paid click/CPC cards can be compared. `ad_platform_clicks`
+  preserves all-clicks. Link clicks can lead to destinations within Meta, so they are not landing sessions.
+- GA4 uses a dedicated paginated date/source/medium report for `ga_paid_sessions`, independent of the capped
+  campaign/city/page snapshot. Source aliases (meta/facebook/instagram, linkedin, google) and paid media
+  (`paid_social` / `paid-social`, `cpc`, etc.) are matched consistently. `qa` and organic media are excluded.
+- HubSpot UTM configuration still requires the actual internal field names. Its `utm_capture` snapshot
+  indicates whether source/medium were successfully requested. Missing configuration or a fallback load
+  is not treated as a zero-sign-up report. Existing contacts with UTM pairs also provide attribution evidence.
+- Form costs count attributed HubSpot contacts, preferring a complete first-touch source/medium pair.
+  They do not use global PostHog people or prove a verified account was created. The internal-contact
+  checkbox applies to these forms. QA contacts with paid media need to be identified as internal in CRM;
+  production tests should use `utm_medium=qa`.
+- Costs are spend divided by the matching channel's denominator, over the same selected dates. Missing
+  spend stays unknown; zero denominators give no cost. Global cost cards use only channels reporting spend.
+  Spend is in each advertising account's reported currency; no FX conversion is performed.
+- LinkedIn page analytics remain organic. LinkedIn Ads costs require a daily CSV (`ad_spend`,
+  `ad_impressions`, `ad_clicks`) until an Advertising API connector is added. Meta CSVs must also include
+  `ad_link_clicks` when supplying link-click metrics.
+- Conversion now displays the first matching PostHog Action click per person since launch as a separate
+  project-start proxy, with test accounts excluded by the connector. It is not a confirmed project count
+  or an activation conversion rate for the sign-up cohort. Failed Action queries leave this step pending.
+
 ## 6. Domain filter (SITE_HOSTS)
 
 The dashboard measures only the landing, the portal and the main site. The list lives in the service variable `SITE_HOSTS` (default `think4ever.com,www.think4ever.com,go.think4ever.com,portal.think4ever.com`).

@@ -1,5 +1,5 @@
 'use strict';
-/* Social and Paid: spend, clicks, CTR and cost per sign-up (costs read inverted: a drop is good),
+/* Social and Paid: spend, clicks, CTR and attributed acquisition costs (a cost drop is good),
    spend by platform, daily spend, per-platform campaigns, LinkedIn organic, Clarity and ad library checks. */
 (function (A) {
   // Followers is a running total (not additive): take the latest value up to 1 day after the period end,
@@ -16,13 +16,15 @@
     if (rows.length) {
       const r = rows.map(([c, spend]) => {
         const f = (m) => D.sum(p.key, m, (x) => x.dim_value === c);
-        const imp = f('ad_impressions'), clk = f('ad_clicks'), res = f('ad_results');
-        return { c, spend, imp, clk, res, ctr: imp ? clk / imp : null, cpc: clk ? spend / clk : null, cpr: res ? spend / res : null };
+        const imp = f('ad_impressions'), res = f('ad_results');
+        const clickMetric = p.key === 'meta' ? 'ad_link_clicks' : 'ad_clicks';
+        const clk = D.has(p.key, clickMetric) ? f(clickMetric) : null;
+        return { c, spend, imp, clk, res, ctr: imp && clk != null ? clk / imp : null, cpm: A.paid.cost(spend, imp, 1000), cpc: A.paid.cost(spend, clk), cpr: A.paid.cost(spend, res) };
       });
       return U.details(`${p.name} campaigns`, `${r.length} campaigns · ${U.money(r.reduce((s, x) => s + x.spend, 0))}`, U.table([
         { t: 'Campaign', k: 'c' }, { t: 'Spend', num: 1, f: (x) => U.money(x.spend) }, { t: 'Impressions', num: 1, f: (x) => U.fmt(x.imp) },
-        { t: 'Clicks', num: 1, f: (x) => U.fmt(x.clk) }, { t: 'CTR', num: 1, f: (x) => U.pct(x.ctr) }, { t: 'CPC', num: 1, f: (x) => U.money(x.cpc) },
-        { t: 'Results', num: 1, f: (x) => U.fmt(x.res) }, { t: 'Cost per result', num: 1, f: (x) => U.money(x.cpr) },
+        { t: 'Clicks (Meta: link clicks)', num: 1, f: (x) => U.fmt(x.clk) }, { t: 'CTR', num: 1, f: (x) => U.pct(x.ctr) }, { t: 'CPM', num: 1, f: (x) => U.money(x.cpm) }, { t: 'CPC', num: 1, f: (x) => U.money(x.cpc) },
+        { t: 'Platform results', num: 1, f: (x) => U.fmt(x.res) }, { t: 'Cost / platform result', num: 1, f: (x) => U.money(x.cpr) },
       ], r));
     }
     const other = [...new Set(D.M().filter((x) => x.source === p.key).map((x) => x.metric))];
@@ -72,27 +74,34 @@
     const grain = D.grainName();
     const ticks = D.ticks();
     const any = D.anyPaid();
-    const m = (from, to) => {
-      const spend = D.paidSum('ad_spend', from, to), imp = D.paidSum('ad_impressions', from, to), clk = D.paidSum('ad_clicks', from, to), su = D.signups(from, to);
-      return { spend, imp, clk, ctr: imp ? clk / imp : null, cpc: clk ? spend / clk : null, cps: spend && su ? spend / su : null };
-    };
+    const m = (from, to) => D.paidTotals(from, to);
     const cur = m(S.from, S.to), p = prev ? m(prev.from, prev.to) : {};
     const spendDay = Object.fromEntries(C.PLATFORMS.map((pf) => [pf.key, D.rollNum(D.byDay(pf.key, 'ad_spend'))]));
     const aw = 'Meta, LinkedIn or Google Ads';
     const kpis = U.kpiRow(any ? [
       U.kpi({ label: 'Ad Spend', source: 'All platforms', value: U.money(cur.spend), hero: true, delta: U.delta(cur.spend, p.spend, { invert: true }), spark: ticks.map((d) => C.PLATFORMS.reduce((s, pf) => s + (spendDay[pf.key][d] || 0), 0)), compare: cmp }),
-      U.kpi({ label: 'Impressions', source: 'All platforms', value: U.fmt(cur.imp), delta: U.delta(cur.imp, p.imp), compare: cmp }),
-      U.kpi({ label: 'Clicks', source: 'All platforms', value: U.fmt(cur.clk), delta: U.delta(cur.clk, p.clk), compare: cmp }),
+      U.kpi({ label: 'Impressions', source: 'All platforms', value: U.fmt(cur.impressions), delta: U.delta(cur.impressions, p.impressions), compare: cmp }),
+      U.kpi({ label: 'Clicks (Meta: link clicks)', source: 'Ads', value: U.fmt(cur.clicks), delta: U.delta(cur.clicks, p.clicks), compare: cur.clicks == null ? 'Sync Meta to load link-click data' : 'Clicks are not landing sessions' }),
       U.kpi({ label: 'Click-through Rate', source: 'Derived', value: U.pct(cur.ctr), delta: U.delta(cur.ctr, p.ctr), compare: 'Clicks / impressions' }),
       U.kpi({ label: 'Cost per Click', source: 'Derived', value: U.money(cur.cpc), delta: U.delta(cur.cpc, p.cpc, { invert: true }), compare: 'Lower is better' }),
-      U.kpi({ label: 'Cost per Sign-up', source: 'Derived', value: U.money(cur.cps), delta: U.delta(cur.cps, p.cps, { invert: true }), compare: 'Spend / total sign-ups' }),
-    ] : ['Ad Spend', 'Impressions', 'Clicks', 'Click-through Rate', 'Cost per Click', 'Cost per Sign-up'].map((l) => U.kpi({ label: l, source: 'Ads', awaiting: aw, compare: 'No paid campaign has sent data yet. Connect a platform on Data Sources or load its CSV.' })), 6);
+      U.kpi({ label: 'CPM', source: 'Derived', value: U.money(cur.cpm), delta: U.delta(cur.cpm, p.cpm, { invert: true }), compare: 'Spend / impressions × 1,000' }),
+      U.kpi({ label: 'Paid sessions', source: 'GA4', value: U.fmt(cur.sessions), compare: 'Paid UTM sessions for channels with spend' }),
+      U.kpi({ label: 'Cost / paid session', source: 'GA4 + ads', value: U.money(cur.costSession), delta: U.delta(cur.costSession, p.costSession, { invert: true }), compare: cur.sessions == null ? 'Sync GA4 to load the paid-session report' : 'Spend / paid UTM sessions' }),
+      U.kpi({ label: 'Cost / attributed form sign-up', source: 'HubSpot + ads', value: U.money(cur.costForm), delta: U.delta(cur.costForm, p.costForm, { invert: true }), compare: cur.forms == null ? 'Awaiting HubSpot UTM fields and sync' : 'Spend / paid UTM contacts; not verified product accounts' }),
+    ] : ['Ad Spend', 'Impressions', 'Clicks', 'Click-through Rate', 'Cost per Click', 'CPM', 'Paid sessions', 'Cost / paid session', 'Cost / attributed form sign-up'].map((l) => U.kpi({ label: l, source: 'Ads', awaiting: aw, compare: 'Paid results appear after a successful connector sync or CSV import. LinkedIn organic activity is separate.' })), 3);
     const goals = A.targets.strip(['ad_spend_budget', 'clicks', 'ctr']);
 
     const bars = C.PLATFORMS.map((pf) => ({ name: pf.name, color: pf.color, value: D.sum(pf.key, 'ad_spend'), label: U.money(D.sum(pf.key, 'ad_spend')), extra: prev ? U.delta(D.sum(pf.key, 'ad_spend'), D.sum(pf.key, 'ad_spend', null, prev.from, prev.to), { invert: true }) : '' }));
     const byPlat = U.card({ title: 'Spend by platform', sub: `${U.money(cur.spend)} total · share and % change`, body: any ? C.hbars(bars, cur.spend) : U.empty('No ad spend yet', 'Spend by platform appears with the first campaign.', 'sack-dollar') });
-    const clicksMix = U.card({ title: 'Clicks by platform', sub: `${U.fmt(cur.clk)} clicks`, body: any ? C.mix(C.PLATFORMS.map((pf) => D.sum(pf.key, 'ad_clicks')), C.PLATFORMS, 'clicks') : U.empty('No clicks yet', '', 'arrow-pointer') });
+    const clicksMix = U.card({ title: 'Clicks by platform', sub: `${U.fmt(cur.clicks)} clicks · Meta uses link clicks`, body: any && cur.clicks != null ? C.mix(C.PLATFORMS.map((pf) => D.paidStats(pf.key).clicks || 0), C.PLATFORMS, 'clicks') : U.empty('No comparable click data yet', 'Sync Meta to update old all-click reports to link clicks.', 'arrow-pointer') });
     const chart = U.card({ cls: 'chart-card', title: `${grain} spend by platform`, sub: `One bar per ${D.grainBar()} · since launch · ${U.win(S.from, S.to)}`, body: any ? C.stacked({ dates: ticks, keys: C.PLATFORMS, value: (d, i) => spendDay[C.PLATFORMS[i].key][d], label: `${grain} ad spend by platform`, fmt: (v) => `$${U.fmt(v)}` }) : U.empty('No spend since launch', 'The chart switches on with the first campaign that sends data.', 'chart-column') });
+    const unitRows = C.PLATFORMS.map((pf) => ({ ...D.paidStats(pf.key), platform: pf.name }));
+    const unitCosts = U.card({ title: 'Unit costs by paid channel', sub: 'Same date range · costs use reported account currency; compare only accounts in the same currency', body: U.table([
+      { t: 'Channel', k: 'platform' }, { t: 'Spend', num: 1, f: (r) => U.money(r.spend) }, { t: 'Impressions', num: 1, f: (r) => U.fmt(r.impressions) },
+      { t: 'Clicks', num: 1, f: (r) => U.fmt(r.clicks) }, { t: 'CTR', num: 1, f: (r) => U.pct(r.ctr) }, { t: 'CPM', num: 1, f: (r) => U.money(r.cpm) }, { t: 'CPC', num: 1, f: (r) => U.money(r.cpc) },
+      { t: 'GA4 paid sessions', num: 1, f: (r) => U.fmt(r.sessions) }, { t: 'Cost / session', num: 1, f: (r) => U.money(r.costSession) },
+      { t: 'Form sign-ups (UTM)', num: 1, f: (r) => U.fmt(r.forms) }, { t: 'Cost / form sign-up', num: 1, f: (r) => U.money(r.costForm) },
+    ], unitRows) + '<p class="card-note">Meta: link clicks can lead to destinations on or off Meta. LinkedIn Ads: CSV until the Advertising API is connected. Missing inputs or zero denominators show —. Form attribution prefers first-touch UTM when available; it does not prove an ad caused a verified account.</p>' });
 
     const cl = D.snap('clarity', 'live_insights'), libs = D.snap('research', 'ad_libraries');
     const details = `<div class="detail-group">
@@ -104,6 +113,7 @@
 
     return U.section('Social and paid at a glance', `${U.win(S.from, S.to)} · ${cmp} · cost metrics read green when they go down`, kpis)
       + goals
+      + `<section class="section">${unitCosts}</section>`
       + `<section class="section grid-2">${byPlat}${clicksMix}</section>`
       + `<section class="section">${chart}</section>`
       + linkedinOrganic()

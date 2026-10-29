@@ -213,6 +213,40 @@
   D.PAID = ['meta', 'linkedin', 'google_ads'];
   D.anyPaid = () => D.M().some((r) => D.PAID.includes(r.source) && /^ad_/.test(r.metric));
   D.paidSum = (metric, from = S.from, to = S.to, only) => (only ? [only] : D.PAID).reduce((s, k) => s + D.sum(k, metric, null, from, to), 0);
+  D.paidStats = (key, from = S.from, to = S.to) => {
+    const value = (metric) => D.has(key, metric) ? D.sum(key, metric, null, from, to) : null;
+    const spend = value('ad_spend'), impressions = value('ad_impressions');
+    // Older Meta loads contain all-clicks. Require a new sync rather than
+    // relabelling those historical rows as link clicks.
+    const clicks = value(key === 'meta' ? 'ad_link_clicks' : 'ad_clicks');
+    const complete = (s) => s && s.from <= from && s.to >= to && s.rows && s.rows[0] && s.rows[0].available === true;
+    const sessionsReady = complete(D.snapIn('ga4', 'paid_sessions', from, to));
+    const sessions = sessionsReady ? D.sum('ga4', 'ga_paid_sessions', (r) => r.dim_value === key, from, to) : null;
+    const touch = (e) => e.first_utm_source && e.first_utm_medium
+      ? [e.first_utm_source, e.first_utm_medium] : [e.utm_source, e.utm_medium];
+    const formsReady = complete(D.snapIn('hubspot', 'utm_capture', from, to)) || D.formsAll(from, to).some((e) => touch(e).every(Boolean));
+    const forms = formsReady ? D.forms(from, to).filter((e) => A.paid.platform(...touch(e)) === key).length : null;
+    return {
+      key, spend, impressions, clicks, sessions, forms,
+      ctr: impressions && clicks != null ? clicks / impressions : null,
+      cpm: A.paid.cost(spend, impressions, 1000), cpc: A.paid.cost(spend, clicks),
+      costSession: A.paid.cost(spend, sessions), costForm: A.paid.cost(spend, forms),
+    };
+  };
+  D.paidTotals = (from = S.from, to = S.to) => {
+    const rows = D.PAID.map((key) => D.paidStats(key, from, to));
+    // A channel without an ad report must not contribute free conversions to
+    // another channel's denominator. Unknown inputs remain unknown.
+    const reporting = rows.filter((r) => r.spend != null);
+    const funded = reporting.filter((r) => r.spend > 0);
+    const sum = (list, field) => list.length && list.every((r) => r[field] != null) ? list.reduce((n, r) => n + r[field], 0) : null;
+    const spend = sum(reporting, 'spend'), impressions = sum(reporting, 'impressions'), clicks = sum(reporting, 'clicks');
+    const sessions = sum(funded, 'sessions'), forms = sum(funded, 'forms');
+    return { spend, impressions, clicks, sessions, forms,
+      ctr: impressions && clicks != null ? clicks / impressions : null,
+      cpm: A.paid.cost(spend, impressions, 1000), cpc: A.paid.cost(spend, clicks),
+      costSession: A.paid.cost(spend, sessions), costForm: A.paid.cost(spend, forms) };
+  };
   // Paid impressions from Meta, LinkedIn and Google Ads, plus organic LinkedIn post impressions.
   // Organic Meta and Google Search impressions are not connected, so they are never filled in.
   D.impressionParts = (from = S.from, to = S.to) => {
@@ -242,7 +276,7 @@
       { name: 'Sign-up submit', src: 'GA4', n: users(su) },
       { name: S.exInt ? 'External form sign-ups' : 'Form sign-ups', src: 'HubSpot', n: D.forms(from, to).length },
       { name: 'Platform sign-ups', src: 'PostHog', n: D.platform(from, to) },
-      { name: 'Activated (first project)', src: 'PostHog', n: null, note: 'Event not tracked yet' },
+      { name: 'Project started (click proxy)', src: 'PostHog · first click since launch · test accounts excluded', n: D.has('posthog', 'ph_activated_users') ? D.sum('posthog', 'ph_activated_users', null, from, to) : null, note: 'Awaiting activation Action sync', separate: true, bridge: 'First create-project click per person; creation is not confirmed. This is not a sign-up cohort.' },
     ];
   };
   // Actual value of a targeted metric for a date range (used by the monthly goals).
