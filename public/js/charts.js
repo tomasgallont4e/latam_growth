@@ -66,30 +66,29 @@
     return `<div class="chart-scroll"><svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(label)}">${g}</svg></div>${C.legend(keys, notes.some((n) => dates.includes(n.date)))}`;
   };
 
-  // Accounts created per day (bars, left axis) and the running total since launch (line, right axis).
-  // The two axes are independent on purpose: against a 500K goal the running total would read as a flat line.
-  C.accountsTrend = ({ dates, daily }) => {
-    if (!dates.length || !daily.some(Boolean)) return U.empty('No accounts yet', 'The curve starts with the first account created.', 'chart-line');
-    let run = 0; const cum = daily.map((v) => (run += v));
-    const W = 1000, H = 240, L = 54, R = 58, T = 16, B = 206;
-    const maxD = niceMax(Math.max(...daily)), maxC = niceMax(cum[cum.length - 1]);
-    const yd = (v) => B - (v / maxD) * (B - T), yc = (v) => B - (v / maxC) * (B - T);
-    const step = (W - L - R) / dates.length, bw = Math.max(1.5, step * 0.62), cx = (j) => L + j * step + step / 2;
+  // Running total as a share of a goal, on a FIXED 0-100% axis: the distance to the goal stays visible
+  // instead of being rescaled to fill the chart. `mini` is the small version used per country.
+  C.goalProgress = ({ dates, daily, goal, mini = false, label = 'Progress toward the goal' }) => {
+    if (!dates.length || !(goal > 0)) return U.empty('No goal set', 'Set the goal in Targets to see progress.', 'bullseye');
+    let run = 0; const cum = daily.map((v) => (run += v)), share = cum.map((v) => v / goal);
+    const W = mini ? 300 : 1000, H = mini ? 96 : 250, L = mini ? 6 : 54, R = mini ? 6 : 16, T = mini ? 8 : 16, B = mini ? 82 : 214;
+    const y = (r) => B - Math.min(1, r) * (B - T);
+    const step = (W - L - R) / Math.max(1, dates.length - 1), x = (j) => L + j * step;
     let g = '';
-    for (let k = 0; k <= 4; k++) {
-      const yy = yd((maxD * k) / 4).toFixed(1);
-      g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text x="${L - 8}" y="${(+yy + 4).toFixed(1)}" text-anchor="end">${U.esc(U.fmt((maxD * k) / 4))}</text><text x="${W - R + 8}" y="${(+yy + 4).toFixed(1)}" text-anchor="start" class="trend-axis-r">${U.esc(U.fmt((maxC * k) / 4))}</text>`;
+    const ticks = mini ? [0, 1] : [0, 0.25, 0.5, 0.75, 1];
+    for (const t of ticks) {
+      const yy = y(t).toFixed(1);
+      g += `<line class="grid${t === 1 ? ' gp-goal' : ''}" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/>${mini ? '' : `<text x="${L - 8}" y="${(+yy + 4).toFixed(1)}" text-anchor="end">${Math.round(t * 100)}%</text>`}`;
     }
-    dates.forEach((d, j) => {
-      g += `<rect class="day-hit" x="${(L + j * step).toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"><title>${U.esc(U.dshort(d))} · ${U.esc(U.fmt(daily[j]))} new · ${U.esc(U.fmt(cum[j]))} total</title></rect>`;
-      if (daily[j]) g += `<rect class="trend-bar" x="${(cx(j) - bw / 2).toFixed(2)}" y="${yd(daily[j]).toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.5, B - yd(daily[j])).toFixed(2)}"/>`;
-    });
-    const pts = cum.map((v, j) => `${cx(j).toFixed(1)},${yc(v).toFixed(1)}`);
-    g += `<polygon class="trend-area" points="${cx(0).toFixed(1)},${B} ${pts.join(' ')} ${cx(dates.length - 1).toFixed(1)},${B}"/><polyline class="trend-line" points="${pts.join(' ')}"/><circle class="trend-dot" cx="${cx(dates.length - 1).toFixed(1)}" cy="${yc(cum[cum.length - 1]).toFixed(1)}" r="4"/>`;
-    const every = Math.ceil(dates.length / 8);
-    dates.forEach((d, j) => { if (j % every === 0) g += `<text x="${cx(j).toFixed(1)}" y="${H - 8}" text-anchor="middle">${U.esc(U.dshort(d))}</text>`; });
-    return `<div class="chart-scroll"><svg class="chart-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Accounts created per day and running total since launch">${g}</svg></div>
-      <div class="channel-legend trend-legend"><span class="lg-bar">New accounts per day (left axis)</span><span class="lg-line">Running total since launch (right axis)</span></div>`;
+    if (!mini) g += `<text class="gp-goal-label" x="${W - R}" y="${(y(1) - 5).toFixed(1)}" text-anchor="end">Goal</text>`;
+    dates.forEach((d, j) => { g += `<rect class="day-hit" x="${(x(j) - step / 2).toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"><title>${U.esc(U.dshort(d))} · ${U.esc(U.fmt(daily[j]))} new · ${U.esc(U.fmt(cum[j]))} total · ${U.esc(U.pct(share[j]))} of goal</title></rect>`; });
+    const pts = share.map((v, j) => `${x(j).toFixed(1)},${y(v).toFixed(1)}`);
+    g += `<polygon class="trend-area" points="${x(0).toFixed(1)},${B} ${pts.join(' ')} ${x(dates.length - 1).toFixed(1)},${B}"/><polyline class="trend-line" points="${pts.join(' ')}"/><circle class="trend-dot" cx="${x(dates.length - 1).toFixed(1)}" cy="${y(share[share.length - 1]).toFixed(1)}" r="${mini ? 3 : 4.5}"/>`;
+    if (!mini) {
+      const every = Math.ceil(dates.length / 8);
+      dates.forEach((d, j) => { if (j % every === 0) g += `<text x="${x(j).toFixed(1)}" y="${H - 8}" text-anchor="middle">${U.esc(U.dshort(d))}</text>`; });
+    }
+    return `<div class="chart-scroll${mini ? ' mini' : ''}"><svg class="chart-svg${mini ? ' mini' : ''}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(label)}">${g}</svg></div>`;
   };
 
   C.mix = (values, keys = C.CHANNELS, unit = 'sessions') => {

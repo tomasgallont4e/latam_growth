@@ -181,12 +181,16 @@ label { font: 500 12px var(--font-body); color: var(--color-text-secondary); }
 .goal-hero-side dt { font: 500 11.5px var(--font-body); color: var(--color-text-muted); }
 .goal-hero-side dd { margin: 2px 0 0; font: 700 20px var(--font-mono); }
 .goal-hero-trend { grid-column: 1 / -1; margin-top: 6px; padding-top: 18px; border-top: 1px solid var(--color-border); display: grid; gap: 10px; }
-.chart-svg .trend-bar { fill: var(--color-primary); opacity: .35; }
 .chart-svg .trend-line { fill: none; stroke: var(--color-primary); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
 .chart-svg .trend-area { fill: var(--color-primary); opacity: .08; }
 .chart-svg .trend-dot { fill: var(--color-primary); stroke: var(--color-surface); stroke-width: 2; }
-.trend-legend .lg-bar::before, .trend-legend .lg-line::before { content: ''; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; background: var(--color-primary); opacity: .35; vertical-align: -1px; }
-.trend-legend .lg-line::before { height: 3px; opacity: 1; vertical-align: 3px; }
+.chart-svg .gp-goal { stroke: var(--color-text-muted); stroke-dasharray: 4 4; }
+.chart-svg .gp-goal-label { fill: var(--color-text-muted); font: 600 10px var(--font-body); letter-spacing: .06em; text-transform: uppercase; }
+.chart-svg.mini { min-width: 0; }
+.chart-scroll.mini { overflow: visible; margin-top: 4px; }
+.cty-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.cty-card { gap: 6px; }
+.cty-share { font: 700 13px var(--font-mono); color: var(--color-text); }
 .goal-bar.slim { height: 5px; margin-top: 5px; min-width: 90px; }
 .cty-pct { font-family: var(--font-mono); }
 @media (max-width: 760px) { .goal-hero { grid-template-columns: 1fr; gap: 18px; } .goal-hero-side { padding: 14px 0 0; border-left: 0; border-top: 1px solid var(--color-border); } }

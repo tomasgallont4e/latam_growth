@@ -36,9 +36,18 @@
     const unknown = Math.max(0, total - known);
     const hasSplit = D.has('posthog', 'ph_new_persons_geo') || !!D.snap('posthog', 'countries', from, to);
     const active = rows.filter((r) => r.accounts > 0).length;
-    const daysAll = U.days(from, to), dailyAcc = D.byDay('posthog', 'ph_new_persons', from, to, (r) => !S.exInt || r.dim_value !== 'Internal');
-    const trend = `<div class="goal-hero-trend"><div class="goal-hero-label">Accounts created per day</div>${A.charts.accountsTrend({ dates: daysAll, daily: daysAll.map((d) => dailyAcc[d] || 0) })}</div>`;
     const bar = (r) => `<div class="goal-bar slim" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, r * 100))}"><i style="width:${Math.min(100, Math.max(0, r * 100)).toFixed(1)}%"></i></div>`;
+    const daysAll = U.days(from, to), dailyAcc = D.byDay('posthog', 'ph_new_persons', from, to, (r) => !S.exInt || r.dim_value !== 'Internal');
+    const trend = `<div class="goal-hero-trend"><div class="goal-hero-label">Progress toward 500K · share of the goal, axis fixed at 0–100%</div>${A.charts.goalProgress({ dates: daysAll, daily: daysAll.map((d) => dailyAcc[d] || 0), goal, label: 'Accounts created as a share of the 500K goal' })}</div>`;
+    // One small chart per market, all on the same 0-100% axis, so the markets compare at a glance.
+    const geoDaily = (name) => D.byDay('posthog', 'ph_new_persons_geo', from, to, (r) => (r.dim_value || '') === name);
+    const cards = hasSplit ? rows.map((r) => {
+      const dd = D.has('posthog', 'ph_new_persons_geo') ? geoDaily(r.name) : null;
+      const share = r.accounts == null || !r.target ? null : r.accounts / r.target;
+      return `<div class="goal-card cty-card"><div class="goal-top"><span>${U.esc(r.name)}</span><span class="cty-share">${U.pct(share)}</span></div>
+        <div class="goal-nums"><span class="goal-actual">${r.accounts == null ? '–' : U.fmt(r.accounts)}</span><span class="goal-target">of ${U.fmt(r.target)}</span></div>
+        ${dd ? A.charts.goalProgress({ dates: daysAll, daily: daysAll.map((d) => dd[d] || 0), goal: r.target, mini: true, label: `${r.name} accounts as a share of its goal` }) : bar(share || 0)}</div>`;
+    }).join('') : '';
 
     const hero = `<div class="goal-hero"><div class="goal-hero-main"><span class="goal-hero-label">Accounts created</span>
       <div class="goal-nums"><span class="goal-hero-actual">${U.fmt(total)}</span><span class="goal-target">of ${U.fmt(goal)}</span></div>
@@ -58,6 +67,7 @@
       : U.empty('No country split yet', 'PostHog has no country for new accounts. Enable GeoIP or send a country property with identify, and each market fills in here.', 'earth-americas');
     const note = '<p class="card-note" style="padding:0 20px 16px">Goal per country is its share of the 500K plan (editable in Targets). Sessions come from GA4 and are traffic, not accounts.</p>';
     return U.section('LATAM 500K goal', sub, `<div class="card goal-hero-card">${hero}</div>`)
+      + (cards ? U.section('Progress by country', 'Each market against its own goal · same 0–100% axis everywhere, so the gap to the goal reads the same in every card', `<div class="goal-row cty-grid">${cards}</div>`) : '')
       + U.section('Accounts by country', 'Since launch · same count as above, split by the country on the account', U.card({ title: 'How each market is going', sub: hasSplit ? `${U.fmt(known)} of ${U.fmt(total)} accounts have a country` : '', right: U.srcPill('posthog', 'country'), body: body + (hasSplit ? note : '') }));
   }
 
