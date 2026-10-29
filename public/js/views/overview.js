@@ -29,29 +29,30 @@
     const hasSplit = !!geoOk;
     const active = rows.filter((r) => r.accounts > 0).length;
     const bar = (r) => `<div class="goal-bar slim" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, r * 100))}"><i style="width:${Math.min(100, Math.max(0, r * 100)).toFixed(1)}%"></i></div>`;
+    const meter = (r, label) => `<div class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, r * 100))}" aria-label="${U.esc(label)}"><i style="width:${Math.min(100, Math.max(0, r * 100)).toFixed(4)}%"></i></div>`;
     const daysAll = U.days(from, to), dailyAcc = D.accountsByDay(from, to);
-    const trend = `<div class="acct-hero-trend"><div class="acct-hero-label">Progress toward 500K · share of the goal, axis fixed at 0–100%</div>${A.charts.goalShare({ dates: daysAll, daily: daysAll.map((d) => dailyAcc[d] || 0), goal, label: 'Accounts created as a share of the 500K goal' })}</div>`;
-    // One small chart per market, all on the same 0-100% axis, so the markets compare at a glance.
+    const trendOf = (daily, target, caption) => `<div class="acct-hero-trend"><div class="acct-hero-label">${U.esc(caption)}</div>${A.charts.goalShare({ dates: daysAll, daily, goal: target, label: caption })}</div>`;
+    const trend = trendOf(daysAll.map((d) => dailyAcc[d] || 0), goal, 'Progress toward 500K · share of the goal');
     const geoDaily = (name) => D.accountsByDay(from, to, name);
-    const cards = hasSplit ? rows.map((r) => {
-      const dd = geoDaily(r.name);
-      const share = r.accounts == null || !r.target ? null : r.accounts / r.target;
-      return `<div class="goal-card cty-card"><div class="goal-top"><span>${U.esc(r.name)}</span><span class="cty-share">${U.pct(share)}</span></div>
-        <div class="goal-nums"><span class="goal-actual">${r.accounts == null ? '–' : U.fmt(r.accounts)}</span><span class="goal-target">of ${U.fmt(r.target)}</span></div>
-        ${dd ? A.charts.goalShare({ dates: daysAll, daily: daysAll.map((d) => dd[d] || 0), goal: r.target, mini: true, label: `${r.name} accounts as a share of its goal` }) : bar(share || 0)}</div>`;
-    }).join('') : '';
+    const countrySeries = rows.map((r, i) => ({ name: r.name, color: A.charts.COUNTRY_COLORS[i % A.charts.COUNTRY_COLORS.length], byDay: A.charts.runningByMonth(daysAll, geoDaily(r.name)) }));
+    const countryChart = hasSplit ? `<div class="card acct-hero-card">${A.charts.stacked({
+      dates: daysAll,
+      keys: countrySeries,
+      value: (d, i) => countrySeries[i].byDay[d] || 0,
+      label: 'Accounts created by country',
+    })}</div>` : '';
 
     const hero = `<div class="acct-hero"><div class="acct-hero-main"><span class="acct-hero-label">Accounts created</span>
       <div class="goal-nums"><span class="acct-hero-actual">${U.fmt(total)}</span><span class="goal-target">of ${U.fmt(goal)}</span></div>
-      <div class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, ratio * 100))}" aria-label="Accounts created toward the goal"><i style="width:${Math.min(100, ratio * 100).toFixed(2)}%"></i></div>
-      <div class="goal-meta"><span><b>${U.pct(ratio)}</b> of the goal</span><span>${U.fmt(Math.max(0, goal - total))} remaining</span></div></div>
+      ${meter(ratio, 'Accounts created toward the goal')}
+      <div class="goal-meta"><span><b>${A.charts.sharePct(ratio)}</b> of the goal</span><span>${U.fmt(Math.max(0, goal - total))} remaining</span></div></div>
       <dl class="acct-hero-side"><div><dt>In this period</dt><dd>${U.fmt(D.accounts())}</dd></div><div><dt>Markets with accounts</dt><dd>${hasSplit ? `${active} of ${rows.length}` : '–'}</dd></div><div><dt>CRM contacts</dt><dd>${U.fmt((D.crmTotal(from, to) || 0))}</dd></div></dl>${trend}</div>`;
 
     const body = hasSplit ? U.table([
       { t: 'Country', f: (r) => U.esc(r.name) },
       { t: 'Accounts', num: 1, f: (r) => (r.accounts == null ? '–' : `<b>${U.fmt(r.accounts)}</b>`) },
       { t: 'Goal', num: 1, f: (r) => U.fmt(r.target) },
-      { t: '% of goal', num: 1, f: (r) => (r.accounts == null ? '–' : `<span class="cty-pct">${U.pct(r.target ? r.accounts / r.target : null)}</span>${bar(r.target ? r.accounts / r.target : 0)}`) },
+      { t: '% of goal', num: 1, f: (r) => (r.accounts == null ? '–' : `<span class="cty-pct">${A.charts.sharePct(r.target ? r.accounts / r.target : null)}</span>${bar(r.target ? r.accounts / r.target : 0)}`) },
       { t: 'Sessions (GA4)', num: 1, f: (r) => U.fmt(r.sessions) },
       { t: 'Visit to account', num: 1, f: (r) => U.pct(r.rate) },
     ], [...rows, ...(other ? [{ name: 'Other markets', target: null, accounts: other, sessions: null, rate: null }] : []),
@@ -59,7 +60,7 @@
       : U.empty('No country split yet', 'PostHog has no country for new accounts. Enable GeoIP or send a country property with identify, and each market fills in here.', 'earth-americas');
     const note = '<p class="card-note" style="padding:0 20px 16px">Goal per country is its share of the 500K plan (editable in Targets). Sessions come from GA4 and are traffic, not accounts.</p>';
     return U.section('LATAM 500K goal', sub, `<div class="card acct-hero-card">${hero}</div>`)
-      + (cards ? U.section('Progress by country', 'Each market against its own goal · same 0–100% axis everywhere, so the gap to the goal reads the same in every card', `<div class="goal-row cty-grid">${cards}</div>`) : '')
+      + (countryChart ? U.section('Sign-ups by country', 'Since launch · each column is the month-to-date total, stacked by country · the count starts again at 0 on the 1st', countryChart) : '')
       + U.section('Accounts by country', 'Since launch · same count as above, split by the country on the account', U.card({ title: 'How each market is going', sub: hasSplit ? `${U.fmt(known)} of ${U.fmt(total)} accounts have a country` : '', right: U.srcPill('posthog', 'country'), body: body + (hasSplit ? note : '') }));
   }
 
@@ -76,14 +77,6 @@
       U.kpi({ label: 'New observed people', source: 'PostHog', value: U.fmt(people), spark: people == null ? null : D.series(D.byDay('posthog', 'ph_new_persons', S.from, S.to, D.peopleFilter)), compare: people == null ? 'Sync PostHog to classify internal accounts' : `${S.exInt ? 'Known internal accounts excluded' : 'Internal accounts included'} · ${U.fmt(unknown)} unknown identity class · not verified sign-ups` }),
       U.kpi({ label: 'Registrations started', source: 'PostHog', value: U.fmt(D.registrations()), spark: D.registrations() == null ? null : D.series(D.byDay('posthog', 'ph_signups', S.from, S.to, D.peopleFilter)), compare: 'registration_started · funnel step before the account; not added to accounts created' }),
     ], 3);
-    const coverage = U.card({ title: 'Measurement coverage', sub: 'Independent signals; no impression-to-session conversion is inferred', body: U.table([
-      { t: 'Signal', k: 'name' }, { t: 'Value', f: (r) => U.fmt(r.value) }, { t: 'Scope', k: 'note' },
-    ], [
-      { name: 'HubSpot sessions', value: D.has('hubspot', 'sessions') ? D.sessions() : null, note: 'Whole site; not the denominator for GA4 engagement' },
-      { name: 'Paid impressions', value: D.paidTotals().impressions, note: 'Connected ad reports only; missing is not zero' },
-      { name: 'LinkedIn organic impressions', value: D.has('linkedin', 'post_impressions') ? D.sum('linkedin', 'post_impressions') : null, note: 'Organic LinkedIn only; not the whole LATAM impression universe' },
-      { name: 'Project-start click proxy', value: D.proxy(), note: 'First Action click since launch; tests excluded; not confirmed creation or seven-day activation' },
-    ]) });
     const sessionsByBucket = D.rollNum(D.byDay('ga4', 'ga_sessions'));
     const chart = U.card({ cls: 'chart-card', title: `${D.grainName()} GA4 site sessions`, sub: `Grouped by ${D.grainBar()} · ${U.win(S.from, S.to)}`, body: C.stacked({ dates: D.ticks(), keys: [{ name: 'GA4 sessions', color: 'var(--series-a)' }], value: (d) => sessionsByBucket[d] || 0, label: 'GA4 site sessions' }) });
     const hasSessions = D.has('hubspot', 'sessions');
@@ -98,8 +91,7 @@
     const stages = A.platformFunnels.render();
     const readings = U.card({ cls: 'agent-placeholder', title: 'Coming soon', body: U.empty('Coming soon', 'We are integrating an AI agent to explain the Overview of the data.', 'robot') });
     return accountsGoal() + U.section('Launch at a glance', `${S.from} to ${S.to} · counts for the range; charts grouped ${D.grainName().toLowerCase()}`, kpis)
-      + A.targets.strip(['total_signups', 'engagement_rate', 'unique_visitors'])
-      + `<section class="section">${mix}</section><section class="section">${channelChart}</section><section class="section grid-2-1">${stages}${readings}</section><section class="section">${coverage}</section><section class="section">${chart}</section>`;
+      + `<section class="section">${mix}</section><section class="section">${channelChart}</section><section class="section grid-2-1">${stages}${readings}</section><section class="section">${chart}</section>`;
   }
   function mount(el) { A.platformFunnels.mount(el); el.addEventListener('change', (e) => { if (e.target.id === 'goal-country') { A.S.goalCountry = e.target.value; A.render(); } }); }
   A.views.overview = { title: 'Overview', render, mount };

@@ -28,15 +28,41 @@
       ], r));
     }
     const other = [...new Set(D.M().filter((x) => x.source === p.key).map((x) => x.metric))];
-    if (other.length) {
-      const rows = other.map((m) => {
-        if (p.key === 'linkedin' && m === 'followers') { const l = lastFollowers(); return { m: 'followers (latest total)', v: l ? l.value : null, d: l ? l.date : null, latest: true }; }
-        return { m: m.replace(/_/g, ' '), v: D.sum(p.key, m) };
-      });
-      return U.details(`${p.name} metrics`, `${other.length} metrics`, U.table([{ t: 'Metric', k: 'm' }, { t: 'Total in period', num: 1, f: (x) => (x.latest ? `${U.fmt(x.v)}${x.d ? ` <span class="card-note">on ${U.dshort(x.d)}</span>` : ''}` : U.fmt(x.v)) }], rows));
+    // LinkedIn page metrics (followers, views, post engagement) are the cards in LinkedIn organic.
+    const shown = p.key === 'linkedin' ? other.filter((m) => /^ad_/.test(m)) : other;
+    if (p.key === 'linkedin' && other.length && !shown.length) return '';
+    if (shown.length) {
+      const metricRows = shown.map((m) => ({ m: m.replace(/_/g, ' '), v: D.sum(p.key, m) }));
+      return U.details(`${p.name} metrics`, `${shown.length} metrics`, U.table([{ t: 'Metric', k: 'm' }, { t: 'Total in period', num: 1, f: (x) => U.fmt(x.v) }], metricRows));
     }
     const s = D.source(p.key);
     return U.details(p.name, s.state === 'connected' ? 'No rows in this period' : 'Awaiting data', `<div class="pad">${U.awaiting(p.key, s.provides)}${s.connect ? `<p class="card-note">How to connect: ${U.esc(s.connect)}</p>` : ''}</div>`);
+  }
+  // Same metrics the LinkedIn details table used to list, in a reading order for the cards.
+  const ORGANIC_ORDER = ['followers', 'new_followers', 'page_views', 'post_impressions', 'post_clicks', 'post_reactions', 'post_comments', 'post_reposts'];
+  function organicMetrics() {
+    const names = [];
+    const seen = new Set();
+    for (const r of A.D.M()) {
+      if (r.source !== 'linkedin' || /^ad_/.test(r.metric) || seen.has(r.metric)) continue;
+      seen.add(r.metric);
+      names.push(r.metric);
+    }
+    return names.sort((a, b) => {
+      const ia = ORGANIC_ORDER.indexOf(a), ib = ORGANIC_ORDER.indexOf(b);
+      return (ia < 0 ? ORGANIC_ORDER.length : ia) - (ib < 0 ? ORGANIC_ORDER.length : ib) || (a < b ? -1 : 1);
+    });
+  }
+  function organicCard(metric, last, period) {
+    const U = A.ui, D = A.D;
+    if (metric === 'followers') return U.kpi({ label: 'Followers', source: 'LinkedIn', value: U.fmt(last ? last.value : null), compare: last ? `Latest total · on ${U.dshort(last.date)}` : period });
+    const words = metric.replace(/_/g, ' ');
+    return U.kpi({
+      label: words.charAt(0).toUpperCase() + words.slice(1),
+      source: 'LinkedIn',
+      value: U.fmt(D.sum('linkedin', metric)),
+      compare: metric === 'new_followers' ? `Net gains · ${period}` : `Total in period · ${period}`,
+    });
   }
   function linkedinOrganic() {
     const U = A.ui, D = A.D;
@@ -45,17 +71,18 @@
     const tot = D.snap('linkedin', 'page_totals'), loc = D.snap('linkedin', 'follower_locations');
     const t = tot && tot.rows && tot.rows[0];
     const last = lastFollowers();
-    const hasDaily = D.has('linkedin', 'new_followers');
-    if (!posts && !t && !last && !hasDaily) return '';
-    const cards = [];
-    if (last || t) cards.push(U.kpi({ label: 'Followers', source: 'LinkedIn', value: U.fmt(last ? last.value : t.followers), compare: last ? `Latest total · on ${U.dshort(last.date)}` : U.win(tot.from, tot.to) }));
-    if (hasDaily) cards.push(U.kpi({ label: 'New followers', source: 'LinkedIn', value: U.fmt(D.sum('linkedin', 'new_followers')), compare: `Net gains · ${U.win(S.from, S.to)}` }));
-    else if (t) cards.push(U.kpi({ label: 'New followers', source: '30 days', value: U.fmt(t.new_followers), compare: t.new_followers_change ? `${U.esc(t.new_followers_change)} vs prior 30 days` : '' }));
-    if (t) {
+    const metrics = organicMetrics();
+    if (!posts && !t && !metrics.length) return '';
+    const period = U.win(S.from, S.to);
+    const cards = metrics.length ? metrics.map((m) => organicCard(m, last, period)) : [];
+    if (!metrics.length && (last || t)) cards.push(U.kpi({ label: 'Followers', source: 'LinkedIn', value: U.fmt(last ? last.value : t.followers), compare: last ? `Latest total · on ${U.dshort(last.date)}` : U.win(tot.from, tot.to) }));
+    if (!metrics.length && t) {
+      cards.push(U.kpi({ label: 'New followers', source: '30 days', value: U.fmt(t.new_followers), compare: t.new_followers_change ? `${U.esc(t.new_followers_change)} vs prior 30 days` : '' }));
       cards.push(U.kpi({ label: 'Post impressions', source: '30 days', value: U.fmt(t.impressions), compare: t.impressions_change ? `${U.esc(t.impressions_change)} vs prior 30 days` : '' }));
       cards.push(U.kpi({ label: 'Page views', source: '30 days', value: U.fmt(t.page_views), compare: t.page_views_change ? `${U.esc(t.page_views_change)} vs prior 30 days` : '' }));
     }
-    const tiles = cards.length ? U.kpiRow(cards, cards.length) : '';
+    const cols = { 3: 3, 4: 4, 6: 6 }[cards.length];
+    const tiles = cards.length ? U.kpiRow(cards, cols) : '';
     if (!posts) {
       return U.section('LinkedIn organic', `Think4Ever Global page · ${U.win(S.from, S.to)}${loc ? ` · followers in ${(loc.rows || []).slice(0, 4).map((r) => U.esc(r.location)).join(', ')}` : ''}`, tiles);
     }

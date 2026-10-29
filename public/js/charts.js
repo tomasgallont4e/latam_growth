@@ -134,22 +134,54 @@
     return `<div class="chart-scroll"><svg class="chart-svg goal-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(label)}">${g}</svg></div>${legend}`;
   };
 
-  // Running total as a share of a goal, on a FIXED 0-100% axis: the distance to the goal stays visible
-  // instead of being rescaled to fill the chart. `mini` is the small version used per country.
+  // Percent of a goal, with enough decimals that a small share does not round to 0%.
+  C.sharePct = (ratio) => {
+    if (!U.num(ratio)) return '–';
+    const p = Number(ratio) * 100;
+    if (p === 0) return '0%';
+    const abs = Math.abs(p);
+    const digits = abs >= 10 ? 0 : abs >= 1 ? 1 : abs >= 0.1 ? 2 : abs >= 0.001 ? 3 : 4;
+    return `${p.toFixed(digits)}%`;
+  };
+  // Running total as a share of a goal. The dashed bar sits on current completion.
+  // Under 8% the axis zooms in so that bar can move; from 8% up the axis is 0–100%
+  // and the bar climbs toward the goal. `mini` drops the axis labels.
   C.goalShare = ({ dates, daily, goal, mini = false, label = 'Progress toward the goal' }) => {
     if (!dates.length || !(goal > 0)) return U.empty('No goal set', 'Set the goal in Targets to see progress.', 'bullseye');
-    let run = 0; const cum = daily.map((v) => (run += v)), share = cum.map((v) => v / goal);
-    const W = mini ? 300 : 1000, H = mini ? 96 : 250, L = mini ? 6 : 54, R = mini ? 6 : 16, T = mini ? 8 : 16, B = mini ? 82 : 214;
-    const y = (r) => B - Math.min(1, r) * (B - T);
+    let run = 0; const cum = daily.map((v) => (run += Number(v) || 0)), share = cum.map((v) => v / goal);
+    const latest = share[share.length - 1] || 0;
+    const peak = Math.max(0, latest, ...share);
+    const axisMax = !(peak > 0) || peak >= 0.08 ? 1 : Math.min(1, niceMax(peak * 100 * 1.25) / 100);
+    const barAt = peak > 0 ? latest : axisMax;
+    // One decimal width for the whole axis, so 0.0015% does not print as 0.002% next to a real 0.002% tick.
+    const axisDigits = (() => {
+      const stepPct = (axisMax * 100) / 4;
+      for (let d = 0; d <= 4; d++) {
+        const labels = [0, 1, 2, 3, 4].map((k) => (stepPct * k).toFixed(d));
+        const distinct = new Set(labels).size === 5;
+        const faithful = Math.abs(Number(labels[1]) - stepPct) <= stepPct * 0.15;
+        if (distinct && faithful) return d;
+      }
+      return 4;
+    })();
+    const pctLabel = (ratio) => {
+      const p = Number(ratio) * 100;
+      if (!Number.isFinite(p) || p === 0) return '0%';
+      return `${p.toFixed(axisDigits)}%`;
+    };
+    const W = mini ? 300 : 1000, H = mini ? 96 : 250, L = mini ? 6 : 78, R = mini ? 6 : 16, T = mini ? 8 : 16, B = mini ? 82 : 214;
+    const y = (r) => B - (Math.min(axisMax, Math.max(0, r)) / axisMax) * (B - T);
     const step = (W - L - R) / Math.max(1, dates.length - 1), x = (j) => L + j * step;
     let g = '';
-    const ticks = mini ? [0, 1] : [0, 0.25, 0.5, 0.75, 1];
+    const ticks = (mini ? [0, 1] : [0, 0.25, 0.5, 0.75, 1]).map((t) => t * axisMax);
     for (const t of ticks) {
       const yy = y(t).toFixed(1);
-      g += `<line class="grid${t === 1 ? ' gp-goal' : ''}" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/>${mini ? '' : `<text x="${L - 8}" y="${(+yy + 4).toFixed(1)}" text-anchor="end">${Math.round(t * 100)}%</text>`}`;
+      g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/>${mini ? '' : `<text x="${L - 8}" y="${(+yy + 4).toFixed(1)}" text-anchor="end">${pctLabel(t)}</text>`}`;
     }
-    if (!mini) g += `<text class="gp-goal-label" x="${W - R}" y="${(y(1) - 5).toFixed(1)}" text-anchor="end">Goal</text>`;
-    dates.forEach((d, j) => { g += `<rect class="day-hit" x="${(x(j) - step / 2).toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"><title>${U.esc(U.dshort(d))} · ${U.esc(U.fmt(daily[j]))} new · ${U.esc(U.fmt(cum[j]))} total · ${U.esc(U.pct(share[j]))} of goal</title></rect>`; });
+    const by = y(barAt).toFixed(1);
+    g += `<line class="grid gp-goal" x1="${L}" x2="${W - R}" y1="${by}" y2="${by}"/>`;
+    if (!mini) g += `<text class="gp-goal-label" x="${W - R}" y="${(Number(by) - 5).toFixed(1)}" text-anchor="end">${peak > 0 && latest < 0.995 ? pctLabel(latest) : 'Goal'}</text>`;
+    dates.forEach((d, j) => { g += `<rect class="day-hit" x="${(x(j) - step / 2).toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"><title>${U.esc(U.dshort(d))} · ${U.esc(U.fmt(daily[j]))} new · ${U.esc(U.fmt(cum[j]))} total · ${U.esc(C.sharePct(share[j]))} of goal</title></rect>`; });
     const pts = share.map((v, j) => `${x(j).toFixed(1)},${y(v).toFixed(1)}`);
     g += `<polygon class="trend-area" points="${x(0).toFixed(1)},${B} ${pts.join(' ')} ${x(dates.length - 1).toFixed(1)},${B}"/><polyline class="trend-line" points="${pts.join(' ')}"/><circle class="trend-dot" cx="${x(dates.length - 1).toFixed(1)}" cy="${y(share[share.length - 1]).toFixed(1)}" r="${mini ? 3 : 4.5}"/>`;
     if (!mini) {
@@ -157,6 +189,21 @@
       dates.forEach((d, j) => { if (j % every === 0) g += `<text x="${x(j).toFixed(1)}" y="${H - 8}" text-anchor="middle">${U.esc(U.dshort(d))}</text>`; });
     }
     return `<div class="chart-scroll${mini ? ' mini' : ''}"><svg class="chart-svg${mini ? ' mini' : ''}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(label)}">${g}</svg></div>`;
+  };
+
+  // Fixed country colors for the stacked sign-up columns. Same order as the goal plan, largest market first.
+  C.COUNTRY_COLORS = ['#6366f1', '#0891b2', '#059669', '#d97706', '#e11d48', '#7c3aed', '#ea580c', '#0284c7', '#65a30d', '#db2777', '#4f46e5'];
+  // Running total of a day map. The total starts again at 0 on the first day of each calendar month.
+  C.runningByMonth = (dates, byDay) => {
+    let run = 0, month = '';
+    const out = {};
+    for (const d of dates) {
+      const m = String(d).slice(0, 7);
+      if (m !== month) { run = 0; month = m; }
+      run += Number(byDay && byDay[d]) || 0;
+      out[d] = run;
+    }
+    return out;
   };
 
   C.mix = (values, keys = C.CHANNELS, unit = 'sessions') => {

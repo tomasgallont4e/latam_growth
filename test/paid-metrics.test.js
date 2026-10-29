@@ -346,7 +346,14 @@ test('the goal counts accounts created (first identify) without adding registrat
   const html = A.views.overview.render();
   assert.match(html, /Accounts created/);
   assert.match(html, /of 500,000/);
-  assert.match(html, /Progress by country/);
+  assert.match(html, /Sign-ups by country/);
+  assert.match(html, /class="seg"/);
+  assert.match(html, /Brazil: 6/);
+  assert.match(html, /Colombia: 15/);
+  assert.doesNotMatch(html, /series-line/);
+  assert.doesNotMatch(html, /Brazil · accounts created/);
+  assert.doesNotMatch(html, /Progress by country/);
+  assert.doesNotMatch(html, /axis fixed at 0/);
   assert.match(html, /No country on the account/);
   assert.match(html, /Funnel platform/);
   assert.match(html, /PostHog funnel/);
@@ -360,12 +367,58 @@ test('the goal counts accounts created (first identify) without adding registrat
   assert.equal(A.D.signups(), 25);
 });
 
-test('goal share chart keeps a fixed 0-100% axis so the gap to the goal stays visible', () => {
+test('LinkedIn organic cards take the page metrics and Details no longer repeats them', () => {
+  const A = dashboard();
+  A.S.data.metrics = [
+    { source: 'linkedin', metric: 'followers', value: 200, date: '2026-10-20' },
+    { source: 'linkedin', metric: 'followers', value: 207, date: '2026-10-28' },
+    { source: 'linkedin', metric: 'new_followers', value: 15, date: '2026-10-10' },
+    { source: 'linkedin', metric: 'new_followers', value: 25, date: '2026-10-20' },
+    { source: 'linkedin', metric: 'page_views', value: 511, date: '2026-10-20' },
+    { source: 'linkedin', metric: 'post_clicks', value: 312, date: '2026-10-20' },
+    { source: 'linkedin', metric: 'post_comments', value: 2, date: '2026-10-20' },
+    { source: 'meta', metric: 'ad_spend', value: 40, date, dim_value: 'Launch' },
+  ];
+  const html = A.views.social.render();
+  const organic = html.slice(html.indexOf('LinkedIn organic'), html.indexOf('>Details<'));
+  const labels = [...organic.matchAll(/class="kpi-label">([^<]+)/g)].map((m) => m[1]);
+  assert.deepEqual(labels, ['Followers', 'New followers', 'Page views', 'Post clicks', 'Post comments']);
+  assert.match(organic, /kpi-value[^>]*>207</);
+  assert.match(organic, /Latest total · on Oct 28/);
+  assert.match(organic, /kpi-value[^>]*>40</);
+  assert.match(organic, /kpi-value[^>]*>511</);
+  assert.match(organic, /kpi-value[^>]*>312</);
+  assert.match(organic, /kpi-value[^>]*>2</);
+  assert.doesNotMatch(html, /LinkedIn metrics/);
+  assert.match(html, /Meta campaigns/);
+});
+
+test('country columns accumulate within the month and restart on the 1st', () => {
+  const A = dashboard();
+  const dates = ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02'];
+  const run = A.charts.runningByMonth(dates, { '2026-10-30': 2, '2026-10-31': 3, '2026-11-01': 1, '2026-11-02': 4 });
+  assert.equal(run['2026-10-30'], 2);
+  assert.equal(run['2026-10-31'], 5);
+  assert.equal(run['2026-11-01'], 1);
+  assert.equal(run['2026-11-02'], 5);
+});
+
+test('goal share chart moves the completion bar with the share of the goal', () => {
   const A = dashboard();
   const dates = ['2026-10-01', '2026-10-02', '2026-10-03'];
+  // 10 / 500,000 is 0.002%, so the axis zooms and the dashed bar sits on that share, not on 100%.
   const full = A.charts.goalShare({ dates, daily: [3, 2, 5], goal: 500000 });
-  assert.match(full, />100%</);
+  assert.match(full, /0\.002%/);
   assert.match(full, /class="grid gp-goal"/);
+  assert.match(full, /y1="55\.6" y2="55\.6"/);
+  assert.doesNotMatch(full, />100%</);
+  // 20% is large enough to keep the 0–100% axis, and the bar is at 20%, below the 100% gridline.
+  const mid = A.charts.goalShare({ dates, daily: [100000, 0, 0], goal: 500000 });
+  assert.match(mid, />100%</);
+  assert.match(mid, />20%</);
+  assert.match(mid, /class="grid gp-goal" x1="78" x2="984" y1="174\.4" y2="174\.4"/);
+  const reached = A.charts.goalShare({ dates, daily: [200000, 200000, 100000], goal: 500000 });
+  assert.match(reached, />Goal</);
   const mini = A.charts.goalShare({ dates, daily: [3, 2, 5], goal: 1000, mini: true });
   assert.match(mini, /chart-svg mini/);
   assert.match(A.charts.goalShare({ dates, daily: [1, 1, 1], goal: 0 }), /No goal set/);
