@@ -75,17 +75,10 @@
     const sessions = () => { const v = geo('ga_geo_sessions'); if (v) return v; const r = snapRow('hubspot', 'countries'); return r ? Number(r.sessions) : null; };
     const users = () => { const v = geo('ga_geo_users'); if (v) return v; const r = snapRow('ga4', 'countries'); return r ? Number(r.users) : null; };
     const engaged = () => { const v = geo('ga_geo_engaged_sessions'); if (v) return v; const r = snapRow('ga4', 'countries'); return r ? Number(r.engaged_sessions) : null; };
-    const formsCountry = () => D.forms(from, to).filter((e) => e.country === country).length;
-    const platformCountry = () => {
-      const r = snapRow('posthog', 'countries');
-      if (r) return Number(r.ext_signups) || null;
-      // Once the PostHog GeoIP enrichment is on, the connector's ph_new_persons_geo rows take over.
-      const v = D.sum('posthog', 'ph_new_persons_geo', (r2) => (r2.dim_value || '') === country, from, to);
-      return v || null;
-    };
+    const platformCountry = () => D.accountsCountry(country, from, to) || null;
     // Paid by country: the Meta/Google Ads connectors store their country split under *_geo rows.
     const paidGeo = (metric) => ['meta', 'google_ads'].reduce((s, k) => s + D.sum(k, `${metric}_geo`, (r) => (r.dim_value || '') === country, from, to), 0);
-    const signupsCountry = () => { const f = formsCountry(), p = platformCountry(); return p == null ? (f || null) : f + p; };
+    const signupsCountry = () => platformCountry();
     switch (key) {
       case 'landing_sessions': return sessions();
       case 'unique_visitors': return users();

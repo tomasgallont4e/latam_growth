@@ -53,7 +53,27 @@
   D.formsAll = (from = S.from, to = S.to) => ((S.data && S.data.events) || []).filter((e) => e.kind === 'form_signup' && inR(e.date, from, to));
   D.platform = (from = S.from, to = S.to) => (D.has('posthog', 'ph_new_persons') ? D.sum('posthog', 'ph_new_persons', (r) => !S.exInt || r.dim_value !== 'Internal', from, to) : null);
   D.sessions = (from = S.from, to = S.to) => D.sum('hubspot', 'sessions', null, from, to);
-  D.signups = (from = S.from, to = S.to) => D.forms(from, to).length + (D.platform(from, to) || 0);
+  // A sign-up is an account created: the person's first identify in PostHog. Form submissions are
+  // leads (a step before the account) and are never added on top, or one person would count twice.
+  D.signups = (from = S.from, to = S.to) => D.platform(from, to) || 0;
+  // Accounts created in one country. Source order: the PostHog country split of new persons, then
+  // the PostHog countries snapshot. null = no split exists (never an invented number).
+  D.accountsCountry = (country, from = S.from, to = S.to) => {
+    if (D.has('posthog', 'ph_new_persons_geo')) return D.sum('posthog', 'ph_new_persons_geo', (r) => (r.dim_value || '') === country, from, to);
+    const s = D.snap('posthog', 'countries', from, to), row = s && (s.rows || []).find((r) => r.country === country);
+    return row ? Number(row.ext_signups) || 0 : null;
+  };
+  // Every country that has accounts, for the "other markets" and "no country" rows.
+  D.accountsCountries = (from = S.from, to = S.to) => {
+    const out = {};
+    if (D.has('posthog', 'ph_new_persons_geo')) {
+      for (const r of D.M()) if (r.source === 'posthog' && r.metric === 'ph_new_persons_geo' && inR(r.date, from, to)) out[r.dim_value] = (out[r.dim_value] || 0) + (Number(r.value) || 0);
+    } else {
+      const s = D.snap('posthog', 'countries', from, to);
+      for (const r of (s ? s.rows : []) || []) out[r.country] = Number(r.ext_signups) || 0;
+    }
+    return out;
+  };
   D.prev = () => {
     if (S.period === 'launch' || S.from <= LAUNCH) return null;
     const len = U.diffDays(S.from, S.to) + 1;

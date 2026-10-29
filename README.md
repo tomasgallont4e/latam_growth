@@ -6,7 +6,7 @@ One dashboard for the LATAM launch: landing traffic, sign-ups, platform accounts
 
 | View | What it shows |
 |---|---|
-| Overview | Summary figures, funnel from visit to active account, research reading, daily sessions by source with timeline notes |
+| Overview | LATAM 500K goal (accounts created since launch, counted once per person at their first PostHog identify; measurement only, no deadline), accounts by country against each market's share of the plan, summary figures, funnel, research reading, daily sessions by source with timeline notes |
 | Acquisition | Sessions by source (HubSpot), channels (Google Analytics), UTM campaigns, countries |
 | Conversion | Landing events (Tag Manager and Google Analytics), sign-up log, platform sign-ups (PostHog), pages, forms |
 | Social and paid | Meta, LinkedIn, Google Ads and Clarity; cost per sign-up once campaigns run |
