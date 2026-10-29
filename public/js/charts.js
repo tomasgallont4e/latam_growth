@@ -150,7 +150,7 @@
     }
     return worst;
   };
-  C.funnel = (steps, label = 'Visit to active account funnel') => {
+  C.funnel = (steps, label = 'Independent measurement stages') => {
     const baseStep = steps.find((s) => s.kind !== 'rate' && s.n != null);
     const base = baseStep ? baseStep.n : 0;
     const weak = C.weakest(steps);

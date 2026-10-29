@@ -32,7 +32,7 @@
     const ss = S.data.sources || [], log = S.data.synclog || [];
     const last = ss.filter((s) => s.last_sync).map((s) => s.last_sync).sort().pop();
     const kpis = U.kpiRow([
-      U.kpi({ label: 'Connected sources', source: 'Catalog', value: `${ss.filter((s) => s.state === 'connected').length} / ${ss.length}`, compare: 'Sources sending data to this dashboard' }),
+      U.kpi({ label: 'Connected sources', source: 'Catalog', value: `${ss.filter((s) => s.state === 'connected').length} / ${ss.length}`, compare: 'Connection/status only. Empty or partial reports can still show Connected.' }),
       U.kpi({ label: 'Automatic connectors', source: 'Service variables', value: U.fmt(ss.filter((s) => s.auto).length), compare: 'Sync on a schedule and with Sync now' }),
       U.kpi({ label: 'Last data load', source: 'All sources', value: last ? U.dshort(last.slice(0, 10)) : '–', compare: last ? `${esc(last.slice(11, 16))} UTC` : 'No loads yet' }),
       U.kpi({ label: 'Loads with errors', source: 'Last 30 loads', value: U.fmt(log.filter((r) => r.error).length), compare: 'Open a source to see what failed' }),
@@ -49,13 +49,13 @@
     ], log);
     const defs = `<div class="pad"><dl class="defs">
       <div><dt>Landing sessions (HubSpot)</dt><dd>Visits to every go.think4ever.com page HubSpot tracks, including preview pages. Counts the team's own visits.</dd></div>
-      <div><dt>Sessions (Google Analytics)</dt><dd>Visits to /latam only, after cookie consent. Lower than HubSpot because it skips other pages and visitors who block tracking.</dd></div>
+      <div><dt>Sessions (Google Analytics)</dt><dd>Sessions on configured SITE_HOSTS after analytics consent. Different coverage from HubSpot whole-site traffic; never mix their denominators. GA4 can include internal/test visits.</dd></div>
       <div><dt>Engaged session</dt><dd>Lasted more than 10 seconds, viewed 2 or more pages, or triggered a key event.</dd></div>
-      <div><dt>Form sign-up (HubSpot)</dt><dd>A contact created from a landing form. Internal means a think4ever.com address; "Exclude internal tests" leaves those out.</dd></div>
-      <div><dt>Platform sign-up (PostHog)</dt><dd>A new person in the product, whether they came from the landing or signed up directly.</dd></div>
-      <div><dt>Total sign-ups</dt><dd>Form sign-ups plus platform sign-ups.</dd></div>
-      <div><dt>Visit-to-sign-up rate</dt><dd>Total sign-ups divided by landing sessions.</dd></div>
-      <div><dt>Cost per sign-up</dt><dd>Ad spend divided by total sign-ups in the period.</dd></div>
+      <div><dt>CRM contact (HubSpot)</dt><dd>A contact whose first/last landing URL matches the configured site. Dated by contact creation, not necessarily form submission. Known internal domains/companies and explicit QA medium/campaigns are excluded when the checkbox is active.</dd></div>
+      <div><dt>New observed person (PostHog)</dt><dd>A new person record with a site event. Internal/External/Unknown classification uses configured email domains and companies. Unknown identity is shown separately; person creation does not prove registration or verification.</dd></div>
+      <div><dt>Verified accounts / 500K goal</dt><dd>Confirmed, deduplicated product account verifications from a trusted report. Contacts and observed people are never added. Pending until a verification report is supplied.</dd></div>
+      <div><dt>Visit-to-verification / seven-day activation</dt><dd>Requires linked sessions, registrations and dated project events for the same cohort. Independent totals and the click Action cannot supply these rates.</dd></div>
+      <div><dt>Cost per attributed CRM contact</dt><dd>Spend divided by paid UTM contacts for the same reporting channels and dates. This is not cost per verified account. Missing spend or zero contacts leaves cost unavailable.</dd></div>
     </dl></div>`;
     return U.section('Data sources', 'Every number in this dashboard comes from one of these tools. Credentials go in the service variables, never in files.', kpis)
       + `<section class="section">${sel ? detail(sel) : ''}<div class="source-grid">${cards}</div></section>`

@@ -19,14 +19,15 @@
     let top = 0; ch.forEach((v, i) => { if (v > ch[top]) top = i; });
     const sessDay = D.byDay('hubspot', 'sessions');
 
-    const kpis = U.kpiRow([
+    const quality = g && (g.userWarning || g.thresholded) ? `<p class="measurement-note">GA4 reporting needs review: ${g.userWarning ? `${U.fmt(g.newUsers)} new users exceed ${U.fmt(g.users)} total users in the source report. ` : ''}${g.thresholded ? 'The report is subject to thresholding. ' : ''}Original source values are preserved; check reporting identity, filters and source data before interpreting these counts.</p>` : '';
+    const kpis = quality + U.kpiRow([
       hasSess ? U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', value: U.fmt(total), delta: U.delta(total, ptotal), spark: D.series(sessDay), compare: cmp }) : U.kpi({ label: 'Landing Sessions', source: 'HubSpot · todo el sitio', awaiting: 'HubSpot' }),
       !g ? U.kpi({ label: 'Unique Visitors', source: 'GA4', awaiting: 'GA4' })
         : g.users == null ? U.kpi({ label: 'Unique Visitors', source: 'GA4', value: '–', compare: 'Deduped visitors for this range appear after the next GA4 sync' })
-          : U.kpi({ label: 'Unique Visitors', source: 'GA4', value: U.fmt(g.users), delta: U.delta(g.users, pg && pg.users), spark: gaUsersDay && D.grain() === 'day' ? U.days(S.from, S.to).map((d) => gaUsersDay[d]) : null, compare: 'GA4 total since launch' }),
+          : U.kpi({ label: 'Unique Visitors', source: 'GA4', value: U.fmt(g.users), delta: U.delta(g.users, pg && pg.users), spark: gaUsersDay && D.grain() === 'day' ? U.days(S.from, S.to).map((d) => gaUsersDay[d]) : null, compare: 'GA4 total for the selected range' }),
       !g ? U.kpi({ label: 'New Users', source: 'GA4', awaiting: 'GA4' })
         : g.newUsers == null ? U.kpi({ label: 'New Users', source: 'GA4', value: '–', compare: 'New users for this range appear after the next GA4 sync' })
-          : U.kpi({ label: 'New Users', source: 'GA4', value: U.fmt(g.newUsers), delta: U.delta(g.newUsers, pg && pg.newUsers), spark: gaNewDay ? D.series(gaNewDay) : null, compare: g.usersExact ? 'GA4 total since launch' : 'First visits, one count per day' }),
+          : U.kpi({ label: 'New Users', source: 'GA4', value: U.fmt(g.newUsers), delta: U.delta(g.newUsers, pg && pg.newUsers), spark: gaNewDay ? D.series(gaNewDay) : null, compare: g.usersExact ? 'GA4 total for the selected range' : 'First visits, one count per day' }),
       !g ? U.kpi({ label: 'Engagement Rate', source: 'GA4', awaiting: 'GA4' })
         : !g.sessions ? U.kpi({ label: 'Engagement Rate', source: 'GA4', value: '–', compare: 'No GA4 sessions in this period' })
           : U.kpi({ label: 'Engagement Rate', source: 'GA4', value: U.pct(g.rate), delta: U.delta(g.rate, pg && pg.sessions ? pg.rate : null), spark: D.seriesRate(gaEngDay, gaSessDay), compare: `${U.fmt(g.engaged)} engaged of ${U.fmt(g.sessions)} GA4 sessions` }),
@@ -35,10 +36,10 @@
     const goals = A.targets.strip(['landing_sessions', 'unique_visitors', 'engagement_rate']);
 
     const rows = C.CHANNELS.map((c, i) => ({ name: c.name, color: c.color, value: ch[i], extra: pch ? U.delta(ch[i], pch[i]) : '' })).filter((r) => r.value || (pch && pch[C.CHANNELS.findIndex((c) => c.name === r.name)]));
-    const perf = U.card({ title: 'Sessions by channel', sub: `${U.fmt(total)} sessions · share of total · since launch`, right: U.srcPill('hubspot', 'todo el sitio'), body: hasSess ? C.hbars(rows, total) : U.awaiting('hubspot') });
+    const perf = U.card({ title: 'Sessions by channel', sub: `${U.fmt(total)} sessions · share of selected range`, right: U.srcPill('hubspot', 'todo el sitio'), body: hasSess ? C.hbars(rows, total) : U.awaiting('hubspot') });
     const mix = U.card({ title: 'Channel mix', sub: 'Share of landing sessions', body: hasSess ? C.mix(ch) : U.awaiting('hubspot') });
     const daily = D.rollChannels(D.dailyChannels());
-    const chart = U.card({ cls: 'chart-card', title: `${grain} sessions by channel`, sub: `One bar per ${D.grainBar()} · since launch · ${U.win(S.from, S.to)}`, body: hasSess ? C.stacked({ dates: ticks, keys: C.CHANNELS, value: (d, i) => daily[d][i], label: `${grain} sessions by channel` }) : U.awaiting('hubspot') });
+    const chart = U.card({ cls: 'chart-card', title: `${grain} sessions by channel`, sub: `One bar per ${D.grainBar()} · selected range · ${U.win(S.from, S.to)}`, body: hasSess ? C.stacked({ dates: ticks, keys: C.CHANNELS, value: (d, i) => daily[d][i], label: `${grain} sessions by channel` }) : U.awaiting('hubspot') });
 
     // Collapsed detail tables
     const src = D.byDim('hubspot', 'sessions');
@@ -58,11 +59,10 @@
       { t: 'Key events', num: 1, f: (r) => U.fmt(r.key_events) },
     ];
     const utmNote = `<p class="card-note" style="padding:0 20px 16px">(not set) means the visit arrived without that UTM value. Every ad, post and email should carry utm_source, utm_medium, utm_campaign and utm_content (starting with the persona code pNN).${utmSnap && (utmSnap.rows || []).length >= 1000 ? ' The GA4 report is capped at 1,000 rows, so the oldest detail may be missing.' : ''}</p>`;
-    const exactC = D.gaCovers();
+    const exactC = true;
     const cmap = {};
     for (const r of D.gaCountries()) {
-      const sn = exactC ? D.countrySnapshot(r.country) : null;
-      cmap[r.country] = { ...r, users: sn && sn.users != null ? Number(sn.users) : null };
+      cmap[r.country] = { ...r, users: D.countryUsers(r.country) };
     }
     for (const e of D.forms()) if (e.country) { cmap[e.country] = cmap[e.country] || { country: e.country }; cmap[e.country].forms = (cmap[e.country].forms || 0) + 1; }
     const crow = Object.values(cmap).sort((a, b) => (b.sessions || 0) - (a.sessions || 0) || (b.forms || 0) - (a.forms || 0));
@@ -89,8 +89,8 @@
         { t: 'Country', k: 'country' }, { t: 'Sessions (GA4)', num: 1, f: (r) => U.fmt(r.sessions) },
         { t: 'Users (GA4)', num: 1, f: (r) => U.fmt(r.users) },
         { t: 'Engagement', num: 1, f: rateOf }, { t: 'Key events', num: 1, f: (r) => U.fmt(r.key_events) },
-        { t: 'Form sign-ups (HubSpot)', num: 1, f: (r) => U.fmt(r.forms || 0) },
-      ], crow) : U.empty('No country data yet', 'GA4 country rows and HubSpot sign-ups by country appear here once loaded.'))}
+        { t: 'CRM contacts (HubSpot)', num: 1, f: (r) => U.fmt(r.forms || 0) },
+      ], crow) : U.empty('No country data yet', 'GA4 country rows and HubSpot contacts by country appear here once loaded.'))}
     </div>`;
 
     return U.section('Acquisition at a glance', `${U.win(S.from, S.to)} · ${cmp}`, kpis)

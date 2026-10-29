@@ -502,3 +502,11 @@ body[data-role="ads"] :is(#note-form, #csv-form, #source-form, [data-sync], [dat
   .kpi-value { font-size: 26px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+.top-actions { flex-wrap: wrap; }
+.topbar { height: auto; min-height: 72px; flex-wrap: wrap; }
+.range-field { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--color-text-muted); }
+.range-field input { width: 110px; min-width: 0; font-size: 11px; padding: 6px; }
+.top-actions .period-filter { width: 112px; min-width: 100px; }
+.measurement-note { margin: 12px 0; padding: 12px 16px; border: 1px solid var(--color-border); border-radius: 8px; line-height: 1.5; }
+.period-table .tbl-wrap { max-height: 580px; overflow: auto; }
+.period-table thead { position: sticky; top: 0; z-index: 1; background: var(--color-background); }

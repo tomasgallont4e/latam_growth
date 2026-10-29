@@ -15,22 +15,23 @@
     const all = D.formsAll(), shown = D.forms();
     const form = shown.length, pForm = prev ? D.forms(prev.from, prev.to).length : null;
     const plat = D.platform(), pPlat = prev ? D.platform(prev.from, prev.to) : null;
-    const total = form + (plat || 0), pTotal = prev ? pForm + (pPlat || 0) : null;
-    const sess = D.sessions(), pSess = prev ? D.sessions(prev.from, prev.to) : null;
-    const rate = sess ? total / sess : null, pRate = prev && pSess ? pTotal / pSess : null;
+    const total = D.verified();
+    const ga = D.ga();
     const su = D.rollSignups(D.dailySignups());
 
     const kpis = U.kpiRow([
-      U.kpi({ label: 'Total Sign-ups', source: 'HubSpot + PostHog', value: U.fmt(total), hero: true, delta: U.delta(total, pTotal), spark: ticks.map((d) => su[d].form + su[d].platform), compare: cmp }),
-      U.kpi({ label: S.exInt ? 'External Form Sign-ups' : 'Form Sign-ups', source: 'HubSpot', value: U.fmt(form), delta: U.delta(form, pForm), spark: ticks.map((d) => su[d].form), compare: `${all.length - shown.length} internal tests ${S.exInt ? 'excluded' : 'included'}` }),
-      plat != null ? U.kpi({ label: 'Platform Sign-ups', source: 'PostHog', value: U.fmt(plat), delta: U.delta(plat, pPlat), spark: ticks.map((d) => su[d].platform), compare: 'Accounts created in the product, any entry point' }) : U.kpi({ label: 'Platform Sign-ups', source: 'PostHog', awaiting: 'PostHog' }),
-      D.has('hubspot', 'sessions') ? U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', value: U.pct(rate), delta: U.delta(rate, pRate), compare: `${U.fmt(total)} sign-ups / ${U.fmt(sess)} sessions` }) : U.kpi({ label: 'Visit-to-Sign-up Rate', source: 'Derived', awaiting: 'HubSpot' }),
+      U.kpi({ label: 'Verified accounts', source: 'Product verification', value: U.fmt(total), hero: true, compare: 'Canonical registration KPI; pending a trusted verification report' }),
+      U.kpi({ label: 'CRM contacts', source: 'HubSpot', value: U.fmt(D.crmTotal()), delta: U.delta(form, pForm), spark: ticks.map((d) => su[d].form), compare: `${all.length - shown.length} internal/QA contacts excluded · contact creation date` }),
+      U.kpi({ label: 'New observed people', source: 'PostHog', value: U.fmt(plat), delta: U.delta(plat, pPlat), spark: plat == null ? null : ticks.map((d) => su[d].platform), compare: plat == null ? 'Sync PostHog for internal classification' : 'New person records, not confirmed registrations; may overlap CRM contacts' }),
+      U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(ga && ga.rate), compare: ga ? `${U.fmt(ga.engaged)} engaged / ${U.fmt(ga.sessions)} GA4 sessions` : 'Awaiting GA4' }),
     ], 4);
     const goals = A.targets.strip(['total_signups', 'platform_signups', 'visit_to_signup_rate']);
 
-    const funnel = U.card({ cls: 'chart-card', title: 'Visit-to-active-account funnel', sub: `Count, % of step 1 and step-to-step % · internal tests ${S.exInt ? 'excluded' : 'included'}`, body: C.funnel(D.funnel()) });
-    const keys = [{ name: S.exInt ? 'External form sign-ups' : 'Form sign-ups', color: 'var(--series-a)' }, { name: 'Platform sign-ups', color: 'var(--series-b)' }];
-    const chart = U.card({ cls: 'chart-card', title: `${grain} sign-ups by type`, sub: `One bar per ${D.grainBar()} · since launch · ${U.win(S.from, S.to)} · landing form (HubSpot) and platform (PostHog)`, body: C.stacked({ dates: ticks, keys, value: (d, i) => (i ? su[d].platform : su[d].form), label: `${grain} sign-ups by type` }) });
+    const funnel = U.card({ cls: 'chart-card', title: 'Measurement stages', sub: 'Independent populations; linked user journeys are required for conversion and drop-off rates. GA4 traffic may include tests.', body: C.funnel(D.funnel()) });
+    const periodRows = D.periods().map((p) => ({ ...p, crm: D.crmTotal(p.from, p.to), people: D.platform(p.from, p.to) }));
+    const chart = U.card({ title: `${grain} CRM and product activity`, sub: `Separate counts; do not add contacts and people · ${U.win(S.from, S.to)}`, body: U.table([
+      { t: 'Period', f: (r) => U.esc(U.win(r.from, r.to)) }, { t: 'CRM contacts', num: 1, f: (r) => U.fmt(r.crm) }, { t: 'New observed people', num: 1, f: (r) => U.fmt(r.people) },
+    ], periodRows) });
 
     const KEY = ['form_start', 'sign_up', 'login', 'generate_lead'];
     const hasEv = D.has('ga4', 'ga_event');
@@ -39,13 +40,14 @@
     const utmSnap = D.snap('ga4', 'utm_attribution');
     const gaPages = D.group(D.utmRows(), (r) => D.path(r.landing_page), PF).sort((a, b) => b.sessions - a.sessions).slice(0, 25);
     const sa = D.snap('posthog', 'signup_attribution');
-    const saRows = sa ? D.group((sa.rows || []).filter((r) => r.date >= S.from && r.date <= S.to), (r) => [r.campaign, r.source, r.medium, r.content].join('\u0001'), ['people'])
+    const saClassified = sa && (sa.rows || []).every((r) => ['Internal', 'External', 'Unknown'].includes(r.account_type));
+    const saRows = sa && (!S.exInt || saClassified) ? D.group((sa.rows || []).filter((r) => r.date >= S.from && r.date <= S.to && (!S.exInt || r.account_type !== 'Internal')), (r) => [r.campaign, r.source, r.medium, r.content].join('\u0001'), ['people'])
       .map((r) => { const [campaign, source, medium, content] = r.key.split('\u0001'); return { ...r, campaign, source, medium, content }; })
       .sort((a, b) => b.people - a.people) : [];
     const saTagged = saRows.some((r) => r.campaign !== '(not set)' || r.content !== '(not set)');
     const dash = '<span class="text-muted">–</span>';
-    const people = D.has('posthog', 'ph_new_persons') ? D.byDay('posthog', 'ph_new_persons') : null;
-    const active = D.has('posthog', 'ph_active_users') ? D.byDay('posthog', 'ph_active_users') : {};
+    const people = D.platform() == null ? null : D.byDay('posthog', 'ph_new_persons', S.from, S.to, D.peopleFilter);
+    const active = D.has('posthog', 'ph_active_users') ? D.byDay('posthog', 'ph_active_users', S.from, S.to, D.peopleFilter) : {};
     const platRows = people ? Object.keys(people).sort().reverse().map((d) => ({ d, p: people[d] || 0, a: active[d] || 0 })).filter((r) => r.p || r.a) : [];
     const phEvents = D.byDim('posthog', 'ph_event');
     const forms = D.snap('hubspot', 'forms'), hp = D.snap('hubspot', 'pages'), gp = D.snap('ga4', 'pages'), gtm = D.snap('gtm', 'tags');
@@ -55,24 +57,25 @@
         { t: 'Date', f: (r) => `<span class="mono">${U.dshort(r.date)}</span>` }, { t: 'Form', k: 'form' }, { t: 'Channel', f: (r) => U.esc(r.channel || r.source || '') }, { t: 'Country', k: 'country' },
         { t: 'Campaign', f: (r) => { const c = D.formCampaign(r); return c ? `<code>${U.esc(c)}</code>` : dash; } },
         { t: 'Persona', f: (r) => { const p = D.formPersona(r); return p ? U.pill('info', p) : dash; } },
-        { t: 'Type', f: (r) => (r.internal ? U.pill('neutral', 'Internal test') : U.pill('success', 'External')) },
-      ], shown.slice().sort((a, b) => (a.date < b.date ? 1 : -1)), (r) => (r.internal ? 'muted' : '')) : U.empty('No external sign-ups in this period', all.length ? `Turn off "Exclude internal tests" to see the ${all.length} test entries.` : ''))}
+        { t: 'UTM source / medium', f: (r) => U.esc(`${r.utm_source || '(not set)'} / ${r.utm_medium || '(not set)'}`) },
+        { t: 'Type', f: (r) => (D.isTestForm(r) ? U.pill('neutral', 'Internal / QA') : U.pill('info', 'Other contact')) },
+      ], shown.slice().sort((a, b) => (a.date < b.date ? 1 : -1)), (r) => (r.internal ? 'muted' : '')) : U.empty('No CRM contacts in this period', all.length ? `Turn off "Exclude internal tests" to see the ${all.length} test entries.` : ''))}
       ${U.details('Landing events (GA4)', hasEv ? `${evRows.length} events · ${U.win(S.from, S.to)}` : '', hasEv ? (evRows.length ? U.table([
         { t: 'Event', f: (r) => `<code>${U.esc(r.event)}</code>${KEY.includes(r.event) ? ` ${U.pill('info', 'key')}` : ''}<br><small>${U.esc(EVENT_INFO[r.event] || '')}</small>` },
         { t: 'Events', num: 1, f: (r) => U.fmt(r.count) },
       ], evRows) : U.empty('No GA4 events in this period')) : U.awaiting('ga4'))}
       ${U.details('Platform activity (PostHog)', platRows.length ? `${platRows.length} days` : '', people ? (platRows.length ? U.table([
         { t: 'Date', f: (r) => `<span class="mono">${U.dshort(r.d)}</span>` }, { t: 'New people', num: 1, f: (r) => U.fmt(r.p) }, { t: 'Active people', num: 1, f: (r) => U.fmt(r.a) },
-      ], platRows) : U.empty('No platform activity in this period')) : U.awaiting('posthog', 'Accounts created, active users and product events will appear here'))}
-      ${U.details('Platform sign-ups by campaign and persona (PostHog)', saRows.length ? `${saRows.length} combinations` : '', !sa
-        ? (D.has('posthog', 'ph_new_persons') ? U.empty('Appears after the next PostHog sync', 'New accounts grouped by their first-touch UTM.', 'users') : U.awaiting('posthog', 'New accounts by first-touch campaign and persona'))
+      ], platRows) : U.empty('No platform activity in this period')) : U.awaiting('posthog', 'Observed people, active people and product events will appear here'))}
+      ${U.details('New observed people by campaign and persona (PostHog)', saRows.length ? `${saRows.length} combinations` : '', !sa || (S.exInt && !saClassified)
+        ? (D.has('posthog', 'ph_new_persons') ? U.empty('Appears after the next PostHog sync', 'New observed people grouped by first-touch UTM; known internals excluded when selected.', 'users') : U.awaiting('posthog', 'New observed people by first-touch campaign and persona'))
         : saRows.length ? U.table([
           { t: 'Campaign', f: (r) => `<code>${U.esc(r.campaign)}</code>` },
           { t: 'Source / medium', f: (r) => `${U.esc(r.source)} / ${U.esc(r.medium)}` },
           { t: 'Piece (utm_content)', f: (r) => { const p = D.persona(r.content); return `<code>${U.esc(r.content)}</code>${p ? ` ${U.pill('info', p)}` : ''}`; } },
-          { t: 'New accounts', num: 1, f: (r) => U.fmt(r.people) },
-        ], saRows.slice(0, 100)) + (saTagged ? '' : '<p class="card-note" style="padding:0 20px 16px">All new accounts in this period arrived without UTMs. Rows fill in once the portal sends the first-touch UTMs in posthog.identify (see docs/utm-measurement.md).</p>')
-          : U.empty('No new accounts in this period'))}
+          { t: 'New observed people', num: 1, f: (r) => U.fmt(r.people) },
+        ], saRows.slice(0, 100)) + (saTagged ? '' : '<p class="card-note" style="padding:0 20px 16px">All observed people in this report have no recorded UTMs; this does not establish a direct source. Rows fill in once the portal sends the first-touch UTMs in posthog.identify (see docs/utm-measurement.md).</p>')
+          : U.empty('No observed people in this report'))}
       ${phEvents.length ? U.details('Platform events (PostHog)', `${phEvents.length} events`, U.table([{ t: 'Event', f: (r) => `<code>${U.esc(r[0])}</code>` }, { t: 'Occurrences', num: 1, f: (r) => U.fmt(r[1]) }], phEvents)) : ''}
       ${U.details('Forms (HubSpot)', forms ? U.win(forms.from, forms.to) : '', forms ? U.table([
         { t: 'Form', k: 'form' }, { t: 'Type', k: 'type' }, { t: 'Entries', num: 1, f: (r) => U.fmt(r.submissions) }, { t: 'External', num: 1, f: (r) => U.fmt(r.external) }, { t: 'When', k: 'dates' },

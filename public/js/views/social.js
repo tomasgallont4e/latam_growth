@@ -61,10 +61,10 @@
     }
     const hasAdmin = (posts.rows || []).some((r) => r.impressions != null);
     const table = hasAdmin
-      ? U.table([{ t: 'Date', f: (r) => `<span class="mono">${U.dshort(r.date)}</span>` }, { t: 'Post', k: 'title' }, { t: 'Impressions', num: 1, f: (r) => U.fmt(r.impressions) }, { t: 'Clicks', num: 1, f: (r) => U.fmt(r.clicks) }, { t: 'CTR', num: 1, f: (r) => U.pct(r.ctr) }, { t: 'Reactions', num: 1, f: (r) => U.fmt(r.reactions) }, { t: 'Engagement', num: 1, f: (r) => U.pct(r.engagement_rate) }], posts.rows || [])
+      ? U.table([{ t: 'Published', f: (r) => `<span class="mono">${U.dshort(r.date)}</span>` }, { t: 'Post', k: 'title' }, { t: 'Lifetime impressions', num: 1, f: (r) => U.fmt(r.impressions) }, { t: 'Lifetime content clicks', num: 1, f: (r) => U.fmt(r.clicks) }, { t: 'Content CTR', num: 1, f: (r) => U.pct(r.ctr) }, { t: 'Reactions', num: 1, f: (r) => U.fmt(r.reactions) }, { t: 'Engagement', num: 1, f: (r) => U.pct(r.engagement_rate) }], (posts.rows || []).filter((r) => r.date >= S.from && r.date <= S.to))
       : U.table([{ t: 'Date', f: (r) => `<span class="mono">${U.dshort(r.date)}</span>` }, { t: 'Post', k: 'title' }, { t: 'Reactions', num: 1, f: (r) => U.fmt(r.reactions) }, { t: 'Comments', num: 1, f: (r) => U.fmt(r.comments) }, { t: 'Reposts', num: 1, f: (r) => U.fmt(r.reposts) }], posts.rows || []);
     return U.section('LinkedIn organic', `Think4Ever Global page · ${U.win(posts.from, posts.to)}${loc ? ` · followers in ${(loc.rows || []).slice(0, 4).map((r) => U.esc(r.location)).join(', ')}` : ''}`,
-      `${tiles}<div class="detail-group" style="margin-top:16px">${U.details('LinkedIn posts', `${(posts.rows || []).length} posts`, table)}</div>`);
+      `${tiles}<p class="card-note">Posts are filtered by publication date. Their statistics are lifetime snapshots, not daily performance; content clicks are not proven outbound site visits.</p><div class="detail-group" style="margin-top:16px">${U.details('LinkedIn posts', `${(posts.rows || []).length} posts in snapshot`, table)}</div>`);
   }
 
   function render() {
@@ -78,30 +78,37 @@
     const cur = m(S.from, S.to), p = prev ? m(prev.from, prev.to) : {};
     const spendDay = Object.fromEntries(C.PLATFORMS.map((pf) => [pf.key, D.rollNum(D.byDay(pf.key, 'ad_spend'))]));
     const aw = 'Meta, LinkedIn or Google Ads';
-    const kpis = U.kpiRow(any ? [
+    const kpis = U.kpiRow([
       U.kpi({ label: 'Ad Spend', source: 'All platforms', value: U.money(cur.spend), hero: true, delta: U.delta(cur.spend, p.spend, { invert: true }), spark: ticks.map((d) => C.PLATFORMS.reduce((s, pf) => s + (spendDay[pf.key][d] || 0), 0)), compare: cmp }),
       U.kpi({ label: 'Impressions', source: 'All platforms', value: U.fmt(cur.impressions), delta: U.delta(cur.impressions, p.impressions), compare: cmp }),
       U.kpi({ label: 'Clicks (Meta: link clicks)', source: 'Ads', value: U.fmt(cur.clicks), delta: U.delta(cur.clicks, p.clicks), compare: cur.clicks == null ? 'Sync Meta to load link-click data' : 'Clicks are not landing sessions' }),
       U.kpi({ label: 'Click-through Rate', source: 'Derived', value: U.pct(cur.ctr), delta: U.delta(cur.ctr, p.ctr), compare: 'Clicks / impressions' }),
       U.kpi({ label: 'Cost per Click', source: 'Derived', value: U.money(cur.cpc), delta: U.delta(cur.cpc, p.cpc, { invert: true }), compare: 'Lower is better' }),
       U.kpi({ label: 'CPM', source: 'Derived', value: U.money(cur.cpm), delta: U.delta(cur.cpm, p.cpm, { invert: true }), compare: 'Spend / impressions × 1,000' }),
-      U.kpi({ label: 'Paid sessions', source: 'GA4', value: U.fmt(cur.sessions), compare: 'Paid UTM sessions for channels with spend' }),
+      U.kpi({ label: 'Paid UTM sessions', source: 'GA4', value: U.fmt(cur.sessions), compare: 'UTM-classified traffic, even when an ad-spend report is unavailable' }),
       U.kpi({ label: 'Cost / paid session', source: 'GA4 + ads', value: U.money(cur.costSession), delta: U.delta(cur.costSession, p.costSession, { invert: true }), compare: cur.sessions == null ? 'Sync GA4 to load the paid-session report' : 'Spend / paid UTM sessions' }),
-      U.kpi({ label: 'Cost / attributed form sign-up', source: 'HubSpot + ads', value: U.money(cur.costForm), delta: U.delta(cur.costForm, p.costForm, { invert: true }), compare: cur.forms == null ? 'Awaiting HubSpot UTM fields and sync' : 'Spend / paid UTM contacts; not verified product accounts' }),
-    ] : ['Ad Spend', 'Impressions', 'Clicks', 'Click-through Rate', 'Cost per Click', 'CPM', 'Paid sessions', 'Cost / paid session', 'Cost / attributed form sign-up'].map((l) => U.kpi({ label: l, source: 'Ads', awaiting: aw, compare: 'Paid results appear after a successful connector sync or CSV import. LinkedIn organic activity is separate.' })), 3);
+      U.kpi({ label: 'Cost / attributed CRM contact', source: 'HubSpot + ads', value: U.money(cur.costForm), delta: U.delta(cur.costForm, p.costForm, { invert: true }), compare: cur.forms == null ? 'Awaiting HubSpot UTM fields and sync' : 'Spend / paid UTM contacts; not verified product accounts' }),
+    ], 3);
     const goals = A.targets.strip(['ad_spend_budget', 'clicks', 'ctr']);
 
     const bars = C.PLATFORMS.map((pf) => ({ name: pf.name, color: pf.color, value: D.sum(pf.key, 'ad_spend'), label: U.money(D.sum(pf.key, 'ad_spend')), extra: prev ? U.delta(D.sum(pf.key, 'ad_spend'), D.sum(pf.key, 'ad_spend', null, prev.from, prev.to), { invert: true }) : '' }));
     const byPlat = U.card({ title: 'Spend by platform', sub: `${U.money(cur.spend)} total · share and % change`, body: any ? C.hbars(bars, cur.spend) : U.empty('No ad spend yet', 'Spend by platform appears with the first campaign.', 'sack-dollar') });
     const clicksMix = U.card({ title: 'Clicks by platform', sub: `${U.fmt(cur.clicks)} clicks · Meta uses link clicks`, body: any && cur.clicks != null ? C.mix(C.PLATFORMS.map((pf) => D.paidStats(pf.key).clicks || 0), C.PLATFORMS, 'clicks') : U.empty('No comparable click data yet', 'Sync Meta to update old all-click reports to link clicks.', 'arrow-pointer') });
-    const chart = U.card({ cls: 'chart-card', title: `${grain} spend by platform`, sub: `One bar per ${D.grainBar()} · since launch · ${U.win(S.from, S.to)}`, body: any ? C.stacked({ dates: ticks, keys: C.PLATFORMS, value: (d, i) => spendDay[C.PLATFORMS[i].key][d], label: `${grain} ad spend by platform`, fmt: (v) => `$${U.fmt(v)}` }) : U.empty('No spend since launch', 'The chart switches on with the first campaign that sends data.', 'chart-column') });
-    const unitRows = C.PLATFORMS.map((pf) => ({ ...D.paidStats(pf.key), platform: pf.name }));
-    const unitCosts = U.card({ title: 'Unit costs by paid channel', sub: 'Same date range · costs use reported account currency; compare only accounts in the same currency', body: U.table([
-      { t: 'Channel', k: 'platform' }, { t: 'Spend', num: 1, f: (r) => U.money(r.spend) }, { t: 'Impressions', num: 1, f: (r) => U.fmt(r.impressions) },
+    const chart = U.card({ cls: 'chart-card', title: `${grain} spend by platform`, sub: `One bar per ${D.grainBar()} · selected range · ${U.win(S.from, S.to)}`, body: any ? C.stacked({ dates: ticks, keys: C.PLATFORMS, value: (d, i) => spendDay[C.PLATFORMS[i].key][d], label: `${grain} ad spend by platform`, fmt: (v) => `$${U.fmt(v)}` }) : U.empty('No spend in selected range', 'The chart switches on with the first campaign that sends data.', 'chart-column') });
+    const periods = D.periods();
+    const unitRows = periods.flatMap((p) => C.PLATFORMS.map((pf) => ({ ...D.paidStats(pf.key, p.from, p.to), platform: pf.name, period: U.win(p.from, p.to) })));
+    const unitCosts = U.card({ cls: 'period-table', title: `${grain} unit costs by paid channel`, sub: `${S.from} to ${S.to} · ratios recomputed per period · reported account currency; compare only matching currencies`, body: U.table([
+      { t: 'Period', k: 'period' }, { t: 'Channel', k: 'platform' }, { t: 'Spend', num: 1, f: (r) => U.money(r.spend) }, { t: 'Impressions', num: 1, f: (r) => U.fmt(r.impressions) },
       { t: 'Clicks', num: 1, f: (r) => U.fmt(r.clicks) }, { t: 'CTR', num: 1, f: (r) => U.pct(r.ctr) }, { t: 'CPM', num: 1, f: (r) => U.money(r.cpm) }, { t: 'CPC', num: 1, f: (r) => U.money(r.cpc) },
       { t: 'GA4 paid sessions', num: 1, f: (r) => U.fmt(r.sessions) }, { t: 'Cost / session', num: 1, f: (r) => U.money(r.costSession) },
-      { t: 'Form sign-ups (UTM)', num: 1, f: (r) => U.fmt(r.forms) }, { t: 'Cost / form sign-up', num: 1, f: (r) => U.money(r.costForm) },
+      { t: 'CRM contacts (UTM)', num: 1, f: (r) => U.fmt(r.forms) }, { t: 'Cost / CRM contact', num: 1, f: (r) => U.money(r.costForm) },
     ], unitRows) + '<p class="card-note">Meta: link clicks can lead to destinations on or off Meta. LinkedIn Ads: CSV until the Advertising API is connected. Missing inputs or zero denominators show —. Form attribution prefers first-touch UTM when available; it does not prove an ad caused a verified account.</p>' });
+    const attribution = U.card({ cls: 'period-table', title: `${grain} CRM contact attribution`, sub: 'These categories reconcile to the contact total; missing UTM is not assumed direct or organic', body: U.table([
+      { t: 'Period', k: 'period' }, { t: 'Paid UTM', num: 1, f: (r) => U.fmt(r.total == null ? null : r.paid) },
+      { t: 'Other identified source', num: 1, f: (r) => U.fmt(r.total == null ? null : r.other) },
+      { t: 'Unknown / incomplete', num: 1, f: (r) => U.fmt(r.total == null ? null : r.unknown) },
+      { t: 'Internal / QA included', num: 1, f: (r) => U.fmt(r.total == null ? null : r.tests) }, { t: 'CRM total', num: 1, f: (r) => U.fmt(r.total) },
+    ], periods.map((p) => ({ ...D.contactAttribution(p.from, p.to), period: U.win(p.from, p.to) }))) });
 
     const cl = D.snap('clarity', 'live_insights'), libs = D.snap('research', 'ad_libraries');
     const details = `<div class="detail-group">
@@ -114,6 +121,7 @@
     return U.section('Social and paid at a glance', `${U.win(S.from, S.to)} · ${cmp} · cost metrics read green when they go down`, kpis)
       + goals
       + `<section class="section">${unitCosts}</section>`
+      + `<section class="section">${attribution}</section>`
       + `<section class="section grid-2">${byPlat}${clicksMix}</section>`
       + `<section class="section">${chart}</section>`
       + linkedinOrganic()

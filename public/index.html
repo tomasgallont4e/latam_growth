@@ -37,7 +37,9 @@
         <button type="button" class="icon-btn nav-toggle" id="nav-toggle" aria-label="Open navigation"><i class="fa-solid fa-bars"></i></button>
         <div class="top-title"><div class="top-eyebrow">LATAM Growth Dashboard</div><h1 class="page-title" id="page-title">Overview</h1></div>
         <div class="top-actions">
-          <select class="period-filter" id="period" aria-label="Temporality"><option value="day" selected>Daily</option><option value="week">Weekly</option><option value="biweek">Bi-weekly</option><option value="month">Monthly</option><option value="quarter">Quarterly</option><option value="year">Yearly</option></select>
+          <label class="range-field">From <input type="date" id="range-from" aria-label="Report from"></label>
+          <label class="range-field">To <input type="date" id="range-to" aria-label="Report to"></label>
+          <select class="period-filter" id="period" aria-label="Group by"><option value="day" selected>Daily</option><option value="week">Weekly</option><option value="biweek">Bi-weekly</option><option value="month">Monthly</option><option value="quarter">Quarterly</option><option value="year">Yearly</option></select>
           <label class="check-chip"><input type="checkbox" id="ex-int" checked>Exclude internal tests</label>
           <button type="button" class="icon-btn" id="theme-btn" aria-label="Switch theme"><i class="fa-solid fa-circle-half-stroke"></i></button>
           <button type="button" class="btn btn-secondary" id="logout-btn"><i class="fa-solid fa-right-from-bracket"></i>Sign out</button>
@@ -51,6 +53,7 @@
   <div id="modal-root"></div>
   <script src="js/api.js"></script>
   <script src="js/paid.js"></script>
+  <script src="js/measurement.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/views/overview.js"></script>

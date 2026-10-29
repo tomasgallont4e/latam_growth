@@ -6,18 +6,18 @@
   const U = A.ui;
   const T = A.targets = { meta: {}, byMonth: {}, loading: {} };
   const SRC = {
-    landing_sessions: 'HubSpot', unique_visitors: 'GA4', engagement_rate: 'GA4', total_signups: 'HubSpot + PostHog',
-    platform_signups: 'PostHog', visit_to_signup_rate: 'HubSpot + PostHog', ad_spend_budget: 'ads platforms', clicks: 'ads platforms', ctr: 'ads platforms',
-    total_impressions: 'LinkedIn, Meta, Google',
-    cps: 'ads spend / sign-ups', activation_7d: 'PostHog',
+    landing_sessions: 'GA4', unique_visitors: 'GA4', engagement_rate: 'GA4', total_signups: 'trusted account verification',
+    platform_signups: 'trusted account verification', crm_contacts: 'HubSpot', new_people: 'PostHog', visit_to_signup_rate: 'linked session/account cohort', ad_spend_budget: 'ads platforms', clicks: 'ads platforms', ctr: 'ads platforms',
+    total_impressions: 'paid ad reports only',
+    cps: 'paid UTM contacts + spend', activation_7d: 'mature seven-day signup/project cohort',
   };
   const FALLBACK_META = {
-    landing_sessions: { label: 'Landing sessions', kind: 'count' }, unique_visitors: { label: 'Unique visitors', kind: 'count' },
-    engagement_rate: { label: 'Engagement rate', kind: 'rate' }, total_signups: { label: 'Total sign-ups', kind: 'count' },
-    platform_signups: { label: 'Platform sign-ups', kind: 'count' }, visit_to_signup_rate: { label: 'Visit-to-sign-up rate', kind: 'rate' },
+    landing_sessions: { label: 'Site sessions (GA4)', kind: 'count' }, unique_visitors: { label: 'Unique visitors', kind: 'count' },
+    engagement_rate: { label: 'Engagement rate', kind: 'rate' }, total_signups: { label: 'Verified accounts', kind: 'count' },
+    platform_signups: { label: 'Verified accounts (legacy alias)', kind: 'count' }, crm_contacts: { label: 'CRM contacts (HubSpot)', kind: 'count' }, new_people: { label: 'New observed people (PostHog)', kind: 'count' }, visit_to_signup_rate: { label: 'Linked visit-to-verification rate (pending)', kind: 'rate' },
     ad_spend_budget: { label: 'Ad spend budget', kind: 'money' }, clicks: { label: 'Clicks', kind: 'count' }, ctr: { label: 'Click-through rate', kind: 'rate' },
-    cps: { label: 'Cost per sign-up', kind: 'money' }, activation_7d: { label: 'Activation within 7 days', kind: 'rate' },
-    total_impressions: { label: 'Total impressions', kind: 'count' },
+    cps: { label: 'Cost / attributed CRM contact', kind: 'money' }, activation_7d: { label: 'Activation within 7 days', kind: 'rate' },
+    total_impressions: { label: 'Paid impressions', kind: 'count' },
   };
   const meta = () => (Object.keys(T.meta).length ? T.meta : FALLBACK_META);
 
@@ -52,16 +52,16 @@
     const first = `${month}-01`, last = U.endOfMonth(month), today = U.today();
     const g = { key, row, label: m.label, kind: m.kind, target: row.target_value, month, country, upcoming: first > today };
     if (g.upcoming) return { ...g, actual: null, status: 'none' };
-    const to = last < today ? last : today;
+    const to = [last, today, month === A.S.to.slice(0, 7) ? A.S.to : last].sort()[0];
     const elapsed = U.diffDays(first, to) + 1, dim = U.diffDays(first, last) + 1;
     g.ongoing = to < last; g.to = to;
     g.actual = T.actual(key, country, first, to);
     if (g.actual == null) return { ...g, status: 'none' };
     g.ratio = g.target ? g.actual / g.target : null;
-    g.projected = m.kind === 'rate' || !g.ongoing ? g.actual : (g.actual / elapsed) * dim;
+    g.projected = m.kind === 'rate' || key === 'cps' || !g.ongoing ? g.actual : (g.actual / elapsed) * dim;
     const pr = g.target ? g.projected / g.target : null;
     if (pr == null) g.status = 'none';
-    else if (key === 'ad_spend_budget') g.status = pr <= 1 ? 'green' : pr <= 1.1 ? 'yellow' : 'red';
+    else if (key === 'ad_spend_budget' || key === 'cps') g.status = pr <= 1 ? 'green' : pr <= 1.1 ? 'yellow' : 'red';
     else g.status = pr >= 1 ? 'green' : pr >= 0.9 ? 'yellow' : 'red';
     g.pr = pr;
     return g;
@@ -74,27 +74,27 @@
     if (country === 'LATAM') return D.actual(key, from, to);
     const geo = (metric) => D.countryMetric(metric, country, from, to);
     const snapRow = (src, k) => { const s = D.snap(src, k, from, to); return s && (s.rows || []).find((r) => r.country === country) || null; };
-    const sessions = () => { const v = geo('ga_geo_sessions'); if (v) return v; const r = snapRow('hubspot', 'countries'); return r ? Number(r.sessions) : null; };
-    const users = () => { const v = geo('ga_geo_users'); if (v) return v; const r = snapRow('ga4', 'countries'); return r ? Number(r.users) : null; };
+    const sessions = () => D.has('ga4', 'ga_geo_sessions') ? geo('ga_geo_sessions') : null;
+    const users = () => D.countryUsers(country, from, to);
     const engaged = () => { const v = geo('ga_geo_engaged_sessions'); if (v) return v; const r = snapRow('ga4', 'countries'); return r ? Number(r.engaged_sessions) : null; };
     const formsCountry = () => D.forms(from, to).filter((e) => e.country === country).length;
     const platformCountry = () => {
-      const r = snapRow('posthog', 'countries');
-      if (r) return Number(r.ext_signups) || null;
-      // Once the PostHog GeoIP enrichment is on, the connector's ph_new_persons_geo rows take over.
-      const v = D.sum('posthog', 'ph_new_persons_geo', (r2) => (r2.dim_value || '') === country, from, to);
-      return v || null;
+      const coverage = D.covered('posthog', 'people_coverage', from, to);
+      if (!coverage || !coverage.country_available) return null;
+      const f = (r) => r.dim_value === country;
+      return D.sum('posthog', 'ph_new_persons_geo', f, from, to) + (A.S.exInt ? 0 : D.sum('posthog', 'ph_new_persons_geo_internal', f, from, to));
     };
     // Paid by country: the Meta/Google Ads connectors store their country split under *_geo rows.
     const paidGeo = (metric) => ['meta', 'google_ads'].reduce((s, k) => s + D.sum(k, `${metric}_geo`, (r) => (r.dim_value || '') === country, from, to), 0);
-    const signupsCountry = () => { const f = formsCountry(), p = platformCountry(); return p == null ? (f || null) : f + p; };
     switch (key) {
       case 'landing_sessions': return sessions();
       case 'unique_visitors': return users();
       case 'engagement_rate': { const s = sessions(), e = engaged(); return s ? e / s : null; }
-      case 'total_signups': return signupsCountry();
-      case 'platform_signups': return platformCountry();
-      case 'visit_to_signup_rate': { const s = sessions(); return s ? signupsCountry() / s : null; }
+      case 'total_signups':
+      case 'platform_signups': return D.verified(from, to, country);
+      case 'crm_contacts': return D.crmTotal(from, to) == null ? null : formsCountry();
+      case 'new_people': return platformCountry();
+      case 'visit_to_signup_rate': return null;
       case 'ad_spend_budget': return paidGeo('ad_spend') || null;
       case 'clicks': return paidGeo('ad_clicks') || null;
       case 'ctr': { const i = ['meta', 'google_ads'].reduce((s, k) => s + D.sum(k, 'ad_impressions_geo', (r) => (r.dim_value || '') === country, from, to), 0); return i ? paidGeo('ad_clicks') / i : null; }
@@ -104,7 +104,7 @@
         return paid || null;
       }
       // Cost per sign-up in this market: local ad spend over local sign-ups.
-      case 'cps': { const s = signupsCountry(); const sp = paidGeo('ad_spend'); return sp && s ? sp / s : null; }
+      case 'cps': return null; // Requires paid contact attribution and matching spend by country.
       // The activation proxy has no country split yet; it stays a LATAM-level metric.
       case 'activation_7d': return null;
       default: return null;
@@ -121,7 +121,7 @@
     let meta2;
     if (g.upcoming) meta2 = '<span>Month has not started</span>';
     else if (g.actual == null) meta2 = `<span>Awaiting ${U.esc(SRC[g.key] || 'data')}</span>`;
-    else if (g.kind === 'rate') meta2 = `<span>Month-to-date rate, compared directly</span><span><b>${U.pct(g.ratio, 0)}</b> of goal</span>`;
+    else if (g.kind === 'rate' || g.key === 'cps') meta2 = `<span>Month-to-date ratio, compared directly${g.key === 'cps' ? '; lower is better' : ''}</span><span><b>${U.pct(g.ratio, 0)}</b> of goal</span>`;
     else if (g.ongoing) meta2 = `<span>Pace to month end <b>${v(g.projected)}</b></span><span><b>${U.pct(g.pr, 0)}</b> of goal</span>`;
     else meta2 = `<span>Month closed</span><span><b>${U.pct(g.ratio, 0)}</b> of goal</span>`;
     const width = g.ratio != null ? Math.min(100, Math.max(0, g.ratio * 100)) : 0;
@@ -136,7 +136,8 @@
     if (!T.byMonth[ck(month, 'LATAM')]) { T.ensure(month, false, 'LATAM'); return U.section(`Month goals · ${U.monthName(month)}`, 'Loading targets…', '<div class="goal-row"><div class="goal-card"><div class="skeleton" style="height:70px"></div></div></div>'); }
     const goals = keys.map((k) => T.goal(k, month, 'LATAM')).filter(Boolean);
     const today = U.today(), last = U.endOfMonth(month);
-    const sub = `Month to date (${U.win(`${month}-01`, last < today ? last : today)}) vs the ${U.monthName(month)} target · green ≥100%, yellow 90–99%, red &lt;90% of goal (pace for counts)`;
+    const to = [last, today, A.S.to].sort()[0];
+    const sub = `Month to date (${U.win(`${month}-01`, to)}) vs the ${U.monthName(month)} target · counts use month-to-date scope, not the report start date · costs are lower-is-better`;
     const link = `<button type="button" class="btn btn-secondary btn-sm" data-go="targets">${U.icon('bullseye')} Targets</button>`;
     if (!goals.length) return U.section(`Month goals · ${U.monthName(month)}`, sub, `<div class="goal-empty"><span>${U.icon('bullseye')} No targets set for ${U.monthName(month)} on these metrics yet.</span>${link}</div>`);
     return U.section(`Month goals · ${U.monthName(month)}`, sub, `<div class="goal-row">${goals.map(T.card).join('')}</div>`, link);
@@ -149,7 +150,7 @@
     ['verified_users', 'Verified users', 'count'], ['landing_sessions', 'Landing sessions', 'count'],
     ['visit_to_signup', 'Visit to verified user', 'rate'], ['impressions', 'Paid impressions', 'count'],
     ['impression_to_visit', 'Impression to landing visit', 'rate'], ['paid_budget', 'Paid media budget', 'money'],
-    ['paid_cps', 'Planned cost per sign-up', 'money'], ['activation_7d', 'Activation within 7 days', 'rate'],
+    ['paid_cps', 'Planned cost per verified account', 'money'], ['activation_7d', 'Activation within 7 days', 'rate'],
     ['valid_signups', 'Valid sign-ups', 'rate'],
   ];
   async function ensurePlan() {
@@ -163,12 +164,15 @@
   function planForm() {
     if (!PV.plan) { ensurePlan(); return U.section('LATAM scale targets', 'Loading the persistent global and country targets…', '<div class="skeleton" style="height:220px"></div>'); }
     const p = PV.plan;
+    const check = A.measurement.planCheck(p);
+    const consistency = `<div class="measurement-note">Implied by the saved inputs: visit-to-verification ${U.pct(check.derived.visit_to_signup, 3)} · impression-to-visit ${U.pct(check.derived.impression_to_visit, 3)} · cost per verified account ${U.money(check.derived.paid_cps)}.${check.issues.length ? ` <b>Saved assumptions disagree:</b> ${check.issues.map((x) => `${U.esc(x.label)} (${x.key === 'paid_cps' ? U.money(x.saved) : U.pct(x.saved, 3)})`).join(', ')}. Use the button to recalculate, then Save to persist.` : ' Saved assumptions are consistent within rounding.'}${check.allocationMatches ? '' : ` Country allocations total ${U.fmt(check.countryTotal)}, different from the global ${U.fmt(p.verified_users)}.`}<p><button type="button" class="btn btn-secondary btn-sm" data-recalculate-plan>Recalculate implied rates</button></p></div>`;
     const field = ([key, label, kind]) => `<label class="field"><span>${U.esc(label)}${kind === 'rate' ? ' (decimal or %)' : ''}</span><input name="plan:${U.esc(key)}" value="${U.esc(kind === 'rate' ? `${+(Number(p[key]) * 100).toFixed(4)}%` : p[key])}" inputmode="decimal" required></label>`;
     const countries = Object.entries(p.countries || {}).sort((a, b) => a[0].localeCompare(b[0]));
     const countryRows = countries.map(([country, target]) => `<tr><td>${U.esc(country)}</td><td><input name="country:${U.esc(country)}" value="${U.esc(target)}" inputmode="numeric" aria-label="Target for ${U.esc(country)}"></td></tr>`).join('');
     return U.section('LATAM scale targets', 'Persistent targets for the 500K plan. Overview reads these values directly; save here to change the global or country goal.',
       `<form class="card" id="plan-form"><div class="card-header"><div><div class="card-title">${U.esc(p.label || 'LATAM scale goal')}</div><div class="card-sub">Global target and country allocation. The country values can sum differently while you model scenarios; the dashboard shows the allocation you save.</div></div><button class="btn btn-primary"${PV.saving ? ' disabled' : ''}>${U.icon('floppy-disk')} ${PV.saving ? 'Saving…' : 'Save scale targets'}</button></div>
         <div class="ad-form">${PLAN_FIELDS.map(field).join('')}</div>
+        ${consistency}
         <div class="card-header mt-16"><div><div class="card-title">Verified-user target by country</div><div class="card-sub">Traffic uses GA4 country data. Account-country actuals require a trusted country code from product or PostHog.</div></div></div>
         <div class="tbl-wrap"><table><thead><tr><th>Country</th><th class="td-num">Verified-user target</th></tr></thead><tbody>${countryRows}</tbody></table></div>
       </form>`);
@@ -214,7 +218,7 @@
       : U.section(`Goal completion · ${level} · ${U.monthName(month)}`, '', `<div class="goal-empty"><span>${U.icon('bullseye')} No targets for ${level} in ${U.monthName(month)} yet. Download the template, fill in the values and upload it, or set a value in the table below.</span></div>`)) : '';
     // The real month-to-date actual shows even before a target is set, so the table is never a wall of dashes.
     const today = U.today(), first = `${month}-01`, last = U.endOfMonth(month);
-    const mTo = first > today ? null : (last < today ? last : today);
+    const mTo = first > today ? null : [last, today, month === S.to.slice(0, 7) ? S.to : last].sort()[0];
     const tableRows = Object.keys(M).map((k) => {
       const g = T.goal(k, month, country);
       return { key: k, m: M[k], t: rows ? rows.find((r) => r.metric_key === k) : null, g, a: g ? g.actual : (mTo == null ? null : T.actual(k, country, first, mTo)) };
@@ -278,6 +282,15 @@
     el.addEventListener('click', async (e) => {
       const a = (k) => e.target.closest(`[data-${k}]`);
       let b;
+      if ((b = a('recalculate-plan'))) {
+        const form = el.querySelector('#plan-form'), values = new FormData(form), current = { ...PV.plan };
+        const parse = (value) => String(value).trim().endsWith('%') ? Number(String(value).trim().slice(0, -1)) / 100 : Number(value);
+        for (const [key] of PLAN_FIELDS) current[key] = parse(values.get(`plan:${key}`));
+        for (const country of Object.keys(current.countries || {})) current.countries[country] = parse(values.get(`country:${country}`));
+        const derived = A.measurement.planCheck(current).derived;
+        PV.plan = { ...current, ...Object.fromEntries(Object.entries(derived).filter(([, n]) => n != null && Number.isFinite(n))) };
+        A.render(); U.toast('Rates recalculated in the form. Save scale targets to persist.'); return;
+      }
       if ((b = a('t-template'))) {
         try { U.download(`monthly-targets-${TV.month}.csv`, await A.apiText(`api/targets/template?month=${encodeURIComponent(TV.month)}`)); }
         catch (err) { if (err.message !== 'code') U.toast(err.message, 'error'); }
