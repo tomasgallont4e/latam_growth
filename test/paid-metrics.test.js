@@ -359,6 +359,8 @@ test('the goal counts accounts created (first identify) without adding registrat
   assert.match(html, /have no country/);
   assert.match(html, /Funnel platform/);
   assert.match(html, /PostHog funnel/);
+  assert.match(html, /value="landing_project"/);
+  assert.match(html, /internal\/test filter on/);
   assert.doesNotMatch(html, /31 reported|Verified actual pending/);
   const rendered = A.platformFunnels.nativeBody({ title: 'MVP', from: A.S.from, to: A.S.to, window_days: 14, steps: [{ name: 'marketing_cta_clicked', n: 33 }, { name: 'registration_started', n: 28 }, { name: 'account_created', n: null }] });
   assert.match(rendered, /84\.8% continue/);
