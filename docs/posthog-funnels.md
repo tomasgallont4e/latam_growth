@@ -1,9 +1,10 @@
 # PostHog sign-ups and platform funnels
 
-- Sign-up: `registration_started`, first per person since launch. `account_created`
-  is a separate downstream step, not a prerequisite for a sign-up.
-- The global chart and Targets use this definition, without adding HubSpot contacts
-  or `ph_new_persons`. Sync PostHog once after deployment for the new daily metric.
+- Account creation (the dashboard's sign-up metric): the person's first PostHog
+  `identify`, counted once. `registration_started` is the preceding funnel step;
+  keep it separate and never add it to accounts created.
+- The Overview and Targets use accounts created. Conversion reports both registration
+  starts and accounts created so the gap between intent and account creation is visible.
 - The GA4 review banner is removed; source values are preserved.
 
 ## Platform selector

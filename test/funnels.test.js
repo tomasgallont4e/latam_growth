@@ -52,3 +52,10 @@ test('read discovers the pictured saved insight, reuses filters and never hardco
   assert.deepEqual(data.steps.map((s) => s.n), [100, 40, 30]);
   assert.equal(calls.length, 3);
 });
+test('a PostHog 403 explains the missing read access instead of showing a retry as the fix', async (t) => {
+  const previous = { ...process.env };
+  Object.assign(process.env, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347861', POSTHOG_API_KEY: 'test' });
+  t.after(() => { for (const k of ['POSTHOG_HOST', 'POSTHOG_PROJECT_ID', 'POSTHOG_API_KEY']) { if (previous[k] == null) delete process.env[k]; else process.env[k] = previous[k]; } });
+  const request = async () => ({ ok: false, status: 403, json: async () => ({}) });
+  await assert.rejects(read('website', from, to, true, request), /403.*POSTHOG_API_KEY.*read.*saved insights.*queries/i);
+});
