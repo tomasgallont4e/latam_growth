@@ -14,6 +14,8 @@ const ads = require('./lib/adloader');
 const executive = require('./lib/executive');
 const targets = require('./lib/targets');
 const funnels = require('./lib/funnels');
+const assistant = require('./lib/assistant');
+const allowAssistantQuestion = assistant.createLimiter({ max: 10, windowMs: 60 * 1000 });
 
 const app = express();
 app.set('trust proxy', true);
@@ -73,6 +75,13 @@ app.get('/api/funnels/posthog', async (req, res) => {
     if (from < (process.env.LAUNCH_DATE || '2026-10-01') || to > new Date().toISOString().slice(0, 10)) return res.status(400).json({ error: 'Date outside launch window' });
     res.json(await funnels.read(String(req.query.funnel || 'website'), from, to, req.query.exclude !== '0'));
   } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+app.get('/api/assistant/status', (req, res) => res.json(assistant.status()));
+app.post('/api/assistant/ask', async (req, res) => {
+  if (!allowAssistantQuestion(req.user || req.ip || 'unknown')) return res.status(429).json({ error: 'Assistant request limit reached. Try again in a minute.' });
+  try { res.json(await assistant.ask(req.body || {})); }
+  catch (e) { res.status(Number(e.status) || 500).json({ error: e.message || 'Assistant request failed.' }); }
 });
 
 // Executive view: built only from real rows (connectors, CSV loads, daily routine).

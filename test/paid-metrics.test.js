@@ -17,7 +17,7 @@ function dashboard() {
     },
   } });
   App.testLoad = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
-  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
+  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'assistant.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
   }
   App.S.from = '2026-10-01'; App.S.to = '2026-10-28';
@@ -328,6 +328,22 @@ test('PostHog sync classifies people consistently and distinguishes failed Actio
   assert.equal(A.D.proxy(), 0);
 });
 
+test('loaded PostHog funnel exposes only aggregate step counts to the assistant context', async () => {
+  const A = dashboard();
+  const box = { isConnected: true, innerHTML: '' };
+  const root = { querySelector: () => box, addEventListener() {} };
+  A.api = async () => ({ title: 'Embudo landing a cuenta y proyecto (sin internos)', from: A.S.from, to: A.S.to, window_days: 14, steps: [
+    { name: 'Identify', n: 9, person_email: 'private@example.com' },
+    { name: 'Proyecto creado (clic)', n: 2, action_id: 407660 },
+  ] });
+  A.platformFunnels.mount(root);
+  await new Promise((resolve) => setImmediate(resolve));
+  const summary = A.platformFunnels.summary();
+  assert.equal(summary.name, 'Embudo landing a cuenta y proyecto (sin internos)');
+  assert.deepEqual(summary.steps.map((s) => [s.name, s.n]), [['Identify', 9], ['Proyecto creado (clic)', 2]]);
+  assert.equal(JSON.stringify(summary).includes('private@example.com'), false);
+});
+
 test('the goal counts accounts created (first identify) without adding registration_started, CRM or new people', () => {
   const A = auditedDashboard();
   A.S.data.snapshots.push(available('posthog', 'registration_coverage'));
@@ -361,6 +377,9 @@ test('the goal counts accounts created (first identify) without adding registrat
   assert.match(html, /PostHog funnel/);
   assert.match(html, /value="landing_project"/);
   assert.match(html, /internal\/test filter on/);
+  assert.match(html, /growth-assistant-form/);
+  assert.match(html, /read-only dashboard summary/i);
+  assert.doesNotMatch(html, /Coming soon/);
   assert.doesNotMatch(html, /31 reported|Verified actual pending/);
   const rendered = A.platformFunnels.nativeBody({ title: 'MVP', from: A.S.from, to: A.S.to, window_days: 14, steps: [{ name: 'marketing_cta_clicked', n: 33 }, { name: 'registration_started', n: 28 }, { name: 'account_created', n: null }] });
   assert.match(rendered, /84\.8% continue/);
