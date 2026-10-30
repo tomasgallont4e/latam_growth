@@ -49,6 +49,20 @@
       : `PostHog: registration_started is the step before account creation (first identify) · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`;
     return U.card({ cls: 'chart-card', title: 'Funnels by platform', sub: state.platform === 'posthog' ? posthogSub : 'Each platform keeps its own activity definitions', body: controls + `<div data-platform-funnel>${body()}</div>` });
   }
+  function summary() {
+    if (state.platform !== 'posthog') return null;
+    const entry = cache.get(key()), data = entry && entry.data;
+    if (!data) return null;
+    return {
+      name: String(data.title || paths[state.path]), platform: 'posthog', path: state.path,
+      from: String(data.from || A.S.from), to: String(data.to || A.S.to), window_days: Number(data.window_days) || null,
+      steps: (data.steps || []).slice(0, 10).map((s) => ({
+        name: String(s.name || 'Funnel step'),
+        n: Number.isFinite(Number(s.n)) ? Number(s.n) : null,
+        median_seconds: s.median_seconds == null ? null : Number(s.median_seconds),
+      })),
+    };
+  }
   function mount(el) {
     async function load(force = false) {
       const box = el.querySelector('[data-platform-funnel]');
@@ -70,5 +84,5 @@
     el.addEventListener('click', (e) => { if (e.target.closest('[data-funnel-retry]')) load(true); });
     load();
   }
-  A.platformFunnels = { render, mount, nativeBody };
+  A.platformFunnels = { render, mount, nativeBody, summary };
 })(window.App);
