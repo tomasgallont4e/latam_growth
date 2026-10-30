@@ -63,18 +63,29 @@
       })),
     };
   }
+  async function loadData(force = false) {
+    if (state.platform !== 'posthog') return null;
+    const k = key(), old = cache.get(k);
+    let entry = old;
+    if (force || !entry || Date.now() - entry.at >= 300000) {
+      entry = { at: Date.now() }; cache.set(k, entry);
+      const query = `funnel=${state.path}&from=${A.S.from}&to=${A.S.to}&exclude=${A.S.exInt ? '1' : '0'}`;
+      entry.promise = A.api(`api/funnels/posthog?${query}`).then((data) => { entry.data = data; }).catch((e) => { entry.error = e.message; });
+    }
+    if (entry.promise) await entry.promise;
+    return entry;
+  }
+  async function ensureSummary() {
+    if (state.platform !== 'posthog') return null;
+    await loadData();
+    return summary();
+  }
   function mount(el) {
     async function load(force = false) {
       const box = el.querySelector('[data-platform-funnel]');
       if (!box || state.platform !== 'posthog') return;
-      const k = key(), old = cache.get(k);
-      let entry = old;
-      if (force || !entry || Date.now() - entry.at >= 300000) {
-        entry = { at: Date.now() }; cache.set(k, entry);
-        const query = `funnel=${state.path}&from=${A.S.from}&to=${A.S.to}&exclude=${A.S.exInt ? '1' : '0'}`;
-        entry.promise = A.api(`api/funnels/posthog?${query}`).then((data) => { entry.data = data; }).catch((e) => { entry.error = e.message; });
-      }
-      await entry.promise;
+      const k = key();
+      await loadData(force);
       if (box.isConnected && key() === k && state.platform === 'posthog') box.innerHTML = body();
     }
     el.addEventListener('change', (e) => {
@@ -84,5 +95,5 @@
     el.addEventListener('click', (e) => { if (e.target.closest('[data-funnel-retry]')) load(true); });
     load();
   }
-  A.platformFunnels = { render, mount, nativeBody, summary };
+  A.platformFunnels = { render, mount, nativeBody, summary, ensureSummary };
 })(window.App);

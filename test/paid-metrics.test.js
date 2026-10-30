@@ -328,6 +328,17 @@ test('PostHog sync classifies people consistently and distinguishes failed Actio
   assert.equal(A.D.proxy(), 0);
 });
 
+test('assistant can await the visible PostHog funnel without fetching it twice', async () => {
+  const A = dashboard();
+  let calls = 0;
+  A.api = async () => { calls += 1; return { title: 'Embudo landing a cuenta y proyecto (sin internos)', from: A.S.from, to: A.S.to, window_days: 14, steps: [{ name: 'Identify', n: 9 }, { name: 'Proyecto creado (clic)', n: 2 }] }; };
+  const summary = await A.platformFunnels.ensureSummary();
+  assert.equal(summary.steps[0].n, 9);
+  assert.equal(calls, 1);
+  await A.platformFunnels.ensureSummary();
+  assert.equal(calls, 1);
+});
+
 test('loaded PostHog funnel exposes only aggregate step counts to the assistant context', async () => {
   const A = dashboard();
   const box = { isConnected: true, innerHTML: '' };
@@ -378,7 +389,8 @@ test('the goal counts accounts created (first identify) without adding registrat
   assert.match(html, /value="landing_project"/);
   assert.match(html, /internal\/test filter on/);
   assert.match(html, /growth-assistant-form/);
-  assert.match(html, /read-only dashboard summary/i);
+  assert.match(html, /Overview insights/);
+  assert.match(html, /analysis runs automatically/i);
   assert.doesNotMatch(html, /Coming soon/);
   assert.doesNotMatch(html, /31 reported|Verified actual pending/);
   const rendered = A.platformFunnels.nativeBody({ title: 'MVP', from: A.S.from, to: A.S.to, window_days: 14, steps: [{ name: 'marketing_cta_clicked', n: 33 }, { name: 'registration_started', n: 28 }, { name: 'account_created', n: null }] });

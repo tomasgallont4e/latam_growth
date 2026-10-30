@@ -70,7 +70,7 @@ Leadership loads each approved piece here: creative link, copy, language, person
 | Growth assistant | `ANTHROPIC_API_KEY` (required; service variable only), optional `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`) |
 | Optional | `SYNC_EVERY_HOURS` (default 6), `AUTO_SYNC=0` (manual "Sync now" only), `TEAM_CODE` (asks for a code before using the API), `INGEST_KEY`, `LAUNCH_DATE` (default 2026-10-01), `INTERNAL_DOMAINS` (default think4ever.com) |
 
-The Growth assistant is read-only. It sends the question and a bounded aggregate summary of the selected dashboard period to Anthropic; the dashboard summary excludes raw events, contact records, email fields, and other person-level rows. Conversations are not stored by this app. Anthropic usage may incur API charges; each signed-in user is limited to 10 requests per minute. Never put the key in browser code, chat, or a committed file.
+The Growth assistant is read-only. On opening Overview or changing the selected data, it sends a bounded aggregate summary of that period to Anthropic to generate findings; follow-up questions send the question plus the same aggregate context. The dashboard summary excludes raw events, contact records, email fields, and other person-level rows. Conversations are not stored by this app. Anthropic usage may incur API charges; each signed-in user is limited to 10 requests per minute. Never put the key in browser code, chat, or a committed file.
 
 API versions change often: confirm the current one on the first sync with each platform and set it in the variable if the default is retired.
 
