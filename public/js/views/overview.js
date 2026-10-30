@@ -76,8 +76,8 @@
       + U.section('Accounts by country', 'Select a market to focus on its accounts, plan target and traffic context', marketCard + coverageNote);
   }
 
-  function periodComparison() {
-    const U = A.ui, D = A.D, comparison = D.completeBucketComparison();
+  function periodComparison(comparison = A.D.completeBucketComparison()) {
+    const U = A.ui, D = A.D;
     const title = `Last complete ${D.grainName()} period vs previous`;
     if (!comparison) return U.section(title, `No comparison yet: available history since launch must contain two fully completed ${D.grainName().toLowerCase()} buckets.`, U.card({ title: 'Comparison unavailable', body: U.empty('Not enough completed history', 'The in-progress bucket is excluded from comparisons.') }));
     const cur = comparison.current, prev = comparison.previous;
@@ -100,13 +100,24 @@
     const crm = D.crmTotal(), people = D.platform();
     const activity = D.rollSignups(D.dailySignups());
     const unknown = D.peopleClassified() ? D.sum('posthog', 'ph_new_persons', (r) => r.dim_value === 'Unknown') : null;
+    const bucketComparison = D.completeBucketComparison();
+    const bucketCurrentGA = bucketComparison ? D.ga(bucketComparison.current.from, bucketComparison.current.to) : null;
+    const bucketPreviousGA = bucketComparison ? D.ga(bucketComparison.previous.from, bucketComparison.previous.to) : null;
+    const bucketDeltaLabel = bucketComparison ? `Latest complete ${D.grainName().toLowerCase()}: ${bucketComparison.current.label} vs ${bucketComparison.previous.label}` : `No two complete ${D.grainName().toLowerCase()} buckets since launch`;
+    const countDelta = (current, previous) => bucketComparison ? U.delta(current, previous) : null;
+    const currentCRM = bucketComparison ? D.crmTotal(bucketComparison.current.from, bucketComparison.current.to) : null;
+    const previousCRM = bucketComparison ? D.crmTotal(bucketComparison.previous.from, bucketComparison.previous.to) : null;
+    const currentPeople = bucketComparison ? D.platform(bucketComparison.current.from, bucketComparison.current.to) : null;
+    const previousPeople = bucketComparison ? D.platform(bucketComparison.previous.from, bucketComparison.previous.to) : null;
+    const currentRegistrations = bucketComparison ? D.registrations(bucketComparison.current.from, bucketComparison.current.to) : null;
+    const previousRegistrations = bucketComparison ? D.registrations(bucketComparison.previous.from, bucketComparison.previous.to) : null;
     const kpis = U.kpiRow([
-      U.kpi({ label: 'Site sessions', source: 'GA4', value: U.fmt(ga && ga.sessions), spark: ga ? D.series(D.byDay('ga4', 'ga_sessions')) : null, compare: 'Configured hosts · may include test traffic' }),
-      U.kpi({ label: 'Unique visitors', source: 'GA4', value: U.fmt(ga && ga.users), compare: ga && ga.userWarning ? 'GA4 user counts need review; original values retained' : 'Deduplicated snapshot for this range' }),
-      U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(ga && ga.rate), spark: ga ? D.seriesRate(D.byDay('ga4', 'ga_engaged_sessions'), D.byDay('ga4', 'ga_sessions')) : null, compare: ga ? `${U.fmt(ga.engaged)} engaged / ${U.fmt(ga.sessions)} GA4 sessions` : 'Awaiting GA4' }),
-      U.kpi({ label: 'CRM contacts', source: 'HubSpot', value: U.fmt(crm), spark: crm == null ? null : D.ticks().map((d) => activity[d].form), compare: 'Contact creation date; may overlap product people' }),
-      U.kpi({ label: 'New observed people', source: 'PostHog', value: U.fmt(people), spark: people == null ? null : D.series(D.byDay('posthog', 'ph_new_persons', S.from, S.to, D.peopleFilter)), compare: people == null ? 'Sync PostHog to classify internal accounts' : `${S.exInt ? 'Known internal accounts excluded' : 'Internal accounts included'} · ${U.fmt(unknown)} unknown identity class · not verified sign-ups` }),
-      U.kpi({ label: 'Registrations started', source: 'PostHog', value: U.fmt(D.registrations()), spark: D.registrations() == null ? null : D.series(D.byDay('posthog', 'ph_signups', S.from, S.to, D.peopleFilter)), compare: 'registration_started · funnel step before the account; not added to accounts created' }),
+      U.kpi({ label: 'Site sessions', source: 'GA4', value: U.fmt(ga && ga.sessions), delta: countDelta(bucketCurrentGA && bucketCurrentGA.sessions, bucketPreviousGA && bucketPreviousGA.sessions), spark: ga ? D.series(D.byDay('ga4', 'ga_sessions')) : null, compare: `Configured hosts · may include test traffic · ${bucketDeltaLabel}` }),
+      U.kpi({ label: 'Unique visitors', source: 'GA4', value: U.fmt(ga && ga.users), delta: countDelta(bucketCurrentGA && bucketCurrentGA.users, bucketPreviousGA && bucketPreviousGA.users), compare: `Deduplicated snapshot for this range; per-bucket change requires exact snapshots · ${bucketDeltaLabel}` }),
+      U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(ga && ga.rate), delta: bucketComparison ? U.deltaPoints(bucketCurrentGA && bucketCurrentGA.rate, bucketPreviousGA && bucketPreviousGA.rate) : null, spark: ga ? D.seriesRate(D.byDay('ga4', 'ga_engaged_sessions'), D.byDay('ga4', 'ga_sessions')) : null, compare: `${ga ? `${U.fmt(ga.engaged)} engaged / ${U.fmt(ga.sessions)} range sessions` : 'Awaiting GA4'} · ${bucketDeltaLabel}` }),
+      U.kpi({ label: 'CRM contacts', source: 'HubSpot', value: U.fmt(crm), delta: countDelta(currentCRM, previousCRM), spark: crm == null ? null : D.ticks().map((d) => activity[d].form), compare: `Contact creation date; may overlap product people · ${bucketDeltaLabel}` }),
+      U.kpi({ label: 'New observed people', source: 'PostHog', value: U.fmt(people), delta: countDelta(currentPeople, previousPeople), spark: people == null ? null : D.series(D.byDay('posthog', 'ph_new_persons', S.from, S.to, D.peopleFilter)), compare: `${people == null ? 'Sync PostHog to classify internal accounts' : `${S.exInt ? 'Known internal accounts excluded' : 'Internal accounts included'} · ${U.fmt(unknown)} unknown identity class · not verified sign-ups`} · ${bucketDeltaLabel}` }),
+      U.kpi({ label: 'Registrations started', source: 'PostHog', value: U.fmt(D.registrations()), delta: countDelta(currentRegistrations, previousRegistrations), spark: D.registrations() == null ? null : D.series(D.byDay('posthog', 'ph_signups', S.from, S.to, D.peopleFilter)), compare: `registration_started · funnel step before the account; not added to accounts created · ${bucketDeltaLabel}` }),
     ], 3);
     const sessionsByBucket = D.rollNum(D.byDay('ga4', 'ga_sessions'));
     const chart = U.card({ cls: 'chart-card', title: `${D.grainName()} GA4 site sessions`, sub: `Grouped by ${D.grainBar()} · ${U.win(S.from, S.to)}`, body: C.stacked({ dates: D.ticks(), keys: [{ name: 'GA4 sessions', color: 'var(--series-a)' }], value: (d) => sessionsByBucket[d] || 0, label: 'GA4 site sessions' }) + '<p class="card-note">A GA4 session is a group of interactions with your site or app. By default, it ends after 30 minutes of inactivity; one person can have multiple sessions.</p>' });
@@ -121,8 +132,8 @@
     });
     const stages = A.platformFunnels.render();
     const readings = A.assistant.render();
-    return accountsGoal() + U.section('Launch at a glance', `${S.from} to ${S.to} · headline KPIs are range totals; charts and daily-detail views use ${D.grainName().toLowerCase()} buckets`, kpis)
-      + periodComparison() + `<section class="section">${mix}</section><section class="section">${channelChart}</section><section class="section">${stages}</section><section class="section">${readings}</section><section class="section">${chart}</section>`;
+    return accountsGoal() + U.section('Launch at a glance', `${S.from} to ${S.to} · KPI values are range totals; deltas compare the latest two complete ${D.grainName().toLowerCase()} buckets`, kpis)
+      + periodComparison(bucketComparison) + `<section class="section">${mix}</section><section class="section">${channelChart}</section><section class="section">${stages}</section><section class="section">${readings}</section><section class="section">${chart}</section>`;
   }
   function mount(el) { A.platformFunnels.mount(el); A.assistant.mount(el); el.addEventListener('change', (e) => { if (e.target.id === 'goal-country') { A.S.goalCountry = e.target.value; A.render(); } }); }
   A.views.overview = { title: 'Overview', render, mount };
