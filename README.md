@@ -6,12 +6,18 @@ One dashboard for the LATAM launch: landing traffic, sign-ups, platform accounts
 
 | View | What it shows |
 |---|---|
-| Overview | LATAM 500K goal (accounts created since launch, counted once per person at their first PostHog identify; measurement only, no deadline), accounts by country against each market's share of the plan, summary figures, funnel, research reading, daily sessions by source with timeline notes |
-| Acquisition | Sessions by source (HubSpot), channels (Google Analytics), UTM campaigns, countries |
+| Overview | LATAM 500K goal (accounts created since launch, counted once per person at their first PostHog identify; measurement only, no deadline), accounts by country against each market's share of the plan, range KPIs, complete-period comparisons, funnel, research reading, and GA4/HubSpot time series grouped by the selected granularity |
+| Acquisition | Range-total KPIs plus GA4 channel engagement, HubSpot source, country, UTM and entry-page detail by selected time bucket where daily facts are available |
 | Conversion | Landing events (Tag Manager and Google Analytics), sign-up log, platform sign-ups (PostHog), pages, forms |
 | Social and paid | Meta, LinkedIn, Google Ads and Clarity; cost per sign-up once campaigns run |
 | Ad loader | Approved ad pieces, the checklist for each one, and the Google Ads, Meta and LinkedIn API payloads (task 124) |
 | Data sources | Status of every source, CSV import, how each one connects, definitions, load history |
+
+## Date range and temporal grouping
+
+The date range filters the data. The Daily/Weekly/Bi-weekly/Monthly/Quarterly/Yearly selector groups charts and tables backed by daily facts. Headline KPIs and explicitly lifetime totals remain totals for their stated window; GA4 unique-user snapshots are never summed across days. UTM campaign and entry-page detail is grouped from its dated snapshot rows when available, but the snapshot must cover the requested range and its 1,000-row cap can omit detail. The PostHog funnel remains an ordered-person funnel for the entire selected date range with its 14-day conversion window; the grouping selector does not turn it into per-period cohorts.
+
+Period comparisons use the two most recent complete buckets since launch, independent of the currently selected date range. They exclude the in-progress day/week/etc.; when there are not two complete buckets or metric coverage is missing, the dashboard shows no comparison rather than estimating one. The 500K account total stays cumulative since launch, while its progress trend and country change breakdown follow the selected granularity.
 
 ## Sign-in
 

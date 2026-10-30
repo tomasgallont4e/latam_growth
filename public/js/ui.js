@@ -98,8 +98,8 @@
     }
     return out;
   };
-  // Axis label clipped to the dashboard window, so a week that starts before launch reads from launch day.
-  U.axis = (key) => {
+  // Axis label clipped to the requested window, not implicitly to the global selector.
+  U.axisRange = (key, from, to) => {
     if (!key) return '';
     const g = U.grainOf(key);
     if (g === 'month') return `${MON[+key.slice(5, 7) - 1]} ${key.slice(0, 4)}`;
@@ -107,13 +107,12 @@
     if (g === 'year') return String(key);
     if (g === 'day') return U.dshort(key);
     const span = U.bucketSpan(key);
-    const from = (A.S && A.S.from) || span.start;
-    const to = (A.S && A.S.to) || span.end;
-    const a = span.start < from ? from : span.start;
-    const b = span.end > to ? to : span.end;
+    const a = span.start < (from || span.start) ? (from || span.start) : span.start;
+    const b = span.end > (to || span.end) ? (to || span.end) : span.end;
     if (a.slice(0, 7) === b.slice(0, 7)) return `${MON[+a.slice(5, 7) - 1]} ${+a.slice(8)}–${+b.slice(8)}`;
     return `${U.dshort(a)}–${U.dshort(b)}`;
   };
+  U.axis = (key) => U.axisRange(key, (A.S && A.S.from) || null, (A.S && A.S.to) || null);
   U.stamp = (s) => String(s || '').slice(0, 16).replace('T', ' ');
 
   U.icon = (name, style = 'fa-solid', cls = '') => `<i class="${style} fa-${name}${cls ? ' ' + cls : ''}" aria-hidden="true"></i>`;
@@ -134,6 +133,12 @@
     const cls = Math.abs(ch) < 0.0005 ? 'delta-neutral' : good ? 'delta-up' : 'delta-down';
     const a = (Math.abs(ch) * 100).toFixed(1);
     return `<span class="delta ${cls}" title="${up ? 'Up' : 'Down'} ${a}% vs previous period">${U.icon(up ? 'arrow-up' : 'arrow-down')}${up ? '+' : '−'}${a}%</span>`;
+  };
+  U.deltaPoints = (cur, prev, opts = {}) => {
+    if (!U.num(prev) || !U.num(cur)) return '<span class="delta delta-neutral" title="No comparison for this period">–</span>';
+    const points = (Number(cur) - Number(prev)) * 100, up = points >= 0, good = opts.invert ? !up : up;
+    const cls = Math.abs(points) < 0.05 ? 'delta-neutral' : good ? 'delta-up' : 'delta-down';
+    return `<span class="delta ${cls}" title="${up ? 'Up' : 'Down'} ${Math.abs(points).toFixed(1)} percentage points vs previous period">${up ? '+' : '−'}${Math.abs(points).toFixed(1)} pp</span>`;
   };
   U.spark = (vals) => {
     const v = (vals || []).map((x) => Number(x) || 0), n = v.length, w = 96, h = 30;

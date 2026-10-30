@@ -146,7 +146,7 @@
   // Running total as a share of a goal. The dashed bar sits on current completion.
   // Under 8% the axis zooms in so that bar can move; from 8% up the axis is 0–100%
   // and the bar climbs toward the goal. `mini` drops the axis labels.
-  C.goalShare = ({ dates, daily, goal, mini = false, label = 'Progress toward the goal' }) => {
+  C.goalShare = ({ dates, daily, goal, mini = false, label = 'Progress toward the goal', labels }) => {
     if (!dates.length || !(goal > 0)) return U.empty('No goal set', 'Set the goal in Targets to see progress.', 'bullseye');
     let run = 0; const cum = daily.map((v) => (run += Number(v) || 0)), share = cum.map((v) => v / goal);
     const latest = share[share.length - 1] || 0;
@@ -172,6 +172,7 @@
     const W = mini ? 300 : 1000, H = mini ? 96 : 250, L = mini ? 6 : 78, R = mini ? 6 : 16, T = mini ? 8 : 16, B = mini ? 82 : 214;
     const y = (r) => B - (Math.min(axisMax, Math.max(0, r)) / axisMax) * (B - T);
     const step = (W - L - R) / Math.max(1, dates.length - 1), x = (j) => L + j * step;
+    const labelAt = (date, i) => Array.isArray(labels) && labels[i] ? labels[i] : U.dshort(date);
     let g = '';
     const ticks = (mini ? [0, 1] : [0, 0.25, 0.5, 0.75, 1]).map((t) => t * axisMax);
     for (const t of ticks) {
@@ -181,12 +182,12 @@
     const by = y(barAt).toFixed(1);
     g += `<line class="grid gp-goal" x1="${L}" x2="${W - R}" y1="${by}" y2="${by}"/>`;
     if (!mini) g += `<text class="gp-goal-label" x="${W - R}" y="${(Number(by) - 5).toFixed(1)}" text-anchor="end">${peak > 0 && latest < 0.995 ? pctLabel(latest) : 'Goal'}</text>`;
-    dates.forEach((d, j) => { g += `<rect class="day-hit" x="${(x(j) - step / 2).toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"><title>${U.esc(U.dshort(d))} · ${U.esc(U.fmt(daily[j]))} new · ${U.esc(U.fmt(cum[j]))} total · ${U.esc(C.sharePct(share[j]))} of goal</title></rect>`; });
+    dates.forEach((d, j) => { g += `<rect class="day-hit" x="${(x(j) - step / 2).toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"><title>${U.esc(labelAt(d, j))} · ${U.esc(U.fmt(daily[j]))} new · ${U.esc(U.fmt(cum[j]))} total · ${U.esc(C.sharePct(share[j]))} of goal</title></rect>`; });
     const pts = share.map((v, j) => `${x(j).toFixed(1)},${y(v).toFixed(1)}`);
     g += `<polygon class="trend-area" points="${x(0).toFixed(1)},${B} ${pts.join(' ')} ${x(dates.length - 1).toFixed(1)},${B}"/><polyline class="trend-line" points="${pts.join(' ')}"/><circle class="trend-dot" cx="${x(dates.length - 1).toFixed(1)}" cy="${y(share[share.length - 1]).toFixed(1)}" r="${mini ? 3 : 4.5}"/>`;
     if (!mini) {
       const every = Math.ceil(dates.length / 8);
-      dates.forEach((d, j) => { if (j % every === 0) g += `<text x="${x(j).toFixed(1)}" y="${H - 8}" text-anchor="middle">${U.esc(U.dshort(d))}</text>`; });
+      dates.forEach((d, j) => { if (j % every === 0) g += `<text x="${x(j).toFixed(1)}" y="${H - 8}" text-anchor="middle">${U.esc(labelAt(d, j))}</text>`; });
     }
     return `<div class="chart-scroll${mini ? ' mini' : ''}"><svg class="chart-svg${mini ? ' mini' : ''}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(label)}">${g}</svg></div>`;
   };

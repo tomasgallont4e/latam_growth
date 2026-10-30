@@ -23,17 +23,31 @@
     const unknown = Math.max(0, total - known);
     const active = markets.filter(([name]) => (byCountry[name] || 0) > 0).length;
     const bar = (r, label) => `<div class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(100, r * 100))}" aria-label="${U.esc(label)}"><i style="width:${Math.min(100, Math.max(0, r * 100)).toFixed(4)}%"></i></div>`;
-    const daysAll = U.days(from, to), dailyAcc = D.accountsByDay(from, to);
-    const trend = `<div class="acct-hero-trend"><div class="acct-hero-label">Progress toward 500K · share of the goal</div>${A.charts.goalShare({ dates: daysAll, daily: daysAll.map((d) => dailyAcc[d] || 0), goal, label: 'Progress toward 500K goal' })}</div>`;
+    const goalPeriods = D.periods(from, to), dailyAcc = D.accountsByDay(from, to);
+    const goalNew = goalPeriods.map((period) => U.days(period.from, period.to).reduce((sum, day) => sum + (Number(dailyAcc[day]) || 0), 0));
+    const goalComparison = D.completeBucketComparison(from, to);
+    const goalCurrentAccounts = goalComparison ? D.accounts(goalComparison.current.from, goalComparison.current.to) : null;
+    const goalPreviousAccounts = goalComparison ? D.accounts(goalComparison.previous.from, goalComparison.previous.to) : null;
+    const goalChange = goalComparison ? `<div><dt>Latest complete ${D.grainName()}</dt><dd>${U.fmt(goalCurrentAccounts)} ${U.delta(goalCurrentAccounts, goalPreviousAccounts)} <small>${U.esc(goalComparison.current.label)} vs ${U.esc(goalComparison.previous.label)}</small></dd></div>` : '<div><dt>Period change</dt><dd>Not enough complete history</dd></div>';
+    const trend = `<div class="acct-hero-trend"><div class="acct-hero-label">Progress toward 500K · ${D.grainName().toLowerCase()} buckets</div>${A.charts.goalShare({ dates: goalPeriods.map((p) => p.from), labels: goalPeriods.map((p) => p.label), daily: goalNew, goal, label: 'Progress toward 500K goal' })}</div>`;
     const hero = `<div class="acct-hero"><div class="acct-hero-main"><span class="acct-hero-label">Accounts created</span>
       <div class="goal-nums"><span class="acct-hero-actual">${U.fmt(total)}</span><span class="goal-target">of ${U.fmt(goal)}</span></div>
       ${bar(ratio, 'Accounts created toward the goal')}
       <div class="goal-meta"><span><b>${A.charts.sharePct(ratio)}</b> of the goal</span><span>${U.fmt(Math.max(0, goal - total))} remaining</span></div></div>
-      <dl class="acct-hero-side"><div><dt>In this period</dt><dd>${U.fmt(D.accounts())}</dd></div><div><dt>Markets with accounts</dt><dd>${geoOk ? `${active} of ${markets.length}` : '–'}</dd></div><div><dt>CRM contacts</dt><dd>${U.fmt(D.crmTotal(from, to) || 0)}</dd></div></dl>${trend}</div>`;
+      <dl class="acct-hero-side"><div><dt>Selected date range</dt><dd>${U.fmt(D.accounts())}</dd></div>${goalChange}<div><dt>Markets with accounts</dt><dd>${geoOk ? `${active} of ${markets.length}` : '–'}</dd></div><div><dt>CRM contacts</dt><dd>${U.fmt(D.crmTotal(from, to) || 0)}</dd></div></dl>${trend}</div>`;
 
     const countryRows = Object.entries(byCountry).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
     const countryBars = countryRows.map(([name, value], i) => ({ name, value, color: A.charts.COUNTRY_COLORS[i % A.charts.COUNTRY_COLORS.length], label: U.fmt(value) }));
-    const countryChart = geoOk ? U.card({ cls: 'chart-card', title: 'Accounts created by market', sub: `Since launch · ${U.fmt(known)} accounts assigned · ranked by accounts created`, body: countryBars.length ? A.charts.hbars(countryBars, known) : U.empty('No country-attributed accounts in this period') }) : '';
+    const countryPeriodRows = geoOk && goalComparison ? countryRows.map(([country]) => ({
+      country,
+      current: D.accounts(goalComparison.current.from, goalComparison.current.to, country),
+      previous: D.accounts(goalComparison.previous.from, goalComparison.previous.to, country),
+    })) : [];
+    const countryPeriodTable = countryPeriodRows.length ? `<p class="card-note">New accounts by country · ${D.grainName().toLowerCase()} · latest two complete buckets</p>${U.table([
+      { t: 'Country', k: 'country' }, { t: goalComparison.current.label, num: 1, f: (r) => U.fmt(r.current) },
+      { t: goalComparison.previous.label, num: 1, f: (r) => U.fmt(r.previous) }, { t: 'Change', f: (r) => U.delta(r.current, r.previous) },
+    ], countryPeriodRows)}` : '';
+    const countryChart = geoOk ? U.card({ cls: 'chart-card', title: 'Accounts created by market', sub: `Since launch · ${U.fmt(known)} accounts assigned · ranked by accounts created`, body: (countryBars.length ? A.charts.hbars(countryBars, known) : U.empty('No country-attributed accounts in this period')) + countryPeriodTable }) : '';
 
     const options = [...new Set([...markets.map(([name]) => name), ...Object.keys(byCountry)])];
     const selectedCountry = options.includes(S.goalCountry) ? S.goalCountry : options[0];
@@ -42,9 +56,12 @@
     const accounts = geoOk ? D.accounts(from, to, selectedCountry) : null;
     const sessions = D.has('ga4', 'ga_geo_sessions') ? D.countryMetric('ga_geo_sessions', selectedCountry, from, to) : null;
     const rate = sessions != null && sessions > 0 && accounts != null ? accounts / sessions * 1000 : null;
+    const marketCurrent = geoOk && goalComparison ? D.accounts(goalComparison.current.from, goalComparison.current.to, selectedCountry) : null;
+    const marketPrevious = geoOk && goalComparison ? D.accounts(goalComparison.previous.from, goalComparison.previous.to, selectedCountry) : null;
+    const marketAccountNote = goalComparison ? `First identify · since launch; ${goalComparison.current.label}: ${U.fmt(marketCurrent)} ${U.delta(marketCurrent, marketPrevious)} vs ${goalComparison.previous.label}` : 'First identify · once per person; since launch';
     const countryPicker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country">${options.map((name) => `<option value="${U.esc(name)}"${name === selectedCountry ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
     const marketKpis = U.kpiRow([
-      U.kpi({ label: 'Accounts created', source: 'PostHog', value: U.fmt(accounts), compare: 'First identify · once per person' }),
+      U.kpi({ label: 'Accounts created', source: 'PostHog', value: U.fmt(accounts), compare: marketAccountNote }),
       U.kpi({ label: 'Plan target', source: '500K plan', value: U.fmt(target), compare: 'Country allocation in Targets' }),
       U.kpi({ label: 'Progress vs plan', source: 'PostHog / plan', value: A.charts.sharePct(target && accounts != null ? accounts / target : null), compare: target ? `${U.fmt(accounts)} of ${U.fmt(target)} accounts` : 'No country allocation set' }),
       U.kpi({ label: 'GA4 sessions', source: 'GA4', value: U.fmt(sessions), compare: 'Traffic in the selected period' }),
@@ -57,6 +74,25 @@
     return U.section('LATAM 500K goal', sub, U.card({ cls: 'acct-hero-card', body: hero }))
       + (countryChart ? U.section('New accounts by country', 'One horizontal bar per identified country · sorted by accounts created', countryChart) : '')
       + U.section('Accounts by country', 'Select a market to focus on its accounts, plan target and traffic context', marketCard + coverageNote);
+  }
+
+  function periodComparison() {
+    const U = A.ui, D = A.D, comparison = D.completeBucketComparison();
+    const title = `Last complete ${D.grainName()} period vs previous`;
+    if (!comparison) return U.section(title, `No comparison yet: available history since launch must contain two fully completed ${D.grainName().toLowerCase()} buckets.`, U.card({ title: 'Comparison unavailable', body: U.empty('Not enough completed history', 'The in-progress bucket is excluded from comparisons.') }));
+    const cur = comparison.current, prev = comparison.previous;
+    const a = D.ga(cur.from, cur.to), b = D.ga(prev.from, prev.to);
+    const fields = [
+      { label: 'GA4 sessions', source: 'GA4', cur: a && a.sessions, prev: b && b.sessions, format: U.fmt, delta: U.delta },
+      { label: 'Engagement rate', source: 'GA4', cur: a && a.rate, prev: b && b.rate, format: U.pct, delta: U.deltaPoints },
+      { label: 'HubSpot sessions', source: 'HubSpot', cur: D.has('hubspot', 'sessions') ? D.sessions(cur.from, cur.to) : null, prev: D.has('hubspot', 'sessions') ? D.sessions(prev.from, prev.to) : null, format: U.fmt, delta: U.delta },
+      { label: 'CRM contacts', source: 'HubSpot', cur: D.crmTotal(cur.from, cur.to), prev: D.crmTotal(prev.from, prev.to), format: U.fmt, delta: U.delta },
+      { label: 'Accounts created', source: 'PostHog', cur: D.accounts(cur.from, cur.to), prev: D.accounts(prev.from, prev.to), format: U.fmt, delta: U.delta },
+      { label: 'Registration starts', source: 'PostHog', cur: D.registrations(cur.from, cur.to), prev: D.registrations(prev.from, prev.to), format: U.fmt, delta: U.delta },
+    ].filter((x) => x.cur != null || x.prev != null);
+    const tiles = fields.map((x) => U.kpi({ label: x.label, source: x.source, value: x.format(x.cur), delta: x.delta(x.cur, x.prev), compare: `${prev.label}: ${x.format(x.prev)}` }));
+    const body = tiles.length ? U.kpiRow(tiles, 3) : U.empty('No comparable metrics yet', 'The connected sources have no daily facts for these completed buckets.');
+    return U.section(title, `${cur.label} vs ${prev.label} · last two complete ${D.grainName().toLowerCase()} buckets since launch; independent of selected date range; in-progress bucket excluded`, body);
   }
 
   function render() {
@@ -85,8 +121,8 @@
     });
     const stages = A.platformFunnels.render();
     const readings = A.assistant.render();
-    return accountsGoal() + U.section('Launch at a glance', `${S.from} to ${S.to} · counts for the range; charts grouped ${D.grainName().toLowerCase()}`, kpis)
-      + `<section class="section">${mix}</section><section class="section">${channelChart}</section><section class="section">${stages}</section><section class="section">${readings}</section><section class="section">${chart}</section>`;
+    return accountsGoal() + U.section('Launch at a glance', `${S.from} to ${S.to} · headline KPIs are range totals; charts and daily-detail views use ${D.grainName().toLowerCase()} buckets`, kpis)
+      + periodComparison() + `<section class="section">${mix}</section><section class="section">${channelChart}</section><section class="section">${stages}</section><section class="section">${readings}</section><section class="section">${chart}</section>`;
   }
   function mount(el) { A.platformFunnels.mount(el); A.assistant.mount(el); el.addEventListener('change', (e) => { if (e.target.id === 'goal-country') { A.S.goalCountry = e.target.value; A.render(); } }); }
   A.views.overview = { title: 'Overview', render, mount };
