@@ -169,6 +169,74 @@ test('GA4 paginated source/medium report combines aliases before ingest and excl
   assert.equal(load.snapshots.find((r) => r.key === 'paid_sessions').rows[0].available, true);
 });
 
+test('GA4 Executive geo sessions use only go.think4ever.com without narrowing shared host reports', async (t) => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  env(t, {
+    GA4_PROPERTY_ID: '123',
+    GA4_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'test@example.test', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) }),
+    SITE_HOSTS: 'think4ever.com,www.think4ever.com,go.think4ever.com,portal.think4ever.com',
+  });
+  const { connectors } = require('../lib/connectors');
+  const reports = [];
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    if (url.includes('oauth2.googleapis.com')) return response({ access_token: 'test' });
+    const body = JSON.parse(opts.body);
+    reports.push(body);
+    const dimensions = (body.dimensions || []).map((d) => d.name).join(',');
+    const hostFilter = body.dimensionFilter && body.dimensionFilter.filter;
+    if (dimensions === 'date,country' && hostFilter && hostFilter.stringFilter?.value === 'go.think4ever.com') {
+      return response({ rows: [{ dimensionValues: [{ value: '20261020' }, { value: 'Colombia' }], metricValues: [{ value: '42' }, { value: '18' }] }] });
+    }
+    return response({ rows: [] });
+  });
+
+  const load = await connectors.ga4();
+  const goReport = reports.find((body) => body.dimensionFilter?.filter?.stringFilter?.value === 'go.think4ever.com');
+  const sharedReport = reports.find((body) => body.dimensionFilter?.filter?.inListFilter);
+  assert.ok(goReport, 'Executive geo report should explicitly filter the confirmed landing hostname');
+  assert.deepEqual(goReport.dimensions.map((d) => d.name), ['date', 'country']);
+  assert.ok(sharedReport, 'existing GA4 reports must continue using the shared SITE_HOSTS allowlist');
+  assert.deepEqual(sharedReport.dimensionFilter.filter.inListFilter.values, ['think4ever.com', 'www.think4ever.com', 'go.think4ever.com', 'portal.think4ever.com']);
+  assert.equal(load.source, 'ga4');
+  assert.deepEqual(load.metrics.find((r) => r.metric === 'ga_exec_geo_sessions'), {
+    metric: 'ga_exec_geo_sessions', date: '2026-10-20', dim: 'country', dim_value: 'Colombia', value: 42,
+  });
+});
+
+test('GA4 go-host report success with no rows is a measured zero with explicit coverage', async (t) => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  env(t, { GA4_PROPERTY_ID: '123', GA4_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'test@example.test', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) }) });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(global, 'fetch', async (url) => url.includes('oauth2.googleapis.com') ? response({ access_token: 'test' }) : response({ rows: [] }));
+  const load = await connectors.ga4();
+  const coverage = load.snapshots.find((r) => r.key === 'executive_landing');
+  assert.equal(coverage.rows[0].available, true);
+  assert.equal(coverage.rows[0].country_available, false);
+  assert.equal(load.metrics.some((r) => r.metric === 'ga_exec_geo_sessions'), false);
+});
+
+test('GA4 go-host report failure leaves Executive pending without breaking shared reports', async (t) => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  env(t, { GA4_PROPERTY_ID: '123', GA4_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'test@example.test', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) }) });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(console, 'warn', () => {});
+  const reports = [];
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    if (url.includes('oauth2.googleapis.com')) return response({ access_token: 'test' });
+    const body = JSON.parse(opts.body); reports.push(body);
+    if (body.dimensionFilter?.filter?.stringFilter?.value === 'go.think4ever.com') throw new Error('simulated go-host report failure');
+    if ((body.dimensions || []).map((d) => d.name).join(',') === 'date,sessionDefaultChannelGroup') {
+      return response({ rows: [{ dimensionValues: [{ value: '20261020' }, { value: 'Organic Search' }], metricValues: [{ value: '25' }, { value: '10' }] }] });
+    }
+    return response({ rows: [] });
+  });
+  const load = await connectors.ga4();
+  const coverage = load.snapshots.find((r) => r.key === 'executive_landing');
+  assert.equal(coverage.rows[0].available, false);
+  assert.equal(load.metrics.find((r) => r.metric === 'ga_sessions').value, 25);
+  assert.ok(reports.some((body) => body.dimensionFilter?.filter?.inListFilter), 'shared SITE_HOSTS reports should still run');
+});
+
 function auditedDashboard() {
   const A = dashboard();
   A.S.data.metrics = [metric('hubspot', 'sessions', 1425), metric('ga4', 'ga_sessions', 1752), metric('ga4', 'ga_engaged_sessions', 508),
@@ -556,6 +624,99 @@ test('Targets uses the same canonical counts, keeps missing activation pending a
   A.ui.today = () => '2026-10-28';
   const goal = A.targets.goal('cps', '2026-10');
   assert.equal(goal.actual, 100 / 3); assert.equal(goal.projected, goal.actual); assert.equal(goal.status, 'green');
+});
+
+test('Executive PostHog account country rows use event GeoIP on external first identify only', async (t) => {
+  env(t, {
+    POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test',
+    POSTHOG_EXECUTIVE_HOSTS: 'portal.think4ever.com,think4ever.com,www.think4ever.com',
+    POSTHOG_PROJECT_CREATED_ENABLED: '0',
+  });
+  const { connectors } = require('../lib/connectors');
+  const requests = [];
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    const request = JSON.parse(opts.body), sql = request.query.query;
+    requests.push(request);
+    if (sql.includes('properties.$geoip_country_name') && sql.includes('first_host')) {
+      return response({ results: [
+        [date, 'External', 'Colombia', 'portal.think4ever.com', 2],
+        [date, 'External', '', 'portal.think4ever.com', 1],
+        [date, 'Internal', 'Colombia', 'portal.think4ever.com', 4],
+        [date, 'Unknown', 'Canada', 'portal.think4ever.com', 5],
+        [date, 'External', 'Mexico', 'cell-ssm-use1-0006.us.portal.think4ever.com', 3],
+      ] });
+    }
+    if (sql.includes("event = '$identify'")) return response({ results: [[date, 'External', 'Colombia', 21], [date, 'Internal', 'Colombia', 5]] });
+    if (sql.includes("event = 'registration_started'")) return response({ results: [] });
+    if (sql.includes('matchesAction')) return response({ results: [] });
+    return response({ results: [] });
+  });
+
+  const load = await connectors.posthog();
+  const executiveTotal = load.metrics.find((r) => r.metric === 'ph_exec_accounts');
+  const executiveGeo = load.metrics.find((r) => r.metric === 'ph_exec_accounts_geo');
+  const coverage = load.snapshots.find((r) => r.key === 'executive_accounts');
+  const query = requests.find((r) => r.query.query.includes('properties.$geoip_country_name') && r.query.query.includes('first_host'));
+  assert.deepEqual(executiveTotal, { metric: 'ph_exec_accounts', date, dim: 'account_type', dim_value: 'External', value: 3 });
+  assert.deepEqual(executiveGeo, { metric: 'ph_exec_accounts_geo', date, dim: 'country', dim_value: 'Colombia', value: 2 });
+  assert.equal(load.metrics.some((r) => r.metric === 'ph_exec_accounts_geo' && r.dim_value === 'Canada'), false);
+  assert.equal(coverage.rows[0].available, true);
+  assert.equal(coverage.rows[0].country_available, true);
+  assert.equal(coverage.rows[0].external_accounts, 3);
+  assert.equal(coverage.rows[0].country_assigned, 2);
+  assert.equal(coverage.rows[0].country_missing, 1);
+  assert.equal(coverage.rows[0].excluded_host_accounts, 3);
+  assert.deepEqual(coverage.rows[0].allowed_hosts, ['portal.think4ever.com', 'think4ever.com', 'www.think4ever.com']);
+  assert.deepEqual(coverage.rows[0].excluded_hosts, [{ host: 'cell-ssm-use1-0006.us.portal.think4ever.com', external_accounts: 3 }]);
+  assert.match(query.query.query, /event = '\$identify'/);
+  assert.match(query.query.query, /argMin\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name/);
+  assert.equal((query.query.query.match(/tuple\(timestamp, uuid\)/g) || []).length, 3);
+  assert.match(query.query.query, /LIMIT 5001$/);
+  assert.equal(query.query.filters.filterTestAccounts, true);
+});
+
+test('Executive PostHog account query with truncated result pages is pending, not a partial count', async (t) => {
+  env(t, {
+    POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test',
+    POSTHOG_PROJECT_CREATED_ENABLED: '0',
+  });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    const sql = JSON.parse(opts.body).query.query;
+    if (sql.includes('properties.$geoip_country_name') && sql.includes('first_host')) {
+      return response({ results: Array.from({ length: 5001 }, () => [date, 'External', 'Colombia', 'portal.think4ever.com', 1]), hasMore: false });
+    }
+    return response({ results: [] });
+  });
+  const load = await connectors.posthog();
+  const coverage = load.snapshots.find((r) => r.key === 'executive_accounts').rows[0];
+  assert.equal(coverage.available, false);
+  assert.match(coverage.reason, /safety limit/i);
+  assert.equal(load.metrics.some((r) => r.metric === 'ph_exec_accounts'), false);
+  assert.equal(load.metrics.some((r) => r.metric === 'ph_exec_accounts_geo'), false);
+});
+
+test('Executive PostHog account query honors API hasMore even below the row cap', async (t) => {
+  env(t, {
+    POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test',
+    POSTHOG_PROJECT_CREATED_ENABLED: '0',
+  });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    const sql = JSON.parse(opts.body).query.query;
+    if (sql.includes('properties.$geoip_country_name') && sql.includes('first_host')) {
+      return response({ results: [[date, 'External', 'Colombia', 'portal.think4ever.com', 1]], hasMore: true });
+    }
+    return response({ results: [] });
+  });
+  const load = await connectors.posthog();
+  const coverage = load.snapshots.find((r) => r.key === 'executive_accounts').rows[0];
+  assert.equal(coverage.available, false);
+  assert.match(coverage.reason, /safety limit/i);
+  assert.equal(load.metrics.some((r) => r.metric === 'ph_exec_accounts'), false);
 });
 
 test('PostHog sync classifies people consistently and distinguishes failed Action from a successful zero', async (t) => {
