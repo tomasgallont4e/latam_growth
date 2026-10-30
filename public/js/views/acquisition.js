@@ -48,7 +48,7 @@
       : U.kpi({ label, source: 'GA4', awaiting: 'GA4' });
 
     const kpis = U.kpiRow([
-      !g ? missingRangeKpi('GA4 sessions', countDelta('sessions'), 'bucket counts are still shown') : U.kpi({ label: 'GA4 sessions', source: 'GA4', value: U.fmt(g.sessions), delta: countDelta('sessions'), compare: `Selected-range total · ${bucketDeltaLabel}` }),
+      !g ? missingRangeKpi('GA4 sessions', countDelta('sessions'), 'bucket counts are still shown') : U.kpi({ label: 'GA4 sessions', source: 'GA4', value: U.fmt(g.sessions), delta: countDelta('sessions'), spark: D.series(gaSessDay), compare: `Selected-range total · ${bucketDeltaLabel}` }),
       !g ? missingRangeKpi('Unique visitors', countDelta('users'), 'unique-user deltas require exact snapshots for both buckets')
         : g.users == null ? U.kpi({ label: 'Unique visitors', source: 'GA4', value: '–', delta: countDelta('users'), compare: `Deduplicated visitor total unavailable for this range; per-bucket delta needs exact snapshots · ${bucketDeltaLabel}` })
           : U.kpi({ label: 'Unique visitors', source: 'GA4', value: U.fmt(g.users), delta: countDelta('users'), spark: gaUsersDay && D.grain() === 'day' ? U.days(S.from, S.to).map((d) => gaUsersDay[d]) : null, compare: `Deduplicated selected-range total; daily uniques are not summed · per-bucket change requires exact snapshots · ${bucketDeltaLabel}` }),
