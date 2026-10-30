@@ -268,6 +268,45 @@ test('period comparison uses the last two fully covered buckets for each selecte
   assert.equal(A.D.periods('2026-10-01', '2026-10-28')[0].label, 'Oct 1–4');
 });
 
+test('Overview KPI strip shows complete-bucket deltas inline with range totals', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
+  const daily = (source, metricName, value, date, dim = '', dim_value = '') => ({ source, metric: metricName, value, date, dim, dim_value });
+  A.S.data.metrics = [
+    daily('ga4', 'ga_sessions', 100, '2026-10-27', 'channel', 'Organic Search'),
+    daily('ga4', 'ga_sessions', 150, '2026-10-28', 'channel', 'Paid Social'),
+    daily('ga4', 'ga_engaged_sessions', 50, '2026-10-27', 'channel', 'Organic Search'),
+    daily('ga4', 'ga_engaged_sessions', 90, '2026-10-28', 'channel', 'Paid Social'),
+    daily('hubspot', 'sessions', 10, '2026-10-27'), daily('hubspot', 'sessions', 20, '2026-10-28'),
+    daily('posthog', 'ph_new_persons', 10, '2026-10-27', 'account_type', 'External'),
+    daily('posthog', 'ph_new_persons', 20, '2026-10-28', 'account_type', 'External'),
+    daily('posthog', 'ph_signups', 15, '2026-10-27', 'account_type', 'External'),
+    daily('posthog', 'ph_signups', 20, '2026-10-28', 'account_type', 'External'),
+  ];
+  A.S.data.snapshots = [
+    { source: 'posthog', key: 'people_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true }] },
+    { source: 'posthog', key: 'registration_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true }] },
+  ];
+  A.S.data.events = [
+    { kind: 'form_signup', date: '2026-10-27', internal: false },
+    { kind: 'form_signup', date: '2026-10-28', internal: false }, { kind: 'form_signup', date: '2026-10-28', internal: false },
+  ];
+  const html = A.views.overview.render();
+  const comparisonSection = html.indexOf('Last complete Daily period vs previous');
+  const kpis = html.slice(0, comparisonSection);
+  assert.match(kpis, /title="250">250/);
+  const unique = kpis.slice(kpis.indexOf('Unique visitors'), kpis.indexOf('Engagement rate'));
+  assert.match(unique, /No comparison for this period/);
+  assert.match(unique, /per-bucket change requires exact snapshots/);
+  assert.match(kpis, /title="30">30/);
+  assert.match(kpis, /title="35">35/);
+  assert.match(kpis, /\+50\.0%/);
+  assert.match(kpis, /\+10\.0 pp/);
+  assert.match(kpis, /\+100\.0%/);
+  assert.match(kpis, /\+33\.3%/);
+  assert.match(kpis, /Latest complete daily: Oct 28 vs Oct 27/);
+});
+
 test('Overview and Acquisition compare the two latest complete buckets, not a partial current bucket', () => {
   const A = dashboard(); A.ui.today = () => '2026-10-29';
   A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
