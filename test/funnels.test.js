@@ -19,10 +19,14 @@ test('PostHog screenshot paths keep ordered persons and registration_started sep
   assert.equal(mvp.properties, undefined);
 });
 test('Landing to account and project is an ordered five-step funnel and honors internal exclusion', (t) => {
-  env(t, { INTERNAL_DOMAINS: 'think4ever.com', INTERNAL_COMPANIES: 'think4ever,moadbus' });
+  env(t, { INTERNAL_DOMAINS: 'think4ever.com', INTERNAL_COMPANIES: 'think4ever,moadbus', POSTHOG_ACTIVATION_ACTION_ID: '407660' });
   const query = buildQuery('landing_project', from, to, true);
-  assert.deepEqual(query.series.map((s) => s.event), [
-    'marketing_page_viewed', 'marketing_cta_clicked', 'registration_started', 'account_created', 'project_created',
+  assert.deepEqual(query.series, [
+    { kind: 'EventsNode', event: 'marketing_page_viewed' },
+    { kind: 'EventsNode', event: 'marketing_cta_clicked' },
+    { kind: 'EventsNode', event: 'registration_started' },
+    { kind: 'EventsNode', event: '$identify', custom_name: 'Identify' },
+    { kind: 'ActionsNode', id: 407660, custom_name: 'Proyecto creado (clic)' },
   ]);
   assert.equal(query.filterTestAccounts, true);
   assert.deepEqual(query.properties, [
@@ -78,34 +82,34 @@ test('read discovers the pictured saved insight, reuses filters and never hardco
 });
 test('Landing-to-project read uses the saved ordered funnel and applies the internal/test filter', async (t) => {
   const previous = { ...process.env };
-  Object.assign(process.env, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347862', POSTHOG_API_KEY: 'test', INTERNAL_DOMAINS: 'think4ever.com', INTERNAL_COMPANIES: 'think4ever,moadbus' });
-  t.after(() => { for (const k of ['POSTHOG_HOST', 'POSTHOG_PROJECT_ID', 'POSTHOG_API_KEY', 'INTERNAL_DOMAINS', 'INTERNAL_COMPANIES']) { if (previous[k] == null) delete process.env[k]; else process.env[k] = previous[k]; } });
+  Object.assign(process.env, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347862', POSTHOG_API_KEY: 'test', INTERNAL_DOMAINS: 'think4ever.com', INTERNAL_COMPANIES: 'think4ever,moadbus', POSTHOG_ACTIVATION_ACTION_ID: '407660' });
+  t.after(() => { for (const k of ['POSTHOG_HOST', 'POSTHOG_PROJECT_ID', 'POSTHOG_API_KEY', 'INTERNAL_DOMAINS', 'INTERNAL_COMPANIES', 'POSTHOG_ACTIVATION_ACTION_ID']) { if (previous[k] == null) delete process.env[k]; else process.env[k] = previous[k]; } });
   const saved = buildQuery('landing_project', from, to, false);
-  const expected = ['marketing_page_viewed', 'marketing_cta_clicked', 'registration_started', 'account_created', 'project_created'];
+  const expected = ['marketing_page_viewed', 'marketing_cta_clicked', 'registration_started', '$identify', 'action:407660'];
   const request = async (url, opts) => {
-    if (url.includes('insights/?')) return { ok: true, json: async () => ({ results: [{ name: 'Landing → Account & Project', short_id: 'landing-project', query: saved }] }) };
+    if (url.includes('insights/?')) return { ok: true, json: async () => ({ results: [{ name: 'Embudo landing a cuenta y proyecto (sin internos)', short_id: 'landing-account-project', query: saved }] }) };
     const body = JSON.parse(opts.body);
     if (body.query.kind === 'FunnelsQuery') {
-      assert.deepEqual(body.query.series.map((s) => s.event), expected);
+      assert.deepEqual(body.query.series.map((s) => s.kind === 'ActionsNode' ? `action:${s.id}` : s.event), expected);
       assert.equal(body.query.filterTestAccounts, true);
       assert.equal(body.query.properties.length, 3);
-      return { ok: true, json: async () => ({ results: [100, 40, 24, 16, 7].map((count, order) => ({ count, order })) }) };
+      return { ok: true, json: async () => ({ results: [599, 70, 32, 9, 2].map((count, order) => ({ count, order })) }) };
     }
-    return { ok: true, json: async () => ({ results: expected.map((event) => [event]) }) };
+    return { ok: true, json: async () => ({ results: expected.filter((s) => !s.startsWith('action:')).map((event) => [event]) }) };
   };
   const data = await read('landing_project', from, to, true, request);
-  assert.deepEqual(data.steps.map((s) => s.n), [100, 40, 24, 16, 7]);
-  assert.deepEqual(data.steps.map((s) => s.event), expected);
-  assert.equal(data.steps[3].name, 'Account created event');
-  assert.equal(data.steps[4].name, 'Project created');
-  assert.equal(data.saved_insight, 'landing-project');
+  assert.deepEqual(data.steps.map((s) => s.n), [599, 70, 32, 9, 2]);
+  assert.equal(data.steps[3].name, 'Identify');
+  assert.equal(data.steps[4].name, 'Proyecto creado (clic)');
+  assert.equal(data.steps[4].action_id, 407660);
+  assert.equal(data.saved_insight, 'landing-account-project');
 });
 test('missing saved Landing-to-project insight explains the exact event sequence required', async (t) => {
   const previous = { ...process.env };
   Object.assign(process.env, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347863', POSTHOG_API_KEY: 'test' });
   t.after(() => { for (const k of ['POSTHOG_HOST', 'POSTHOG_PROJECT_ID', 'POSTHOG_API_KEY', 'INTERNAL_DOMAINS', 'INTERNAL_COMPANIES']) { if (previous[k] == null) delete process.env[k]; else process.env[k] = previous[k]; } });
   const request = async () => ({ ok: true, json: async () => ({ results: [] }) });
-  await assert.rejects(read('landing_project', from, to, true, request), /saved PostHog funnel.*marketing_page_viewed.*project_created/i);
+  await assert.rejects(read('landing_project', from, to, true, request), /saved PostHog funnel.*\$identify.*Proyecto creado \(clic\)/i);
 });
 test('a PostHog 403 explains the missing read access instead of showing a retry as the fix', async (t) => {
   const previous = { ...process.env };

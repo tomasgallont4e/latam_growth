@@ -1,7 +1,7 @@
 'use strict';
 (function (A) {
   const platforms = { posthog: 'PostHog', ga4: 'Google Analytics 4', hubspot: 'HubSpot', meta: 'Meta Ads', linkedin: 'LinkedIn', google_ads: 'Google Ads' };
-  const paths = { website: 'Website → Registration', mvp: 'MVP acquisition → completed review', landing_project: 'Landing → Account & project' };
+  const paths = { website: 'Website → Registration', mvp: 'MVP acquisition → completed review', landing_project: 'Landing → cuenta y proyecto (sin internos)' };
   const cache = new Map();
   const state = { platform: 'posthog', path: 'website' };
   const key = () => [state.path, A.S.from, A.S.to, A.S.exInt].join('|');
@@ -45,7 +45,7 @@
     const U = A.ui;
     const controls = `<div class="funnel-controls"><label>Platform <select aria-label="Funnel platform" data-funnel-platform>${Object.entries(platforms).map(([id, name]) => `<option value="${id}"${id === state.platform ? ' selected' : ''}>${name}</option>`).join('')}</select></label>${state.platform === 'posthog' ? `<label>Funnel <select aria-label="PostHog funnel" data-funnel-path>${Object.entries(paths).map(([id, name]) => `<option value="${id}"${id === state.path ? ' selected' : ''}>${name}</option>`).join('')}</select></label>` : ''}</div>`;
     const posthogSub = state.path === 'landing_project'
-      ? `Ordered persons · Landing → CTA → registration → account_created event → project_created · distinct from first-identify goal · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`
+      ? `Ordered persons · Landing → CTA → registration → Identify ($identify) → Proyecto creado (clic) · click proxy, not confirmed creation · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`
       : `PostHog: registration_started is the step before account creation (first identify) · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`;
     return U.card({ cls: 'chart-card', title: 'Funnels by platform', sub: state.platform === 'posthog' ? posthogSub : 'Each platform keeps its own activity definitions', body: controls + `<div data-platform-funnel>${body()}</div>` });
   }

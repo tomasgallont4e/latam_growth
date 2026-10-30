@@ -19,13 +19,16 @@ PostHog offers three funnels:
    `marketing_cta_clicked` → `registration_started` → `account_created` →
    `first_use_path_selected` → `blueprint_generated`, plus any further review steps
    present in the saved insight. No unseen review event name is invented.
-3. Landing → Account & Project:
+3. Embudo landing a cuenta y proyecto (sin internos):
    `marketing_page_viewed` → `marketing_cta_clicked` → `registration_started` →
-   `account_created` → `project_created`. The last two are instrumented events;
-   the 500K account metric is still first `identify`, not the `account_created` event.
+   `$identify` (displayed as “Identify”) → PostHog Action `Proyecto creado (clic)`.
+   The final step is the first project-create click proxy, not confirmed creation.
+   The account step is the first identify, matching the dashboard's account definition;
+   the separate backend `account_created` and `project_created` events are not used here.
 
-The server locates the saved insights by their titles and matching event sequences,
-then reuses their query, preserving host, CTA, qa_probe and other saved filters.
+The server finds the saved insight for this funnel by title and matching ordered steps
+(including the `ActionsNode` for “Proyecto creado (clic)”), then reuses its query,
+preserving host, CTA, qa_probe and other saved filters.
 The selected dates and test-account switch are applied; for the landing-to-project
 funnel, the saved insight must contain exactly those five steps. With “Exclude
 internal tests” enabled, the request sets PostHog's `filterTestAccounts` flag and
