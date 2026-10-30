@@ -86,7 +86,7 @@
     const stages = A.platformFunnels.render();
     const readings = A.assistant.render();
     return accountsGoal() + U.section('Launch at a glance', `${S.from} to ${S.to} · counts for the range; charts grouped ${D.grainName().toLowerCase()}`, kpis)
-      + `<section class="section">${mix}</section><section class="section">${channelChart}</section><section class="section grid-2-1">${stages}${readings}</section><section class="section">${chart}</section>`;
+      + `<section class="section">${mix}</section><section class="section">${channelChart}</section><section class="section">${stages}</section><section class="section">${readings}</section><section class="section">${chart}</section>`;
   }
   function mount(el) { A.platformFunnels.mount(el); A.assistant.mount(el); el.addEventListener('change', (e) => { if (e.target.id === 'goal-country') { A.S.goalCountry = e.target.value; A.render(); } }); }
   A.views.overview = { title: 'Overview', render, mount };
