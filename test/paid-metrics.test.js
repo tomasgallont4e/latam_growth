@@ -345,6 +345,30 @@ test('Acquisition row caps keep the highest-volume entries within the newest per
   assert.match(html, /Showing the latest 100 of 102 campaign-period rows/);
 });
 
+test('comparison treats an absent daily session row as zero but withholds a rate delta without a baseline', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
+  A.S.data.metrics = [
+    { ...metric('ga4', 'ga_sessions', 25), date: '2026-10-28' },
+    { ...metric('ga4', 'ga_engaged_sessions', 15), date: '2026-10-28' },
+  ];
+  const html = A.views.acquisition.render();
+  assert.match(html, /Oct 27: 0/);
+  assert.match(html, />new<\/span>/);
+  assert.match(html, /Oct 27: –/);
+  assert.match(html, /No comparison for this period/);
+});
+
+test('partial UTM snapshot coverage is disclosed when grouping dated rows', () => {
+  const A = dashboard(); A.S.from = '2026-10-19'; A.S.to = '2026-10-29'; A.S.grain = 'week';
+  A.S.data.snapshots = [{ source: 'ga4', key: 'utm_attribution', from: '2026-10-20', to: A.S.to, rows: [
+    { date: '2026-10-20', campaign: 'launch', source: 'google', medium: 'cpc', content: 'p01', landing_page: '/home', sessions: 5, engaged_sessions: 3, key_events: 1 },
+  ] }];
+  const html = A.views.acquisition.render();
+  assert.match(html, /Stored snapshot coverage does not span the full selected range, so some buckets may be partial/);
+  assert.match(html, /snapshot Oct 20 – Oct 29/);
+});
+
 test('PostHog funnel is explicitly a selected-range aggregate, not a grain-bucket series', () => {
   const A = dashboard(); A.S.grain = 'week';
   const html = A.platformFunnels.nativeBody({ title: 'Landing to project', from: '2026-10-01', to: '2026-10-29', window_days: 14, steps: [{ name: 'Landing', n: 100 }, { name: 'Identify', n: 10 }] });
