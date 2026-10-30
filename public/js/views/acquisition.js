@@ -32,19 +32,35 @@
     const gaChannels = D.gaChannels();
     const channelTotal = g && g.sessions;
     const topChannel = gaChannels[0];
+    const bucketComparison = D.completeBucketComparison();
+    const bucketNow = bucketComparison ? D.ga(bucketComparison.current.from, bucketComparison.current.to) : null;
+    const bucketPrevious = bucketComparison ? D.ga(bucketComparison.previous.from, bucketComparison.previous.to) : null;
+    const bucketDeltaLabel = bucketComparison ? `Latest complete ${grain.toLowerCase()}: ${bucketComparison.current.label} vs ${bucketComparison.previous.label}` : `No two complete ${grain.toLowerCase()} buckets since launch`;
+    const channelInBucket = (period) => period ? D.gaChannels(period.from, period.to)[0] : null;
+    const currentTop = bucketComparison && channelInBucket(bucketComparison.current);
+    const previousTop = bucketComparison && channelInBucket(bucketComparison.previous);
+    const channelDeltaLabel = bucketComparison ? `Latest complete ${grain}: ${currentTop ? `${U.esc(currentTop.channel)} (${U.fmt(currentTop.sessions)})` : 'no channel data'} · previous ${grain}: ${previousTop ? `${U.esc(previousTop.channel)} (${U.fmt(previousTop.sessions)})` : 'no channel data'}` : bucketDeltaLabel;
+    const hasBucketGA = !!(bucketNow || bucketPrevious);
+    const countDelta = (metric) => bucketComparison ? U.delta(bucketNow && bucketNow[metric], bucketPrevious && bucketPrevious[metric]) : null;
+    const rateDelta = () => bucketComparison ? U.deltaPoints(bucketNow && bucketNow.rate, bucketPrevious && bucketPrevious.rate) : null;
+    const missingRangeKpi = (label, delta, note) => hasBucketGA
+      ? U.kpi({ label, source: 'GA4', value: '–', delta, compare: `No selected-range value · ${note} · ${bucketDeltaLabel}` })
+      : U.kpi({ label, source: 'GA4', awaiting: 'GA4' });
 
     const kpis = U.kpiRow([
-      !g ? U.kpi({ label: 'GA4 sessions', source: 'GA4', awaiting: 'GA4' }) : U.kpi({ label: 'GA4 sessions', source: 'GA4', value: U.fmt(g.sessions), compare: 'Visits grouped into sessions for the selected period' }),
-      !g ? U.kpi({ label: 'Unique visitors', source: 'GA4', awaiting: 'GA4' })
-        : g.users == null ? U.kpi({ label: 'Unique visitors', source: 'GA4', value: '–', compare: 'Deduplicated visitors for this range appear after the next GA4 sync' })
-          : U.kpi({ label: 'Unique visitors', source: 'GA4', value: U.fmt(g.users), spark: gaUsersDay && D.grain() === 'day' ? U.days(S.from, S.to).map((d) => gaUsersDay[d]) : null, compare: 'Deduplicated total for this range; daily uniques are not added across larger buckets' }),
-      !g ? U.kpi({ label: 'New users', source: 'GA4', awaiting: 'GA4' })
-        : g.newUsers == null ? U.kpi({ label: 'New users', source: 'GA4', value: '–', compare: 'New users for this range appear after the next GA4 sync' })
-          : U.kpi({ label: 'New users', source: 'GA4', value: U.fmt(g.newUsers), spark: gaNewDay ? D.series(gaNewDay) : null, compare: `First visits in the selected range; timeline grouped by ${grain.toLowerCase()}` }),
-      !g ? U.kpi({ label: 'Engagement rate', source: 'GA4', awaiting: 'GA4' })
-        : !g.sessions ? U.kpi({ label: 'Engagement rate', source: 'GA4', value: '–', compare: 'No GA4 sessions in this period' })
-          : U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(g.rate), spark: D.seriesRate(gaEngDay, gaSessDay), compare: `${U.fmt(g.engaged)} engaged of ${U.fmt(g.sessions)} sessions in the selected range` }),
-      topChannel ? U.kpi({ label: 'Top channel', source: 'GA4', value: U.esc(topChannel.channel), small: true, compare: `${U.fmt(topChannel.sessions)} sessions · ${U.pct(channelTotal ? topChannel.sessions / channelTotal : null)} of total` }) : U.kpi({ label: 'Top channel', source: 'GA4', awaiting: 'GA4' }),
+      !g ? missingRangeKpi('GA4 sessions', countDelta('sessions'), 'bucket counts are still shown') : U.kpi({ label: 'GA4 sessions', source: 'GA4', value: U.fmt(g.sessions), delta: countDelta('sessions'), compare: `Selected-range total · ${bucketDeltaLabel}` }),
+      !g ? missingRangeKpi('Unique visitors', countDelta('users'), 'unique-user deltas require exact snapshots for both buckets')
+        : g.users == null ? U.kpi({ label: 'Unique visitors', source: 'GA4', value: '–', delta: countDelta('users'), compare: `Deduplicated visitor total unavailable for this range; per-bucket delta needs exact snapshots · ${bucketDeltaLabel}` })
+          : U.kpi({ label: 'Unique visitors', source: 'GA4', value: U.fmt(g.users), delta: countDelta('users'), spark: gaUsersDay && D.grain() === 'day' ? U.days(S.from, S.to).map((d) => gaUsersDay[d]) : null, compare: `Deduplicated selected-range total; daily uniques are not summed · per-bucket change requires exact snapshots · ${bucketDeltaLabel}` }),
+      !g ? missingRangeKpi('New users', countDelta('newUsers'), 'bucket counts are still shown')
+        : g.newUsers == null ? U.kpi({ label: 'New users', source: 'GA4', value: '–', delta: countDelta('newUsers'), compare: `New-user total unavailable for this range · ${bucketDeltaLabel}` })
+          : U.kpi({ label: 'New users', source: 'GA4', value: U.fmt(g.newUsers), delta: countDelta('newUsers'), spark: gaNewDay ? D.series(gaNewDay) : null, compare: `First visits; selected-range total · ${bucketDeltaLabel}` }),
+      !g ? missingRangeKpi('Engagement rate', rateDelta(), 'bucket rates are still shown when both rates exist')
+        : !g.sessions ? U.kpi({ label: 'Engagement rate', source: 'GA4', value: '–', delta: rateDelta(), compare: `No selected-range sessions · ${bucketDeltaLabel}` })
+          : U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(g.rate), delta: rateDelta(), spark: D.seriesRate(gaEngDay, gaSessDay), compare: `${U.fmt(g.engaged)} engaged of ${U.fmt(g.sessions)} range sessions · ${bucketDeltaLabel}` }),
+      topChannel ? U.kpi({ label: 'Top channel', source: 'GA4', value: U.esc(topChannel.channel), small: true, compare: `Selected-range share · ${U.fmt(topChannel.sessions)} sessions · ${U.pct(channelTotal ? topChannel.sessions / channelTotal : null)} of total · ${channelDeltaLabel}` })
+        : (currentTop || previousTop) ? U.kpi({ label: 'Top channel', source: 'GA4', value: '–', small: true, compare: `No top channel in selected range · ${channelDeltaLabel}` })
+          : U.kpi({ label: 'Top channel', source: 'GA4', awaiting: 'GA4' }),
     ]);
     const goals = A.targets.strip(['landing_sessions', 'unique_visitors', 'engagement_rate']);
 
@@ -129,7 +145,7 @@
       ], crow.slice(-300)) + countryUserNote + periodRowsNote(crow.length, 300) : U.empty('No country data yet', 'GA4 country rows and HubSpot contacts by country appear here once loaded.'))}
     </div>`;
 
-    return U.section('Acquisition at a glance', `${U.win(S.from, S.to)} · headline KPIs are selected-range totals; temporal charts and detail tables use ${grain.toLowerCase()} buckets`, kpis)
+    return U.section('Acquisition at a glance', `${U.win(S.from, S.to)} · KPI values are selected-range totals; deltas compare the latest two complete ${grain.toLowerCase()} buckets since launch`, kpis)
       + periodComparison(U, D) + goals
       + `<section class="section grid-2">${perf}${channelEngagement}</section>`
       + `<section class="section">${chart}</section>`
