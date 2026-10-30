@@ -279,8 +279,19 @@
   };
   D.periods = (from = S.from, to = S.to) => D.ticks(from, to).map((key) => {
     const span = U.bucketSpan(key);
-    return { key, label: U.axis(key), from: span.start < from ? from : span.start, to: span.end > to ? to : span.end };
+    return { key, label: U.axisRange(key, from, to), from: span.start < from ? from : span.start, to: span.end > to ? to : span.end };
   });
+  // Compare the last two complete buckets since launch, independent of the selected date range.
+  // Daily facts have no intraday cut, so today's partial bucket is never compared with a full prior day.
+  D.completeBucketComparison = (from = LAUNCH, to = U.today(), grain = D.grain(), today = U.today()) => {
+    if (!from || !to || from > to) return null;
+    const complete = U.ticks(from, to, grain, LAUNCH).map((key) => {
+      const span = U.bucketSpan(key);
+      return { key, from: span.start, to: span.end, label: U.axisRange(key, from, to) };
+    }).filter((period) => period.from >= from && period.to <= to && period.to < today);
+    if (complete.length < 2) return null;
+    return { grain, previous: complete[complete.length - 2], current: complete[complete.length - 1] };
+  };
   D.contactAttribution = (from = S.from, to = S.to) => {
     const out = { paid: 0, other: 0, unknown: 0, tests: 0, total: D.crmTotal(from, to) };
     for (const e of D.forms(from, to)) {

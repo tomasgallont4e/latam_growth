@@ -252,6 +252,113 @@ test('weekly and monthly grouping preserve counts; changing grouping does not re
   assert.equal(A.D.periods()[0].from, '2026-10-10');
 });
 
+test('period comparison uses the last two fully covered buckets for each selected grain', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
+  let compare = A.D.completeBucketComparison();
+  assert.deepEqual([compare.previous.from, compare.previous.to, compare.current.from, compare.current.to], ['2026-10-27', '2026-10-27', '2026-10-28', '2026-10-28']);
+  A.S.grain = 'week'; compare = A.D.completeBucketComparison();
+  assert.deepEqual([compare.previous.from, compare.previous.to, compare.current.from, compare.current.to], ['2026-10-12', '2026-10-18', '2026-10-19', '2026-10-25']);
+  A.S.grain = 'biweek'; assert.equal(A.D.completeBucketComparison(), null);
+  A.S.grain = 'month'; assert.equal(A.D.completeBucketComparison(), null);
+  A.S.from = '2026-10-20'; A.S.to = '2026-10-29'; A.S.grain = 'week'; compare = A.D.completeBucketComparison();
+  assert.deepEqual([compare.previous.from, compare.previous.to, compare.current.from, compare.current.to], ['2026-10-12', '2026-10-18', '2026-10-19', '2026-10-25']);
+  const goalCompare = A.D.completeBucketComparison('2026-10-01', '2026-10-29', 'week', '2026-10-29');
+  assert.deepEqual([goalCompare.previous.label, goalCompare.current.label], ['Oct 12–18', 'Oct 19–25']);
+  assert.equal(A.D.periods('2026-10-01', '2026-10-28')[0].label, 'Oct 1–4');
+});
+
+test('Overview and Acquisition compare the two latest complete buckets, not a partial current bucket', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  const daily = (source, name, value, day, dim = '', dim_value = '') => ({ source, metric: name, value, date: day, dim, dim_value });
+  A.S.data.metrics = [
+    daily('ga4', 'ga_sessions', 100, '2026-10-27'), daily('ga4', 'ga_sessions', 150, '2026-10-28'),
+    daily('ga4', 'ga_engaged_sessions', 50, '2026-10-27'), daily('ga4', 'ga_engaged_sessions', 90, '2026-10-28'),
+    daily('hubspot', 'sessions', 10, '2026-10-27'), daily('hubspot', 'sessions', 20, '2026-10-28'),
+  ];
+  A.S.data.events = [
+    { kind: 'form_signup', date: '2026-10-27', internal: false },
+    { kind: 'form_signup', date: '2026-10-28', internal: false }, { kind: 'form_signup', date: '2026-10-28', internal: false },
+  ];
+  const overview = A.views.overview.render(), acquisition = A.views.acquisition.render();
+  assert.match(overview, /Last complete Daily period vs previous/);
+  assert.match(overview, /Oct 28/); assert.match(overview, /Oct 27/); assert.match(overview, /\+50\.0%/);
+  assert.match(acquisition, /Last complete Daily period vs previous/);
+  assert.match(acquisition, /\+10\.0 pp/);
+});
+
+test('Acquisition channel engagement detail follows the selected period buckets', () => {
+  const A = dashboard();
+  A.S.from = '2026-10-19'; A.S.to = '2026-10-29'; A.S.grain = 'week'; A.ui.today = () => '2026-10-30';
+  const row = (name, value, channel, day) => ({ ...metric('ga4', name, value, channel), date: day, dim: 'channel' });
+  A.S.data.metrics = [
+    row('ga_sessions', 100, 'Paid Social', '2026-10-20'), row('ga_engaged_sessions', 50, 'Paid Social', '2026-10-20'),
+    row('ga_sessions', 40, 'Organic Search', '2026-10-27'), row('ga_engaged_sessions', 30, 'Organic Search', '2026-10-27'),
+  ];
+  const html = A.views.acquisition.render();
+  assert.match(html, /GA4 channel engagement by period/);
+  assert.match(html, /Oct 19–25/);
+  assert.match(html, /Oct 26–29/);
+  assert.match(html, /Paid Social/);
+  assert.match(html, /Organic Search/);
+});
+
+test('Acquisition groups HubSpot, UTM and country detail by period without summing daily unique users', () => {
+  const A = dashboard(); A.S.from = '2026-10-19'; A.S.to = '2026-10-29'; A.S.grain = 'week'; A.ui.today = () => '2026-10-30';
+  const m = (source, metricName, value, date, dim, dim_value) => ({ source, metric: metricName, value, date, dim, dim_value });
+  A.S.data.metrics = [
+    m('hubspot', 'sessions', 12, '2026-10-20', 'source', 'Organic Search'),
+    m('hubspot', 'sessions', 7, '2026-10-27', 'source', 'Organic Search'),
+    m('hubspot', 'bounces', 3, '2026-10-20', 'source', 'Organic Search'),
+    m('ga4', 'ga_geo_sessions', 8, '2026-10-20', 'country', 'Colombia'),
+    m('ga4', 'ga_geo_users', 6, '2026-10-20', 'country', 'Colombia'),
+    m('ga4', 'ga_geo_sessions', 5, '2026-10-27', 'country', 'Colombia'),
+    m('ga4', 'ga_geo_users', 4, '2026-10-27', 'country', 'Colombia'),
+  ];
+  const rows = [
+    { date: '2026-10-20', campaign: 'launch', source: 'google', medium: 'cpc', content: 'p01_video', landing_page: '/home?utm_source=google', sessions: 4, engaged_sessions: 2, key_events: 1 },
+    { date: '2026-10-27', campaign: 'launch', source: 'google', medium: 'cpc', content: 'p01_video', landing_page: '/home', sessions: 3, engaged_sessions: 2, key_events: 0 },
+  ];
+  A.S.data.snapshots = [{ source: 'ga4', key: 'utm_attribution', from: A.S.from, to: A.S.to, rows }];
+  const html = A.views.acquisition.render();
+  assert.match(html, /HubSpot sessions by source and period/);
+  assert.match(html, /UTM campaigns by period \(GA4\)/);
+  assert.match(html, /Entry pages by period \(GA4\)/);
+  assert.match(html, /Countries by period \(GA4\)/);
+  assert.match(html, /Oct 19–25/); assert.match(html, /Oct 26–29/);
+  assert.match(html, /Colombia/); assert.match(html, /p01_video/);
+  assert.match(html, /daily unique-user counts are not summed/);
+});
+
+test('Acquisition row caps keep the highest-volume entries within the newest period', () => {
+  const A = dashboard(); A.S.from = '2026-10-19'; A.S.to = '2026-10-29'; A.S.grain = 'week'; A.ui.today = () => '2026-10-30';
+  const rows = Array.from({ length: 102 }, (_, i) => ({
+    date: '2026-10-27', campaign: `campaign-${String(i).padStart(3, '0')}`, source: 'google', medium: 'cpc', content: 'p01',
+    landing_page: `/page-${String(i).padStart(3, '0')}`, sessions: i + 1, engaged_sessions: i, key_events: 0,
+  }));
+  A.S.data.snapshots = [{ source: 'ga4', key: 'utm_attribution', from: A.S.from, to: A.S.to, rows }];
+  const html = A.views.acquisition.render();
+  assert.match(html, /campaign-101/); assert.doesNotMatch(html, /campaign-000/);
+  assert.match(html, /page-101/); assert.doesNotMatch(html, /page-000/);
+  assert.match(html, /Showing the latest 100 of 102 campaign-period rows/);
+});
+
+test('PostHog funnel is explicitly a selected-range aggregate, not a grain-bucket series', () => {
+  const A = dashboard(); A.S.grain = 'week';
+  const html = A.platformFunnels.nativeBody({ title: 'Landing to project', from: '2026-10-01', to: '2026-10-29', window_days: 14, steps: [{ name: 'Landing', n: 100 }, { name: 'Identify', n: 10 }] });
+  assert.match(html, /whole selected range/);
+  assert.match(html, /Group by does not split this funnel into weekly cohorts/);
+});
+
+test('percentage-point deltas compare zero rates as valid values', () => {
+  const U = dashboard().ui;
+  assert.match(U.deltaPoints(0.5, 0), /\+50\.0 pp/);
+  assert.match(U.deltaPoints(0, 0.5), /−50\.0 pp/);
+  assert.match(U.deltaPoints(null, 0), /No comparison for this period/);
+});
+
 test('plan flags 60% against 0.577% implied, without mutating saved targets', () => {
   const p = { ...require('../lib/targets').DEFAULT_PLAN, impression_to_visit: 0.6 };
   const before = JSON.stringify(p), check = require('../public/js/measurement').planCheck(p);
@@ -574,6 +681,27 @@ test('Clarity refresh stays inside the daily request limit and keeps a failed br
   assert.deepEqual(snaps.map((s) => s.key), ['live_insights', 'by_browser']);
   assert.equal(snaps[1].from, '2026-10-20');
   assert.equal(snaps[1].rows[0].metric, 'ScriptErrorCount');
+});
+
+test('Overview 500K trend follows selected grain without changing its since-launch total', () => {
+  const A = dashboard();
+  A.ui.today = () => '2026-10-29'; A.S.from = '2026-10-19'; A.S.grain = 'week'; A.S.to = '2026-10-28';
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  A.S.data.snapshots = [{ source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: A.S.to, rows: [{ available: true, country_available: true }] }];
+  A.S.data.metrics = [
+    { ...metric('posthog', 'ph_accounts', 1), dim: 'account_type', dim_value: 'External', date: '2026-10-02' },
+    { ...metric('posthog', 'ph_accounts', 3), dim: 'account_type', dim_value: 'External', date: '2026-10-06' },
+    { ...metric('posthog', 'ph_accounts', 2), dim: 'account_type', dim_value: 'External', date: '2026-10-25' },
+    { ...metric('posthog', 'ph_accounts_geo', 2), dim: 'country', dim_value: 'Colombia', date: '2026-10-13' },
+    { ...metric('posthog', 'ph_accounts_geo', 3), dim: 'country', dim_value: 'Colombia', date: '2026-10-20' },
+  ];
+  const html = A.views.overview.render();
+  assert.match(html, /class="acct-hero-actual">6</);
+  assert.match(html, /Latest complete Weekly/);
+  assert.match(html, /Oct 19–25/);
+  assert.match(html, /\+50\.0%/);
+  assert.match(html, /Oct 5–11/);
+  assert.doesNotMatch(html, /<text x="78\.0" y="242" text-anchor="middle">Oct 1<\/text>/);
 });
 
 test('Overview ranks country account growth and lets the CEO select one market', () => {

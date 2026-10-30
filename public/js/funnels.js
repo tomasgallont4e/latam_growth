@@ -8,7 +8,7 @@
   function nativeBody(data) {
     const U = A.ui;
     const base = data.steps[0]?.n;
-    return `<p class="card-note">Ordered persons · ${U.esc(data.window_days)}-day window · ${U.win(data.from, data.to)}</p><div class="native-funnel" role="list" aria-label="${U.esc(data.title)}">${data.steps.map((s, i) => {
+    return `<p class="card-note">Ordered persons · ${U.esc(data.window_days)}-day window · ${U.win(data.from, data.to)} · whole selected range; Group by does not split this funnel into ${A.D.grainName().toLowerCase()} cohorts</p><div class="native-funnel" role="list" aria-label="${U.esc(data.title)}">${data.steps.map((s, i) => {
       const previous = data.steps[i - 1]?.n, missing = s.n == null;
       const pct = base > 0 && !missing ? s.n / base : null;
       const continuation = i > 0 && previous > 0 && !missing ? s.n / previous : null;
@@ -45,9 +45,9 @@
     const U = A.ui;
     const controls = `<div class="funnel-controls"><label>Platform <select aria-label="Funnel platform" data-funnel-platform>${Object.entries(platforms).map(([id, name]) => `<option value="${id}"${id === state.platform ? ' selected' : ''}>${name}</option>`).join('')}</select></label>${state.platform === 'posthog' ? `<label>Funnel <select aria-label="PostHog funnel" data-funnel-path>${Object.entries(paths).map(([id, name]) => `<option value="${id}"${id === state.path ? ' selected' : ''}>${name}</option>`).join('')}</select></label>` : ''}</div>`;
     const posthogSub = state.path === 'landing_project'
-      ? `Ordered persons · Landing → CTA → registration → Identify ($identify) → Proyecto creado (clic) · click proxy, not confirmed creation · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`
-      : `PostHog: registration_started is the step before account creation (first identify) · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`;
-    return U.card({ cls: 'chart-card', title: 'Funnels by platform', sub: state.platform === 'posthog' ? posthogSub : 'Each platform keeps its own activity definitions', body: controls + `<div data-platform-funnel>${body()}</div>` });
+      ? `Ordered persons · ${U.win(A.S.from, A.S.to)} · full selected range, not split into ${A.D.grainName().toLowerCase()} cohorts · Landing → CTA → registration → Identify ($identify) → Proyecto creado (clic) · click proxy, not confirmed creation · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`
+      : `PostHog: ${U.win(A.S.from, A.S.to)} · full selected-range funnel, not split into ${A.D.grainName().toLowerCase()} cohorts · registration_started is the step before account creation (first identify) · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`;
+    return U.card({ cls: 'chart-card', title: 'Funnels by platform', sub: state.platform === 'posthog' ? posthogSub : `Selected-range activity totals · not split into ${A.D.grainName().toLowerCase()} buckets · each platform keeps its own definitions`, body: controls + `<div data-platform-funnel>${body()}</div>` });
   }
   function summary() {
     if (state.platform !== 'posthog') return null;
