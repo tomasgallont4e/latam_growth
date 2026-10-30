@@ -74,7 +74,7 @@ Leadership loads each approved piece here: creative link, copy, language, person
 | Google Ads | `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN`; optional `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (manager account), `GOOGLE_ADS_API_VERSION` (default v21) |
 | Clarity | `CLARITY_TOKEN` |
 | Growth assistant | `ANTHROPIC_API_KEY` (required; service variable only), optional `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`) |
-| Optional | `SYNC_EVERY_HOURS` (default 6), `AUTO_SYNC=0` (manual "Sync now" only), `TEAM_CODE` (asks for a code before using the API), `INGEST_KEY`, `LAUNCH_DATE` (default 2026-10-01), `INTERNAL_DOMAINS` (default think4ever.com) |
+| Optional | `SYNC_EVERY_HOURS` (default 6), `AUTO_SYNC=0` (manual "Sync now" only), `TEAM_CODE` (asks for a code before using the API), `INGEST_KEY`, `LAUNCH_DATE` (default 2026-10-01), `INTERNAL_DOMAINS` (default think4ever.com), `POSTHOG_EXECUTIVE_HOSTS` (optional override; default portal.think4ever.com, think4ever.com, www.think4ever.com; add cell hosts only after Product confirms them) |
 
 The Growth assistant is read-only. On opening Overview or changing the selected data, it sends a bounded aggregate summary of that period to Anthropic to generate findings; follow-up questions send the question plus the same aggregate context. The dashboard summary excludes raw events, contact records, email fields, and other person-level rows. Conversations are not stored by this app. Anthropic usage may incur API charges; each signed-in user is limited to 10 requests per minute. Never put the key in browser code, chat, or a committed file.
 
