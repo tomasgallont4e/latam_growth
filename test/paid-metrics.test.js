@@ -289,6 +289,84 @@ test('Overview and Acquisition compare the two latest complete buckets, not a pa
   assert.match(acquisition, /\+10\.0 pp/);
 });
 
+test('Acquisition KPI strip shows last-complete-period deltas while preserving range totals', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
+  const row = (metricName, value, date, channel) => ({ source: 'ga4', metric: metricName, value, date, dim: channel ? 'channel' : '', dim_value: channel || '' });
+  A.S.data.metrics = [
+    row('ga_sessions', 100, '2026-10-27', 'Organic Search'), row('ga_engaged_sessions', 50, '2026-10-27', 'Organic Search'), row('ga_new_users', 5, '2026-10-27'),
+    row('ga_sessions', 150, '2026-10-28', 'Paid Social'), row('ga_engaged_sessions', 90, '2026-10-28', 'Paid Social'), row('ga_new_users', 8, '2026-10-28'),
+  ];
+  const html = A.views.acquisition.render();
+  const comparisonSection = html.indexOf('Last complete Daily period vs previous');
+  const kpis = html.slice(0, comparisonSection);
+  assert.match(kpis, /title="250">250/);
+  assert.match(kpis, /\+50\.0%/);
+  assert.match(kpis, /\+60\.0%/);
+  assert.match(kpis, /\+10\.0 pp/);
+  assert.match(kpis, /per-bucket delta needs exact snapshots/);
+  assert.match(kpis, /Latest complete Daily: Paid Social/);
+  assert.match(kpis, /previous Daily: Organic Search/);
+});
+
+test('Acquisition KPI deltas remain visible when the selected range has no daily facts', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-10'; A.S.grain = 'day';
+  const row = (metricName, value, date, channel) => ({ source: 'ga4', metric: metricName, value, date, dim: channel ? 'channel' : '', dim_value: channel || '' });
+  A.S.data.metrics = [
+    row('ga_sessions', 100, '2026-10-27', 'Organic Search'), row('ga_engaged_sessions', 50, '2026-10-27', 'Organic Search'), row('ga_new_users', 5, '2026-10-27'),
+    row('ga_sessions', 150, '2026-10-28', 'Paid Social'), row('ga_engaged_sessions', 90, '2026-10-28', 'Paid Social'), row('ga_new_users', 8, '2026-10-28'),
+  ];
+  const html = A.views.acquisition.render();
+  const comparisonSection = html.indexOf('Last complete Daily period vs previous');
+  const kpis = html.slice(0, comparisonSection);
+  assert.match(kpis, /\+50\.0%/);
+  assert.match(kpis, /\+60\.0%/);
+  assert.match(kpis, /\+10\.0 pp/);
+  assert.match(kpis, /Latest complete Daily: Paid Social/);
+  assert.match(kpis, /previous Daily: Organic Search/);
+});
+
+test('Acquisition unique-visitor delta uses exact snapshots for both complete buckets', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
+  const row = (metricName, value, date, channel) => ({ source: 'ga4', metric: metricName, value, date, dim: channel ? 'channel' : '', dim_value: channel || '' });
+  A.S.data.metrics = [
+    row('ga_sessions', 100, '2026-10-27', 'Organic Search'), row('ga_engaged_sessions', 50, '2026-10-27', 'Organic Search'),
+    row('ga_sessions', 150, '2026-10-28', 'Paid Social'), row('ga_engaged_sessions', 90, '2026-10-28', 'Paid Social'),
+  ];
+  A.S.data.snapshots = [
+    { source: 'ga4', key: 'totals', from: A.S.from, to: A.S.to, rows: [{ users: 500, sessions: 250, engaged_sessions: 140, new_users: 13 }] },
+    { source: 'ga4', key: 'totals', from: '2026-10-27', to: '2026-10-27', rows: [{ users: 80, sessions: 100, engaged_sessions: 50, new_users: 5 }] },
+    { source: 'ga4', key: 'totals', from: '2026-10-28', to: '2026-10-28', rows: [{ users: 110, sessions: 150, engaged_sessions: 90, new_users: 8 }] },
+  ];
+  const html = A.views.acquisition.render();
+  const kpis = html.slice(0, html.indexOf('Last complete Daily period vs previous'));
+  const unique = kpis.slice(kpis.indexOf('Unique visitors'), kpis.indexOf('New users'));
+  assert.match(unique, /title="500">500/);
+  assert.match(unique, /\+37\.5%/);
+  assert.match(unique, /Latest complete daily: Oct 28 vs Oct 27/);
+});
+
+test('Acquisition withholds unique-visitor delta when one complete bucket lacks an exact snapshot', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
+  A.S.data.metrics = [
+    { source: 'ga4', metric: 'ga_sessions', value: 100, date: '2026-10-27', dim: 'channel', dim_value: 'Organic Search' },
+    { source: 'ga4', metric: 'ga_sessions', value: 150, date: '2026-10-28', dim: 'channel', dim_value: 'Paid Social' },
+  ];
+  A.S.data.snapshots = [
+    { source: 'ga4', key: 'totals', from: A.S.from, to: A.S.to, rows: [{ users: 500, sessions: 250, engaged_sessions: 0, new_users: 0 }] },
+    { source: 'ga4', key: 'totals', from: '2026-10-28', to: '2026-10-28', rows: [{ users: 110, sessions: 150, engaged_sessions: 0, new_users: 8 }] },
+  ];
+  const html = A.views.acquisition.render();
+  const kpis = html.slice(0, html.indexOf('Last complete Daily period vs previous'));
+  const unique = kpis.slice(kpis.indexOf('Unique visitors'), kpis.indexOf('New users'));
+  assert.match(unique, /title="500">500/);
+  assert.match(unique, /No comparison for this period/);
+  assert.match(unique, /per-bucket change requires exact snapshots/);
+});
+
 test('Acquisition channel engagement detail follows the selected period buckets', () => {
   const A = dashboard();
   A.S.from = '2026-10-19'; A.S.to = '2026-10-29'; A.S.grain = 'week'; A.ui.today = () => '2026-10-30';

@@ -7,7 +7,7 @@ One dashboard for the LATAM launch: landing traffic, sign-ups, platform accounts
 | View | What it shows |
 |---|---|
 | Overview | LATAM 500K goal (accounts created since launch, counted once per person at their first PostHog identify; measurement only, no deadline), accounts by country against each market's share of the plan, range KPIs, complete-period comparisons, funnel, research reading, and GA4/HubSpot time series grouped by the selected granularity |
-| Acquisition | Range-total KPIs plus GA4 channel engagement, HubSpot source, country, UTM and entry-page detail by selected time bucket where daily facts are available |
+| Acquisition | Range-total KPIs with latest complete-period deltas, plus GA4 channel engagement, HubSpot source, country, UTM and entry-page detail by selected time bucket where daily facts are available |
 | Conversion | Landing events (Tag Manager and Google Analytics), sign-up log, platform sign-ups (PostHog), pages, forms |
 | Social and paid | Meta, LinkedIn, Google Ads and Clarity; cost per sign-up once campaigns run |
 | Ad loader | Approved ad pieces, the checklist for each one, and the Google Ads, Meta and LinkedIn API payloads (task 124) |
