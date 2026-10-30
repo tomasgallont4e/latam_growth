@@ -327,6 +327,21 @@ test('Acquisition KPI deltas remain visible when the selected range has no daily
   assert.match(kpis, /previous Daily: Organic Search/);
 });
 
+test('Acquisition GA4 sessions KPI shows a sparkline rolled up to the selected grain', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-30';
+  A.S.from = '2026-10-19'; A.S.to = '2026-10-29'; A.S.grain = 'week';
+  A.S.data.metrics = [
+    { source: 'ga4', metric: 'ga_sessions', value: 100, date: '2026-10-20', dim: 'channel', dim_value: 'Organic Search' },
+    { source: 'ga4', metric: 'ga_sessions', value: 40, date: '2026-10-27', dim: 'channel', dim_value: 'Paid Social' },
+  ];
+  const html = A.views.acquisition.render();
+  const kpis = html.slice(0, html.indexOf('Last complete Weekly period vs previous'));
+  const sessions = kpis.slice(kpis.indexOf('GA4 sessions'), kpis.indexOf('Unique visitors'));
+  assert.match(sessions, /title="140">140/);
+  assert.match(sessions, /class="sparkline"/);
+  assert.match(sessions, /points="2\.0,5\.0 94\.0,27\.0"/);
+});
+
 test('Acquisition unique-visitor delta uses exact snapshots for both complete buckets', () => {
   const A = dashboard(); A.ui.today = () => '2026-10-29';
   A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
