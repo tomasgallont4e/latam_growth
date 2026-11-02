@@ -576,6 +576,24 @@ test('PostHog funnel is explicitly a selected-range aggregate, not a grain-bucke
   assert.match(html, /Group by does not split this funnel into weekly cohorts/);
 });
 
+test('dashboard defaults the PostHog funnel selector and loader to the Marketing-to-Project Activation Funnel', async () => {
+  const A = dashboard(), requests = [];
+  A.api = (path) => { requests.push(path); return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: A.S.from, to: A.S.to, steps: [] }); };
+  const html = A.platformFunnels.render(), overview = A.views.overview.render(), conversion = A.views.conversion.render();
+  assert.match(html, /option value="marketing_project" selected/);
+  assert.match(overview, /option value="marketing_project" selected/);
+  assert.match(conversion, /option value="marketing_project" selected/);
+  assert.match(html, /Marketing-to-Project Activation Funnel/);
+  await A.platformFunnels.ensureSummary();
+  assert.match(requests[0], /funnel=marketing_project/);
+  assert.equal(A.platformFunnels.summary().path, 'marketing_project');
+  const handlers = {}, box = { isConnected: true, innerHTML: '' };
+  A.platformFunnels.mount({ addEventListener: (name, handler) => { handlers[name] = handler; }, querySelector: () => box });
+  handlers.change({ target: { value: 'ga4', hasAttribute: (name) => name === 'data-funnel-platform' } });
+  await A.platformFunnels.ensureSummary();
+  assert.equal(requests.length, 1, 'non-PostHog platforms must not request the PostHog funnel');
+});
+
 test('percentage-point deltas compare zero rates as valid values', () => {
   const U = dashboard().ui;
   assert.match(U.deltaPoints(0.5, 0), /\+50\.0 pp/);

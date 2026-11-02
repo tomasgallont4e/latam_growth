@@ -111,6 +111,144 @@ test('missing saved Landing-to-project insight explains the exact event sequence
   const request = async () => ({ ok: true, json: async () => ({ results: [] }) });
   await assert.rejects(read('landing_project', from, to, true, request), /saved PostHog funnel.*\$identify.*Proyecto creado \(clic\)/i);
 });
+test('Marketing-to-Project funnel reuses the saved six-step PostHog insight and its action IDs', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347864', POSTHOG_API_KEY: 'test', INTERNAL_DOMAINS: 'think4ever.com', INTERNAL_COMPANIES: 'think4ever,moadbus' });
+  const saved = {
+    kind: 'FunnelsQuery',
+    series: [
+      { kind: 'EventsNode', event: 'marketing_page_viewed' },
+      { kind: 'EventsNode', event: 'marketing_cta_clicked', properties: [{ key: 'cta_type', type: 'event', operator: 'exact', value: ['registration'] }] },
+      { kind: 'EventsNode', event: 'registration_started' },
+      { kind: 'ActionsNode', id: 8101, custom_name: 'Registration Finished' },
+      { kind: 'ActionsNode', id: 8102, custom_name: 'Login' },
+      { kind: 'ActionsNode', id: 8103, custom_name: 'Project View/Project Created' },
+    ],
+    funnelsFilter: { funnelOrderType: 'ordered', funnelWindowInterval: 9, funnelWindowIntervalUnit: 'day' },
+    properties: [{ key: 'qa_probe', type: 'event', operator: 'is_not', value: ['true'] }],
+  };
+  const calls = [];
+  const request = async (url, opts) => {
+    calls.push({ url, body: opts && opts.body ? JSON.parse(opts.body) : null });
+    if (url.includes('insights/?')) return { ok: true, json: async () => ({ results: [{ name: 'Marketing-to-Project Activation Funnel', short_id: 'marketing-project-1', query: { kind: 'InsightVizNode', source: saved } }] }) };
+    const query = calls.at(-1).body.query;
+    if (query.kind === 'FunnelsQuery') return { ok: true, json: async () => ({ results: [100, 48, 20, 8, 5, 2].map((count, order) => ({ count, order })) }) };
+    return { ok: true, json: async () => ({ results: [['marketing_page_viewed'], ['marketing_cta_clicked'], ['registration_started']] }) };
+  };
+  const data = await read('marketing_project', from, to, true, request);
+  const funnelRequest = calls.find((call) => call.body && call.body.query.kind === 'FunnelsQuery').body.query;
+  assert.equal(data.title, 'Marketing-to-Project Activation Funnel');
+  assert.equal(data.saved_insight, 'marketing-project-1');
+  assert.equal(data.window_days, 9);
+  assert.deepEqual(data.steps.map((step) => step.name), ['marketing_page_viewed', 'marketing_cta_clicked', 'registration_started', 'Registration Finished', 'Login', 'Project View/Project Created']);
+  assert.deepEqual(data.steps.map((step) => step.n), [100, 48, 20, 8, 5, 2]);
+  assert.deepEqual(funnelRequest.series, saved.series);
+  assert.equal(funnelRequest.filterTestAccounts, true);
+  assert.deepEqual(funnelRequest.properties[0], saved.properties[0]);
+  assert.equal(funnelRequest.properties.length, 4);
+  assert.equal(funnelRequest.funnelsFilter.funnelOrderType, 'ordered');
+  assert.equal(funnelRequest.funnelsFilter.funnelWindowInterval, 9);
+});
+
+test('Marketing-to-Project selector key requires a saved funnel, not a fabricated action sequence', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347865', POSTHOG_API_KEY: 'test' });
+  const request = async () => ({ ok: true, json: async () => ({ results: [] }) });
+  await assert.rejects(read('marketing_project', from, to, true, request), /Saved PostHog funnel.*Marketing-to-Project Activation Funnel.*Expected exactly/i);
+});
+
+test('Marketing-to-Project finder tolerates saved downstream event or action nodes without guessing IDs', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347866', POSTHOG_API_KEY: 'test' });
+  const saved = {
+    kind: 'FunnelsQuery',
+    series: [
+      { kind: 'EventsNode', event: 'marketing_page_viewed' },
+      { kind: 'EventsNode', event: 'marketing_cta_clicked' },
+      { kind: 'EventsNode', event: 'registration_started' },
+      { kind: 'EventsNode', event: 'registration_finished', custom_name: 'REGISTGRATION FINISHED IDENTIFY' },
+      { kind: 'ActionsNode', id: 8202, custom_name: 'Login' },
+      { kind: 'ActionsNode', id: 8203, custom_name: 'Project View/Project Created' },
+    ],
+    funnelsFilter: { funnelOrderType: 'ordered', funnelWindowInterval: 12, funnelWindowIntervalUnit: 'day' },
+    properties: [],
+  };
+  const request = async (url, opts) => {
+    if (url.includes('insights/?')) return { ok: true, json: async () => ({ results: [{ name: 'Marketing-to-Project Activation Funnel', short_id: 'marketing-project-mixed', query: saved }] }) };
+    const query = JSON.parse(opts.body).query;
+    if (query.kind === 'FunnelsQuery') return { ok: true, json: async () => ({ results: saved.series.map((_, order) => ({ order, count: 10 - order })) }) };
+    return { ok: true, json: async () => ({ results: [['marketing_page_viewed'], ['marketing_cta_clicked'], ['registration_started'], ['registration_finished']] }) };
+  };
+  const data = await read('marketing_project', from, to, false, request);
+  assert.equal(data.saved_insight, 'marketing-project-mixed');
+  assert.deepEqual(data.steps.map((step) => step.name), ['marketing_page_viewed', 'marketing_cta_clicked', 'registration_started', 'Registration Finished', 'Login', 'Project View/Project Created']);
+  assert.deepEqual(data.steps.map((step) => step.n), [10, 9, 8, 7, 6, 5]);
+});
+
+test('Marketing-to-Project reuses downstream Action IDs when PostHog omits their display names', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347869', POSTHOG_API_KEY: 'test' });
+  const saved = {
+    kind: 'FunnelsQuery',
+    series: [
+      { kind: 'EventsNode', event: 'marketing_page_viewed' },
+      { kind: 'EventsNode', event: 'marketing_cta_clicked' },
+      { kind: 'EventsNode', event: 'registration_started' },
+      { kind: 'ActionsNode', id: 8501 },
+      { kind: 'ActionsNode', id: 8502 },
+      { kind: 'ActionsNode', id: 8503 },
+    ],
+    funnelsFilter: { funnelWindowInterval: 6, funnelWindowIntervalUnit: 'day' },
+    properties: [],
+  };
+  const calls = [];
+  const request = async (url, opts) => {
+    calls.push({ url, body: opts && opts.body ? JSON.parse(opts.body) : null });
+    if (url.includes('insights/?')) return { ok: true, json: async () => ({ results: [{ name: 'Marketing-to-Project Activation Funnel', short_id: 'marketing-project-ids-only', query: saved }] }) };
+    const query = calls.at(-1).body.query;
+    if (query.kind === 'FunnelsQuery') return { ok: true, json: async () => ({ results: saved.series.map((_, order) => ({ order, count: 7 - order })) }) };
+    return { ok: true, json: async () => ({ results: [['marketing_page_viewed'], ['marketing_cta_clicked'], ['registration_started']] }) };
+  };
+  const data = await read('marketing_project', from, to, false, request);
+  const query = calls.find((call) => call.body && call.body.query.kind === 'FunnelsQuery').body.query;
+  assert.deepEqual(query.series, saved.series);
+  assert.deepEqual(data.steps.map((step) => step.name), ['marketing_page_viewed', 'marketing_cta_clicked', 'registration_started', 'Registration Finished', 'Login', 'Project View/Project Created']);
+  assert.equal(data.window_days, 6);
+});
+
+test('Marketing-to-Project lookup does not fall back to a different saved funnel title', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347867', POSTHOG_API_KEY: 'test' });
+  const saved = {
+    kind: 'FunnelsQuery',
+    series: [
+      { kind: 'EventsNode', event: 'marketing_page_viewed' },
+      { kind: 'EventsNode', event: 'marketing_cta_clicked' },
+      { kind: 'EventsNode', event: 'registration_started' },
+      { kind: 'ActionsNode', id: 8301, custom_name: 'Registration Finished' },
+      { kind: 'ActionsNode', id: 8302, custom_name: 'Login' },
+      { kind: 'ActionsNode', id: 8303, custom_name: 'Project View/Project Created' },
+    ],
+  };
+  const request = async (url) => ({ ok: true, json: async () => ({ results: [
+    { name: 'Unrelated saved funnel', short_id: 'other', query: saved },
+    { name: 'marketing-to-project activation funnel', short_id: 'case-mismatch', query: saved },
+  ] }) });
+  await assert.rejects(read('marketing_project', from, to, true, request), /Marketing-to-Project Activation Funnel.*not found/i);
+});
+
+test('Marketing-to-Project requires the exact visible downstream step sequence', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347868', POSTHOG_API_KEY: 'test' });
+  const saved = {
+    kind: 'FunnelsQuery',
+    series: [
+      { kind: 'EventsNode', event: 'marketing_page_viewed' },
+      { kind: 'EventsNode', event: 'marketing_cta_clicked' },
+      { kind: 'EventsNode', event: 'registration_started' },
+      { kind: 'ActionsNode', id: 8401, custom_name: 'Registration Finished' },
+      { kind: 'ActionsNode', id: 8402, custom_name: 'Sign in' },
+      { kind: 'ActionsNode', id: 8403, custom_name: 'Project View/Project Created' },
+    ],
+  };
+  const request = async () => ({ ok: true, json: async () => ({ results: [{ name: 'Marketing-to-Project Activation Funnel', short_id: 'wrong-sequence', query: saved }] }) });
+  await assert.rejects(read('marketing_project', from, to, true, request), /Marketing-to-Project Activation Funnel.*not found/i);
+});
+
 test('a PostHog 403 explains the missing read access instead of showing a retry as the fix', async (t) => {
   const previous = { ...process.env };
   Object.assign(process.env, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347861', POSTHOG_API_KEY: 'test' });

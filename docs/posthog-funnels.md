@@ -11,7 +11,7 @@
 
 Overview and Conversion have a platform selector. GA4, HubSpot and ad platforms show
 their own activity counters without pretending these are linked person journeys.
-PostHog offers three funnels:
+PostHog offers four ordered funnels:
 
 1. Website → Registration — signup CTAs only:
    `marketing_page_viewed` → `marketing_cta_clicked` → `registration_started`.
@@ -25,10 +25,24 @@ PostHog offers three funnels:
    The final step is the first project-create click proxy, not confirmed creation.
    The account step is the first identify, matching the dashboard's account definition;
    the separate backend `account_created` and `project_created` events are not used here.
+4. Marketing-to-Project Activation Funnel (new default in the dashboard):
+   `marketing_page_viewed` → `marketing_cta_clicked` → `registration_started` →
+   the three downstream saved PostHog steps shown as “Registration Finished”, “Login”,
+   and “Project View/Project Created”. The dashboard discovers the saved insight by its
+   exact title and six ordered steps: the first three event names, then “Registration Finished”
+   (the table also shows the literal label “REGISTGRATION FINISHED IDENTIFY”), “Login”, and
+   “Project View/Project Created”. When PostHog includes downstream labels, the dashboard
+   matches those labels; if an ActionsNode is returned only as `{kind, id}`, it trusts that
+   step's position in the exactly titled saved insight and preserves the ID. The label is
+   not independently verifiable from that response shape. The saved conversion window,
+   node definitions and filters are reused; no duplicate insight or IDs are invented.
 
-The server finds the saved insight for this funnel by title and matching ordered steps
-(including the `ActionsNode` for “Proyecto creado (clic)”), then reuses its query,
-preserving host, CTA, qa_probe and other saved filters.
+The server finds saved insights by exact title and ordered-step signature, then reuses the
+saved query, preserving host, CTA, qa_probe and other saved filters. For Marketing-to-Project,
+the first three event names and the three visible downstream labels identify the funnel;
+when the API supplies only an unlabeled ActionsNode ID, it cannot verify the label and
+trusts the exact-title insight and its step position. In both cases, the saved node
+representations and definitions are preserved exactly.
 The selected dates and test-account switch are applied; for the landing-to-project
 funnel, the saved insight must contain exactly those five steps. With “Exclude
 internal tests” enabled, the request sets PostHog's `filterTestAccounts` flag and
@@ -50,7 +64,6 @@ events in the selected period show Awaiting events. Steps with observed instrume
 and zero ordered conversions can display zero. Missing downstream instrumentation never
 produces a claimed 100% abandonment.
 
-API: `GET /api/funnels/posthog?funnel=website|mvp|landing_project&from=YYYY-MM-DD&to=YYYY-MM-DD&exclude=1|0`.
-Requests use a bounded five-minute cache with concurrent requests coalesced.
+API: `GET /api/funnels/posthog?funnel=website|mvp|landing_project|marketing_project&from=YYYY-MM-DD&to=YYYY-MM-DD&exclude=1|0`. Dashboard default: `marketing_project`. Requests use a bounded five-minute cache with concurrent requests coalesced.
 
 Reference: https://posthog.com/docs/api/queries (FunnelsQuery / funnel response).

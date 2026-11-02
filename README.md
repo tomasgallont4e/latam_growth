@@ -15,7 +15,8 @@ One dashboard for the LATAM launch: landing traffic, sign-ups, platform accounts
 
 ## Date range and temporal grouping
 
-The date range filters the data. The Daily/Weekly/Bi-weekly/Monthly/Quarterly/Yearly selector groups charts and tables backed by daily facts. Headline KPIs and explicitly lifetime totals remain totals for their stated window; GA4 unique-user snapshots are never summed across days. UTM campaign and entry-page detail is grouped from its dated snapshot rows when available, but the snapshot must cover the requested range and its 1,000-row cap can omit detail. The PostHog funnel remains an ordered-person funnel for the entire selected date range with its 14-day conversion window; the grouping selector does not turn it into per-period cohorts.
+The date range filters the data. The Daily/Weekly/Bi-weekly/Monthly/Quarterly/Yearly selector groups charts and tables backed by daily facts. Headline KPIs and explicitly lifetime totals remain totals for their stated window; GA4 unique-user snapshots are never summed across days. UTM campaign and entry-page detail is grouped from its dated snapshot rows when available, but the snapshot must cover the requested range and its 1,000-row cap can omit detail. The selected PostHog funnel remains an ordered-person funnel for the entire selected date range; Marketing-to-Project reuses the conversion window and downstream steps from its saved insight. The grouping selector does not turn it into per-period cohorts.
+
 
 Period comparisons use the two most recent complete buckets since launch, independent of the currently selected date range. They exclude the in-progress day/week/etc.; when there are not two complete buckets or metric coverage is missing, the dashboard shows no comparison rather than estimating one. The 500K account total stays cumulative since launch, while its progress trend and country change breakdown follow the selected granularity.
 
