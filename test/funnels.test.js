@@ -111,6 +111,63 @@ test('missing saved Landing-to-project insight explains the exact event sequence
   const request = async () => ({ ok: true, json: async () => ({ results: [] }) });
   await assert.rejects(read('landing_project', from, to, true, request), /saved PostHog funnel.*\$identify.*Proyecto creado \(clic\)/i);
 });
+test('Marketing-to-Project lookup follows insight pagination and recognizes PostHog derived_name', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347870', POSTHOG_API_KEY: 'test' });
+  const saved = {
+    kind: 'FunnelsQuery',
+    series: [
+      { kind: 'EventsNode', event: 'marketing_page_viewed' },
+      { kind: 'EventsNode', event: 'marketing_cta_clicked' },
+      { kind: 'EventsNode', event: 'registration_started' },
+      { kind: 'ActionsNode', id: 8701, custom_name: 'Registration Finished' },
+      { kind: 'ActionsNode', id: 8702, custom_name: 'Login' },
+      { kind: 'ActionsNode', id: 8703, custom_name: 'Project View/Project Created' },
+    ],
+    funnelsFilter: { funnelOrderType: 'ordered', funnelWindowInterval: 14, funnelWindowIntervalUnit: 'day' },
+    properties: [],
+  };
+  const calls = [];
+  const request = async (url, opts) => {
+    calls.push(url);
+    if (url.includes('insights/?')) {
+      if (url.includes('offset=100')) return { ok: true, json: async () => ({ results: [{ name: null, derived_name: 'Marketing-to-Project Activation Funnel', short_id: 'marketing-project-derived', query: { kind: 'InsightVizNode', source: saved } }] }) };
+      return { ok: true, json: async () => ({ results: [], next: 'https://example.test/api/projects/347870/insights/?search=Marketing-to-Project+Activation+Funnel&limit=100&offset=100' }) };
+    }
+    const body = JSON.parse(opts.body);
+    if (body.query.kind === 'FunnelsQuery') return { ok: true, json: async () => ({ results: saved.series.map((_, order) => ({ order, count: 6 - order })) }) };
+    return { ok: true, json: async () => ({ results: [['marketing_page_viewed'], ['marketing_cta_clicked'], ['registration_started']] }) };
+  };
+  const data = await read('marketing_project', from, to, false, request);
+  assert.equal(data.title, 'Marketing-to-Project Activation Funnel');
+  assert.equal(data.saved_insight, 'marketing-project-derived');
+  assert.deepEqual(data.steps.map((step) => step.n), [6, 5, 4, 3, 2, 1]);
+  assert.equal(calls.filter((url) => url.includes('insights/?')).length, 2);
+});
+
+test('Marketing-to-Project lookup requires a complete page scan and no longer rejects mislabeled titles', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347871', POSTHOG_API_KEY: 'test' });
+  const saved = {
+    kind: 'FunnelsQuery',
+    series: [
+      { kind: 'EventsNode', event: 'marketing_page_viewed' },
+      { kind: 'EventsNode', event: 'marketing_cta_clicked' },
+      { kind: 'EventsNode', event: 'registration_started' },
+      { kind: 'ActionsNode', id: 8801, custom_name: 'Registration Finished' },
+      { kind: 'ActionsNode', id: 8802, custom_name: 'Login' },
+      { kind: 'ActionsNode', id: 8803, custom_name: 'Project View/Project Created' },
+    ],
+  };
+  const request = async (url, opts) => {
+    if (url.includes('insights/?')) return { ok: true, json: async () => ({ results: [{ name: 'marketing-to-project activation funnel', derived_name: 'Marketing-to-Project Activation Funnel', short_id: 'marketing-project-derived-name', query: saved }] }) };
+    const body = JSON.parse(opts.body);
+    if (body.query.kind === 'FunnelsQuery') return { ok: true, json: async () => ({ results: saved.series.map((_, order) => ({ order, count: 3 - order })) }) };
+    return { ok: true, json: async () => ({ results: [['marketing_page_viewed'], ['marketing_cta_clicked'], ['registration_started']] }) };
+  };
+  const data = await read('marketing_project', from, to, false, request);
+  assert.equal(data.title, 'Marketing-to-Project Activation Funnel');
+  assert.equal(data.saved_insight, 'marketing-project-derived-name');
+});
+
 test('Marketing-to-Project funnel reuses the saved six-step PostHog insight and its action IDs', async (t) => {
   env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347864', POSTHOG_API_KEY: 'test', INTERNAL_DOMAINS: 'think4ever.com', INTERNAL_COMPANIES: 'think4ever,moadbus' });
   const saved = {
@@ -247,6 +304,24 @@ test('Marketing-to-Project requires the exact visible downstream step sequence',
   };
   const request = async () => ({ ok: true, json: async () => ({ results: [{ name: 'Marketing-to-Project Activation Funnel', short_id: 'wrong-sequence', query: saved }] }) });
   await assert.rejects(read('marketing_project', from, to, true, request), /Marketing-to-Project Activation Funnel.*not found/i);
+});
+
+test('PostHog insights pagination rejects a next link outside the configured host/project', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347872', POSTHOG_API_KEY: 'test' });
+  const request = async () => ({ ok: true, json: async () => ({ results: [], next: 'https://attacker.test/api/projects/999/insights/?offset=100' }) });
+  await assert.rejects(read('marketing_project', from, to, true, request), /Invalid PostHog insights pagination link/);
+});
+
+test('PostHog insights pagination has a bounded page count even for empty pages', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347873', POSTHOG_API_KEY: 'test' });
+  const calls = [];
+  const request = async (url) => {
+    calls.push(url);
+    const offset = Number(new URL(url).searchParams.get('offset') || 0);
+    return { ok: true, json: async () => ({ results: [], next: `https://example.test/api/projects/347873/insights/?limit=100&offset=${offset + 100}` }) };
+  };
+  await assert.rejects(read('marketing_project', from, to, true, request), /exceeded the 100-page safety limit/i);
+  assert.equal(calls.length, 100);
 });
 
 test('a PostHog 403 explains the missing read access instead of showing a retry as the fix', async (t) => {
