@@ -212,7 +212,31 @@ test('GA4 go-host report success with no rows is a measured zero with explicit c
   const coverage = load.snapshots.find((r) => r.key === 'executive_landing');
   assert.equal(coverage.rows[0].available, true);
   assert.equal(coverage.rows[0].country_available, false);
+  assert.equal(coverage.rows[0].form_start_available, true);
   assert.equal(load.metrics.some((r) => r.metric === 'ga_exec_geo_sessions'), false);
+});
+
+test('GA4 go-host form starts are a separate series and do not replace shared events', async (t) => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  env(t, { GA4_PROPERTY_ID: '123', GA4_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'test@example.test', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) }) });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    if (url.includes('oauth2.googleapis.com')) return response({ access_token: 'test' });
+    const body = JSON.parse(opts.body);
+    const names = (body.dimensions || []).map((d) => d.name).join(',');
+    const grouped = body.dimensionFilter && body.dimensionFilter.andGroup;
+    if (names === 'date' && grouped) {
+      return response({ rows: [{ dimensionValues: [{ value: '20261020' }], metricValues: [{ value: '7' }] }] });
+    }
+    if (names === 'date,eventName') {
+      return response({ rows: [{ dimensionValues: [{ value: '20261020' }, { value: 'form_start' }], metricValues: [{ value: '80' }, { value: '80' }] }] });
+    }
+    return response({ rows: [] });
+  });
+  const load = await connectors.ga4();
+  assert.deepEqual(load.metrics.find((row) => row.metric === 'ga_exec_form_starts'), { metric: 'ga_exec_form_starts', date: '2026-10-20', value: 7 });
+  assert.equal(load.metrics.find((row) => row.metric === 'ga_event' && row.dim_value === 'form_start').value, 80);
+  assert.equal(load.snapshots.find((row) => row.key === 'executive_landing').rows[0].form_start_available, true);
 });
 
 test('GA4 go-host report failure leaves Executive pending without breaking shared reports', async (t) => {

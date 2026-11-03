@@ -264,4 +264,55 @@
     });
     return `<div class="funnel" role="list" aria-label="${U.esc(label)}">${h}</div>`;
   };
+
+  // Executive month chart: daily bars, cumulative line, dotted minimum, optional projection.
+  // Zoom drops the goal from the axis so a small actual can be read against a large target.
+  C.executiveSignups = ({ points, goal, zoom, label }) => {
+    if (!points.length) return U.empty('No days in this month');
+    const nums = [];
+    points.forEach((point) => ['signups', 'cumulative', 'projected'].forEach((key) => { if (point[key] != null) nums.push(Number(point[key])); }));
+    if (!zoom && goal != null) {
+      nums.push(Number(goal));
+      points.forEach((point) => { if (point.minimum != null) nums.push(Number(point.minimum)); });
+    }
+    const max = niceMax(Math.max(1, ...nums, 0));
+    const W = 1000, H = 292, L = 54, R = 16, T = 18, B = 256;
+    const y = (v) => B - (Math.max(0, v) / max) * (B - T);
+    const step = (W - L - R) / points.length;
+    const bw = Math.max(2, step * 0.62);
+    let g = '';
+    for (let k = 0; k <= 4; k++) {
+      const v = (max * k) / 4, yy = y(v).toFixed(1);
+      g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text x="${L - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${U.esc(U.fmt(v))}</text>`;
+    }
+    if (!zoom && goal != null && goal <= max) {
+      const yy = y(goal).toFixed(1);
+      g += `<line class="grid gp-goal" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text class="gp-goal-label" x="${W - R}" y="${(Number(yy) - 6).toFixed(1)}" text-anchor="end">Goal ${U.esc(U.fmt(goal))}</text>`;
+    }
+    const line = [];
+    const guide = [];
+    const projected = [];
+    points.forEach((point, j) => {
+      const cx = L + j * step + step / 2;
+      const tip = [U.dshort(point.date)];
+      if (point.signups != null) tip.push(`${U.fmt(point.signups)} sign-ups`);
+      if (point.cumulative != null) tip.push(`${U.fmt(point.cumulative)} cumulative`);
+      if (point.minimum != null) tip.push(`${U.fmt(Math.round(point.minimum))} minimum to date`);
+      g += `<rect class="day-hit" x="${(L + j * step).toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"><title>${U.esc(tip.join(' · '))}</title></rect>`;
+      if (point.signups > 0) {
+        const yy = y(point.signups);
+        g += `<rect class="goal-col" x="${(cx - bw / 2).toFixed(2)}" y="${yy.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.6, B - yy).toFixed(2)}"></rect>`;
+      }
+      if (point.cumulative != null) line.push(`${cx.toFixed(1)},${y(point.cumulative).toFixed(1)}`);
+      if (!zoom && point.minimum != null) guide.push(`${cx.toFixed(1)},${y(point.minimum).toFixed(1)}`);
+      if (point.projected != null) projected.push(`${cx.toFixed(1)},${y(point.projected).toFixed(1)}`);
+    });
+    if (guide.length) g += `<polyline class="goal-line exec-guide" points="${guide.join(' ')}"/>`;
+    if (projected.length) g += `<polyline class="goal-line exec-proj" points="${projected.join(' ')}"/>`;
+    if (line.length) g += `<polyline class="goal-line" points="${line.join(' ')}"/>`;
+    const every = Math.max(1, Math.ceil(points.length / 8));
+    points.forEach((point, j) => { if (j % every === 0) g += `<text x="${(L + j * step + step / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${U.esc(U.dshort(point.date))}</text>`; });
+    const legend = `<div class="goal-legend"><span class="swatch-bar">Daily sign-ups</span><span class="swatch-line">Cumulative</span>${goal != null && !zoom ? '<span class="swatch-guide">Minimum to date</span>' : ''}${projected.length ? '<span class="swatch-proj">Projection</span>' : ''}</div>`;
+    return `<div class="chart-scroll"><svg class="chart-svg goal-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(label)}">${g}</svg></div>${legend}`;
+  };
 })(window.App);

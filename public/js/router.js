@@ -26,6 +26,7 @@
 
   A.render = () => {
     const S = A.S, view = A.views[S.tab] || A.views.overview;
+    document.body.dataset.page = S.tab;
     document.querySelectorAll('#sidebar [data-page]').forEach((b) => b.classList.toggle('active', b.dataset.page === S.tab));
     document.getElementById('page-title').textContent = view.title;
     document.title = `${view.title} · LATAM Growth`;
