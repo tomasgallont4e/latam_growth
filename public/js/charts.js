@@ -267,7 +267,7 @@
 
   // Executive month chart: daily bars, cumulative line, dotted minimum, optional projection.
   // Zoom drops the goal from the axis so a small actual can be read against a large target.
-  C.executiveSignups = ({ points, goal, zoom, label }) => {
+  C.executiveSignups = ({ points, goal, goalLabel, zoom, label }) => {
     if (!points.length) return U.empty('No days in this month');
     const nums = [];
     points.forEach((point) => ['signups', 'cumulative', 'projected'].forEach((key) => { if (point[key] != null) nums.push(Number(point[key])); }));
@@ -287,7 +287,7 @@
     }
     if (!zoom && goal != null && goal <= max) {
       const yy = y(goal).toFixed(1);
-      g += `<line class="grid gp-goal" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text class="gp-goal-label" x="${W - R}" y="${(Number(yy) - 6).toFixed(1)}" text-anchor="end">Goal ${U.esc(U.fmt(goal))}</text>`;
+      g += `<line class="grid gp-goal" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text class="gp-goal-label" x="${W - R}" y="${(Number(yy) - 6).toFixed(1)}" text-anchor="end">${U.esc(goalLabel || `Goal ${U.fmt(goal)}`)}</text>`;
     }
     const line = [];
     const guide = [];

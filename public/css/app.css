@@ -550,7 +550,16 @@ body[data-page="executive"] .check-chip { display: none; }
   .view-executive .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
-  .view-executive .kpi-row { grid-template-columns: 1fr; }
+  .view-executive .kpi-row {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: min(78vw, 320px);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 6px;
+  }
+  .view-executive .kpi-tile { scroll-snap-align: start; }
 }
 .chart-svg .gp-goal { stroke: var(--color-text-muted); stroke-dasharray: 4 4; }
 .chart-svg .gp-goal-label { fill: var(--color-text-muted); font: 600 10px var(--font-body); letter-spacing: .06em; text-transform: uppercase; }

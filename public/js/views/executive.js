@@ -77,6 +77,8 @@
   function countries(block) {
     const link = `<p class="card-note"><button type="button" class="btn btn-secondary btn-sm" data-go="overview">All countries</button></p>`;
     if (!block || block.status !== 'loaded' || !block.rows.length) return U.empty('No country data yet', block && block.reason || '', 'earth-americas') + link;
+    const rows = block.rows.filter((row) => row.signups > 0 || row.sessions > 0);
+    if (!rows.length) return U.empty('No country data yet', '', 'earth-americas') + link;
     const paceClass = (pace) => pace === 'Leading' || pace === 'Met' ? 'pace-leading' : pace === 'Trailing' || pace === 'Missed' ? 'pace-trailing' : '';
     const table = U.table([
       { t: 'Country', f: (row) => `${U.esc(row.country)}${row.proposal ? ' · Proposal' : ''}` },
@@ -85,7 +87,7 @@
       { t: 'Rate', num: 1, f: (row) => row.rate == null ? 'n/a' : U.pct(row.rate, 2) },
       { t: '% of min.', num: 1, f: (row) => row.percentOfMin == null ? 'n/a' : U.pct(row.percentOfMin, 0) },
       { t: 'Pace', f: (row) => `<span class="${paceClass(row.pace)}">${U.esc(row.pace)}</span>` },
-    ], block.rows);
+    ], rows);
     const missing = block.noCountry ? `<p class="card-note">No country: ${U.fmt(block.noCountry)} sign-ups</p>` : '';
     return table + missing + link;
   }
@@ -105,7 +107,7 @@
     const points = state.span === 'launch' ? (block.sinceLaunch || []) : (block.days || []);
     const goal = state.span === 'launch' ? null : block.goal;
     const note = state.span === 'month' && block.note ? `<p class="card-note">${U.esc(block.note)}</p>` : '';
-    const drawn = A.charts.executiveSignups({ points, goal, zoom: state.zoom || state.span === 'launch', label: 'Sign-ups this month vs goal' });
+    const drawn = A.charts.executiveSignups({ points, goal, goalLabel: state.span === 'launch' ? null : block.goalLabel, zoom: state.zoom || state.span === 'launch', label: 'Sign-ups this month vs goal' });
     return { controls, body: drawn + note };
   }
 
@@ -155,13 +157,14 @@
     const drawn = chart(view);
     const chartControls = drawn && drawn.controls ? drawn.controls : '';
     const chartBody = drawn && drawn.body ? drawn.body : drawn;
+    const chartSources = '<p class="card-note">Sources: PostHog (sign-ups) · monthly goals (Targets)</p>';
     const changed = view.changed || { phrases: [] };
     const research = view.researchNote ? `<p class="card-note">Research note, ${U.esc(longDate(view.researchNote.date))}: ${U.esc(view.researchNote.text)}</p>` : '';
     const phrases = (changed.phrases || []).map((line) => `<p>${U.esc(line)}</p>`).join('') || '<p>No comparison yet.</p>';
     return U.section('Executive', 'Monthly progress for the business owner. Internal and test accounts stay excluded.', `${header}`)
       + `<section class="section">${U.kpiRow(tiles)}</section>`
-      + U.section('Sign-ups this month vs goal', state.span === 'launch' ? 'Cumulative external sign-ups since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s sign-ups. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Sign-ups vs goal', right: chartControls, body: chartBody }))
-      + `<section class="section"><div class="grid-2">${U.card({ title: 'Top 5 countries', sub: 'Countries with sign-ups or landing sessions. Empty markets are left out.', body: countries(view.countries) })}${U.card({ title: 'Funnel', sub: 'Paid impressions to external sign-ups.', body: funnel(view.funnel || { steps: [] }) })}</div></section>`
+      + U.section('Sign-ups this month vs goal', state.span === 'launch' ? 'Cumulative external sign-ups since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s sign-ups. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Sign-ups vs goal', right: chartControls, body: `${chartSources}${chartBody}` }))
+      + `<section class="section"><div class="grid-2">${U.card({ title: 'Top 5 countries', sub: 'Sources: PostHog (sign-ups) · GA4 (sessions). Countries with either measure appear; zero rows are omitted.', body: countries(view.countries) })}${U.card({ title: 'Funnel', sub: 'Paid impressions to external sign-ups.', body: funnel(view.funnel || { steps: [] }) })}</div></section>`
       + U.section('What changed', 'The last 7 complete days against the 7 days before them.', U.card({ title: 'What changed', body: research + phrases }));
   }
 
