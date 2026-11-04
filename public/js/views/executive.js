@@ -141,16 +141,21 @@
     const spend = cards.spend || {};
     const cps = cards.cps || {};
     const visit = cards.visit || {};
+    const knownSpendChannels = Object.values(view.channels || {}).filter((channel) => channel.status === 'loaded' || channel.status === 'no_campaigns');
+    const knownSpendTotal = knownSpendChannels.reduce((sum, channel) => sum + (Number(channel.spend) || 0), 0);
+    const partialSpend = spend.status !== 'loaded' && knownSpendChannels.length > 0;
+    const spendValue = spend.status === 'loaded' ? money(spend.value) : (partialSpend ? `${money(knownSpendTotal)} <small>(partial)</small>` : pending(spend));
+    const spendLabel = partialSpend ? 'Known ad spend (partial)' : 'Ad spend this month';
     const tiles = [
       card({ ...signups, label: 'Sign-ups this month' }, signups.status === 'loaded' ? U.fmt(signups.value) : pending(signups)),
       card({ ...since, label: 'Sign-ups since launch' }, since.status === 'loaded' ? U.fmt(since.value) : pending(since)),
-      card({ ...spend, label: 'Ad spend this month' }, spend.status === 'loaded' ? money(spend.value) : pending(spend)),
+      card({ ...spend, label: spend.status === 'loaded' ? 'Ad spend this month' : spendLabel }, spendValue),
       card({ ...cps, label: 'Cost per sign-up' }, cps.status === 'loaded' ? money(cps.value) : pending(cps)),
       card({ ...visit, label: 'Visit to sign-up rate' }, visit.status === 'loaded' ? U.pct(visit.value, 2) : pending(visit)),
     ];
     if (signups.status !== 'loaded' && signups.reason) tiles[0] = U.kpi({ label: 'Sign-ups this month', source: 'PostHog', value: pending(signups), compare: U.esc(signups.reason) });
     if (since.status !== 'loaded' && since.reason) tiles[1] = U.kpi({ label: 'Sign-ups since launch', source: 'PostHog', value: pending(since), compare: U.esc(since.reason) });
-    if (spend.status !== 'loaded') tiles[2] = U.kpi({ label: 'Ad spend this month', source: spend.source || 'Paid', value: pending(spend), compare: (spend.lines || []).map((line) => `<div>${U.esc(line)}</div>`).join('') });
+    if (spend.status !== 'loaded') tiles[2] = U.kpi({ label: spendLabel, source: spend.source || 'Paid', value: spendValue, compare: `${partialSpend ? 'Total withheld until all paid sources report.' : ''}<div>${(spend.lines || []).map((line) => U.esc(line)).join('</div><div>')}</div>` });
     if (cps.status !== 'loaded') tiles[3] = U.kpi({ label: 'Cost per sign-up', source: 'Paid spend / PostHog', value: cps.status === 'no_signups' ? 'No sign-ups yet' : pending(cps), compare: U.esc(cps.reason === 'spend incomplete' ? 'Paid spend incomplete' : (cps.reason === 'No data yet' ? '' : (cps.reason || ''))) });
     if (visit.status !== 'loaded' && visit.reason) tiles[4] = U.kpi({ label: 'Visit to sign-up rate', source: 'PostHog / GA4', value: pending(visit), compare: U.esc(visit.reason) });
 
