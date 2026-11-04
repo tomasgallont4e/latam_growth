@@ -451,7 +451,8 @@
     S.exInt = A.store('t4e-growth-exclude-internal') !== '0';
     document.getElementById('ex-int').checked = S.exInt;
     const hash = location.hash.slice(1);
-    S.tab = A.resolve(hash || A.store('t4e-growth-tab') || 'overview');
+    const storedTab = A.store('t4e-growth-tab');
+    S.tab = A.resolve(hash || (storedTab && storedTab !== 'overview' ? storedTab : 'executive'));
     for (const id of ['range-from', 'range-to']) { document.getElementById(id).min = LAUNCH; document.getElementById(id).max = U.today(); }
     const savedTo = A.store('t4e-growth-range-to');
     A.setRange(A.store('t4e-growth-range-from') || LAUNCH, !savedTo || savedTo === 'today' ? U.today() : savedTo, false);

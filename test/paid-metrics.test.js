@@ -7,17 +7,56 @@ const vm = require('node:vm');
 const crypto = require('node:crypto');
 const paid = require('../public/js/paid');
 
-function dashboard() {
+test('Executive is the default tab unless the URL or a non-default saved tab selects another view', () => {
+  assert.equal(dashboard().S.tab, 'executive');
+  assert.equal(dashboard({ 't4e-growth-tab': 'overview' }).S.tab, 'executive');
+  assert.equal(dashboard({ 't4e-growth-tab': 'conversion' }).S.tab, 'conversion');
+  assert.equal(dashboard({}, '#acquisition').S.tab, 'acquisition');
+});
+
+test('Executive view renders the proposed goal label from its monthly API response', async () => {
+  const A = dashboard();
+  A.api = (url) => Promise.resolve({
+    month: new URL(url, 'http://localhost').searchParams.get('month'),
+    cutoff: '2026-11-03',
+    view: {
+      cards: {
+        signups: { status: 'loaded', value: 4, lines: [], pace: 'trailing' },
+        sinceLaunch: { status: 'loaded', value: 4, lines: [] },
+        spend: { status: 'pending', reason: 'Meta pending', lines: [] },
+        cps: { status: 'pending', reason: 'spend incomplete' },
+        visit: { status: 'pending', reason: 'sessions pending' },
+      },
+      chart: {
+        certified: true,
+        days: [{ date: '2026-11-02', signups: 4, cumulative: 4, minimum: 1000 }],
+        goal: 30000,
+        goalLabel: 'Goal 30,000 · Proposal',
+      },
+      countries: { status: 'loaded', rows: [{ country: 'Colombia', signups: 4, sessions: 80, rate: 0.05, percentOfMin: null, pace: 'No goal' }] },
+      funnel: { steps: [], note: '' },
+      changed: { phrases: [] },
+    },
+  });
+  A.views.executive.render();
+  await new Promise((resolve) => setImmediate(resolve));
+  const html = A.views.executive.render();
+  assert.match(html, /Goal 30,000 · Proposal/);
+  assert.match(html, /Sources: PostHog \(sign-ups\) · monthly goals \(Targets\)/);
+  assert.match(html, /Sources: PostHog \(sign-ups\) · GA4 \(sessions\)/);
+});
+
+function dashboard(stored = {}, hash = '') {
   const elements = new Map();
-  const App = { views: {}, render() {}, store() {}, resolve: (x) => x, api: () => new Promise(() => {}), targets: { ensure() {}, strip: () => '' } };
-  const context = vm.createContext({ window: { App }, location: { hash: '' }, document: {
+  const App = { views: {}, render() {}, store: (key) => stored[key], resolve: (x) => x, api: () => new Promise(() => {}), targets: { ensure() {}, strip: () => '' } };
+  const context = vm.createContext({ window: { App }, location: { hash }, document: {
     getElementById(id) {
       if (!elements.has(id)) elements.set(id, { options: [{ value: 'day' }], addEventListener() {} });
       return elements.get(id);
     },
   } });
   App.testLoad = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
-  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'assistant.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
+  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'assistant.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
   }
   App.S.from = '2026-10-01'; App.S.to = '2026-10-28';

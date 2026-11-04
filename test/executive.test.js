@@ -220,6 +220,7 @@ test('Executive November goal is read from stored targets and projects only from
   assert.equal(early.cutoff, '2026-11-03');
   assert.equal(early.view.cards.signups.goal, 30000);
   assert.equal(early.view.cards.signups.proposal, true);
+  assert.equal(early.view.chart.goalLabel, 'Goal 30,000 · Proposal');
   assert.equal(early.view.cards.signups.projection, null);
   assert.ok(early.view.cards.signups.lines.includes('Too early to project'));
   assert.equal(early.view.cards.signups.pace, 'trailing');
