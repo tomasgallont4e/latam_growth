@@ -168,6 +168,30 @@ test('Marketing-to-Project lookup requires a complete page scan and no longer re
   assert.equal(data.saved_insight, 'marketing-project-derived-name');
 });
 
+test('Marketing-to-Project matches a recognized downstream label across saved node fields', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347874', POSTHOG_API_KEY: 'test' });
+  const saved = {
+    kind: 'FunnelsQuery',
+    series: [
+      { kind: 'EventsNode', event: 'marketing_page_viewed' },
+      { kind: 'EventsNode', event: 'marketing_cta_clicked' },
+      { kind: 'EventsNode', event: 'registration_started' },
+      { kind: 'EventsNode', event: 'registration_finished', custom_name: 'Identify', name: 'REGISTGRATION FINISHED IDENTIFY' },
+      { kind: 'ActionsNode', id: 8742, custom_name: 'Login' },
+      { kind: 'ActionsNode', id: 8743, custom_name: 'Project View/Project Created' },
+    ],
+  };
+  const request = async (url, opts) => {
+    if (url.includes('insights/?')) return { ok: true, json: async () => ({ results: [{ name: 'Marketing-to-Project Activation Funnel', short_id: 'marketing-project-field-label', query: saved }] }) };
+    const query = JSON.parse(opts.body).query;
+    if (query.kind === 'FunnelsQuery') return { ok: true, json: async () => ({ results: saved.series.map((_, order) => ({ order, count: 6 - order })) }) };
+    return { ok: true, json: async () => ({ results: [['marketing_page_viewed'], ['marketing_cta_clicked'], ['registration_started'], ['registration_finished']] }) };
+  };
+  const data = await read('marketing_project', from, to, false, request);
+  assert.equal(data.saved_insight, 'marketing-project-field-label');
+  assert.deepEqual(data.steps.map((step) => step.name), ['marketing_page_viewed', 'marketing_cta_clicked', 'registration_started', 'Registration Finished', 'Login', 'Project View/Project Created']);
+});
+
 test('Marketing-to-Project funnel reuses the saved six-step PostHog insight and its action IDs', async (t) => {
   env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347864', POSTHOG_API_KEY: 'test', INTERNAL_DOMAINS: 'think4ever.com', INTERNAL_COMPANIES: 'think4ever,moadbus' });
   const saved = {
