@@ -14,6 +14,38 @@ test('Executive is the default tab unless the URL or a non-default saved tab sel
   assert.equal(dashboard({}, '#acquisition').S.tab, 'acquisition');
 });
 
+test('Executive labels known ad spend as partial while one paid source is pending', async () => {
+  const A = dashboard();
+  A.api = () => Promise.resolve({
+    month: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).format(new Date()),
+    view: {
+      cards: {
+        signups: { status: 'pending', reason: 'PostHog host coverage is incomplete', lines: [] },
+        sinceLaunch: { status: 'pending', reason: 'PostHog host coverage is incomplete', lines: [] },
+        spend: { status: 'pending', reason: 'LinkedIn paid reporting is not connected', source: 'Meta Ads, LinkedIn Ads, Google Ads', value: null, lines: ['Meta US$20.27', 'LinkedIn · No data yet · LinkedIn paid reporting is not connected', 'Google Ads: no campaigns'] },
+        cps: { status: 'pending', reason: 'spend incomplete' },
+        visit: { status: 'pending', reason: 'GA4 coverage is incomplete' },
+      },
+      channels: {
+        meta: { status: 'loaded', spend: 20.27, line: 'Meta US$20.27' },
+        linkedin: { status: 'pending', spend: null, line: 'LinkedIn · No data yet · LinkedIn paid reporting is not connected' },
+        google_ads: { status: 'no_campaigns', spend: 0, line: 'Google Ads: no campaigns' },
+      },
+      chart: { certified: false, reason: 'PostHog host coverage is incomplete' },
+      countries: { status: 'pending', rows: [] },
+      funnel: { steps: [], note: '' },
+      changed: { phrases: [] },
+    },
+  });
+  A.views.executive.render();
+  await new Promise((resolve) => setImmediate(resolve));
+  const html = A.views.executive.render();
+  assert.match(html, /Known ad spend \(partial\)/);
+  assert.match(html, /US\$20\.27/);
+  assert.match(html, /Total withheld until all paid sources report/);
+  assert.match(html, /LinkedIn paid reporting is not connected/);
+});
+
 test('Executive view renders the proposed goal label from its monthly API response', async () => {
   const A = dashboard();
   A.api = (url) => Promise.resolve({
