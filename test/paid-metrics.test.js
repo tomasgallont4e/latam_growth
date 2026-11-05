@@ -58,7 +58,6 @@ test('Executive shows the same saved PostHog funnel as Conversion and labels its
   });
   await A.platformFunnels.ensureSummary();
   await new Promise((resolve) => setImmediate(resolve));
-  box.innerHTML = A.posthogFunnel.render();
   const conversion = A.views.conversion.render();
   const posthog = A.posthogFunnel.render({ path: 'marketing_project', from: A.S.from, to: A.S.to, exclude: A.S.exInt });
   const conversionHandlers = {};
@@ -75,6 +74,8 @@ test('Executive shows the same saved PostHog funnel as Conversion and labels its
     assert.ok(conversion.includes(name), `Conversion should show ${name}`);
     assert.ok(executive.includes(n.toLocaleString('en-US')), `Executive should show ${n} persons`);
   }
+  assert.match(conversionAfterSwitch, /Google Analytics 4 activity/);
+  assert.doesNotMatch(conversionAfterSwitch, /Marketing-to-Project Activation Funnel/);
   assert.match(posthog, /Marketing-to-Project Activation Funnel/);
   assert.match(executive, /Paid acquisition funnel/);
   assert.match(executive, /PostHog activation funnel/);
