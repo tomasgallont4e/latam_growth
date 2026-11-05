@@ -197,9 +197,7 @@ test('Executive shows allowlisted sign-ups and known spend with honest review st
   assert.equal(data.view.cards.spend.underReview.label, 'Under review');
   assert.match(data.view.cards.spend.underReview.reason, /LinkedIn paid reporting is not connected/);
   assert.equal(data.view.cards.cps.status, 'pending');
-  assert.match(data.view.cards.cps.reason, /Unclassified first-identify hosts are excluded/);
-  assert.equal(data.view.cards.cps.underReview.label, 'Under review');
-  assert.match(data.view.cards.cps.underReview.reason, /Paid spend incomplete/);
+  assert.match(data.view.cards.cps.reason, /spend incomplete/);
   assert.equal(data.view.cards.visit.status, 'pending');
   assert.equal(data.view.cards.visit.underReview.label, 'Under review');
   assert.match(data.view.cards.visit.reason, /Unclassified first-identify hosts are excluded/);
@@ -252,6 +250,27 @@ test('Executive shows approved-host sign-ups when other hosts were excluded', as
   assert.equal(data.view.cards.sinceLaunch.underReview.label, 'Under review');
   assert.equal(data.view.chart.certified, true);
   assert.match(data.view.chart.note, /Under review: Unclassified first-identify hosts are excluded/);
+});
+
+test('Executive cost per sign-up stays pending until every paid channel has reported', async () => {
+  const partialWithSignups = await build(coveredMonth([
+    { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-11-02', dim: 'account_type', dim_value: 'External', value: 5 },
+    { source: 'posthog', metric: 'ph_exec_accounts_geo', date: '2026-11-02', dim: 'country', dim_value: 'Colombia', value: 5 },
+    { source: 'ga4', metric: 'ga_exec_geo_sessions', date: '2026-11-02', dim: 'country', dim_value: 'Colombia', value: 335 },
+    { source: 'ga4', metric: 'ga_exec_form_starts', date: '2026-11-02', value: 3 },
+    { source: 'meta', metric: 'ad_spend', date: '2026-11-02', dim: 'campaign', dim_value: 'Boost', value: 20.27 },
+  ], { source: [{ _k: 'google_ads', state: 'connected', window: '2026-10-01 to 2026-11-30' }] }), '2026-11', new Date('2026-11-04T17:00:00.000Z'));
+  assert.equal(partialWithSignups.view.cards.spend.value, 20.27);
+  assert.equal(partialWithSignups.view.cards.spend.complete, false);
+  assert.equal(partialWithSignups.view.cards.cps.status, 'pending');
+  assert.equal(partialWithSignups.view.cards.cps.value, null);
+
+  const partialWithZeroSignups = await build(coveredMonth([
+    { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-10-04', dim: 'account_type', dim_value: 'External', value: 0 },
+    { source: 'meta', metric: 'ad_spend', date: '2026-10-04', dim: 'campaign', dim_value: 'Boost', value: 12.5 },
+  ], { source: [{ _k: 'google_ads', state: 'connected', window: '2026-10-01 to 2026-10-30' }] }), '2026-10', new Date('2026-10-30T17:00:00.000Z'));
+  assert.equal(partialWithZeroSignups.view.cards.cps.status, 'pending');
+  assert.equal(partialWithZeroSignups.view.cards.cps.value, null);
 });
 
 test('Executive month sign-ups keep outside LATAM off the goal number and October has no goal', async () => {
