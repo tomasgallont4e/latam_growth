@@ -101,14 +101,21 @@
 
   function subscriptionBreakdown(block) {
     const details = block || {};
-    const reason = details.byPlan && details.byPlan.reason || 'No billing or subscription-plan source is connected. Free/Paid account counts cannot be inferred from first-identify data.';
+    const plan = details.byPlan || {};
+    const reason = plan.reason || 'Plan data is unavailable.';
     const byCountry = details.byCountry || {};
     const rows = Object.entries(byCountry).map(([country, accounts]) => ({ country, accounts }));
     const countryTable = rows.length ? U.table([
       { t: 'Country', k: 'country' }, { t: 'Approved-host accounts', num: 1, f: (row) => U.fmt(row.accounts) },
     ], rows) : U.empty('No approved-host country split yet', 'Country attribution is unavailable or no approved-host account has a country.', 'earth-americas');
     const coverage = `<p class="card-note">Approved-host accounts since launch: ${U.fmt(details.sinceLaunch)} · ${U.fmt(details.country_assigned)} assigned a country · ${U.fmt(details.country_missing)} without country · ${U.fmt(details.excludedHosts)} external accounts on unapproved hosts excluded.</p>`;
-    return U.empty('Free / Paid unavailable', reason, 'circle-question') + coverage + countryTable;
+    const plans = plan.status === 'loaded' ? `<p class="card-note">Last plan reported by signed_in / plan_changed · not verified current billing status.</p>${U.kpiRow([
+      U.kpi({ label: 'Last reported Free', source: 'PostHog', value: U.fmt(plan.free), compare: 'Latest reported plan event per approved-host external account' }),
+      U.kpi({ label: 'Last reported Paid', source: 'PostHog', value: U.fmt(plan.paid), compare: 'Latest reported plan event per approved-host external account' }),
+      U.kpi({ label: 'Other plan', source: 'PostHog', value: U.fmt(plan.other), compare: 'Plan value other than free or paid' }),
+      U.kpi({ label: 'Plan unknown', source: 'PostHog', value: U.fmt(plan.unknown), compare: 'No plan value found in plan events' }),
+    ], 4)}` : U.empty('Plan data unavailable', reason, 'circle-question');
+    return plans + coverage + countryTable;
   }
 
   function chartControls() {
