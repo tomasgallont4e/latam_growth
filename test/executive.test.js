@@ -204,6 +204,7 @@ test('Executive shows allowlisted sign-ups and known spend with honest review st
   assert.equal(data.view.chart.certified, true);
   assert.match(data.view.chart.note, /Under review: Unclassified first-identify hosts are excluded/);
   assert.equal(data.view.chart.days.some((day) => day.signups != null), true);
+  assert.equal(data.view.chart.days.some((day) => day.projected != null), false);
 });
 
 test('Executive preserves a reconciliation review reason without claiming host exclusions', async () => {
