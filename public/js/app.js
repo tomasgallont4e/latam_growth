@@ -83,8 +83,12 @@
   };
   // Every country that has accounts (planned markets and the rest), for the "Other markets" row.
   D.execAccounts = (from = S.from, to = S.to, country) => {
-    if (!D.covered('posthog', 'executive_accounts', from, to)) return null;
-    if (country) return D.sum('posthog', 'ph_exec_accounts_geo', (r) => r.dim === 'country' && r.dim_value === country, from, to);
+    const coverage = D.covered('posthog', 'executive_accounts', from, to);
+    if (!coverage) return null;
+    if (country) {
+      if (coverage.country_available !== true) return null;
+      return D.sum('posthog', 'ph_exec_accounts_geo', (r) => r.dim === 'country' && r.dim_value === country, from, to);
+    }
     return D.sum('posthog', 'ph_exec_accounts', (r) => r.dim === 'account_type' && String(r.dim_value || '').toLowerCase() === 'external', from, to);
   };
   D.execAccountsByCountry = (from = S.from, to = S.to) => {

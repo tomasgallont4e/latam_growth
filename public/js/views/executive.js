@@ -3,7 +3,8 @@
   const U = A.ui;
   const state = { month: '', zoom: false, span: 'month', data: null, error: '', loading: false };
   function activationFunnelOptions() {
-    return { path: 'marketing_project', from: A.LAUNCH, to: state.data && (state.data.cutoff || state.data.asOf) || state.month + '-01', exclude: true };
+    const view = state.data && state.data.view || {};
+    return { path: 'marketing_project', from: A.LAUNCH, to: state.data && (state.data.cutoff || view.cutoff || state.data.asOf) || state.month + '-01', exclude: true };
   }
 
   function bogotaMonth() {
