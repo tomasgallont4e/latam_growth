@@ -64,6 +64,35 @@ test('Executive follows the spec layout and shows only its four-step cross-sourc
   assert.equal(requests.filter((url) => url.startsWith('api/funnels/posthog?')).length, 0);
 });
 
+test('Executive renders known PostHog sign-ups and social spend with coverage caveats', async () => {
+  const A = dashboard();
+  A.api = (url) => Promise.resolve({
+    month: new URL(url, 'http://localhost').searchParams.get('month'),
+    view: {
+      cards: {
+        signups: { status: 'loaded', value: 5, lines: ['Under review: Unclassified first-identify hosts are excluded.'], underReview: { label: 'Under review', reason: 'Unclassified first-identify hosts are excluded.' } },
+        sinceLaunch: { status: 'loaded', value: 5, lines: ['LATAM 5 · Outside LATAM 0', 'since Oct 1, 2026', 'Under review: Unclassified first-identify hosts are excluded.'], underReview: { label: 'Under review', reason: 'Unclassified first-identify hosts are excluded.' } },
+        spend: { status: 'loaded', value: 20.27, complete: false, underReview: { label: 'Under review', reason: 'LinkedIn has not reported.' }, lines: ['Meta US$20.27', 'LinkedIn · No data yet'] },
+        cps: { status: 'pending', reason: 'spend incomplete' },
+        visit: { status: 'pending', reason: 'PostHog host coverage incomplete', underReview: { label: 'Under review', reason: 'Unclassified first-identify hosts are excluded.' } },
+      },
+      chart: { certified: true, note: 'Under review: Unclassified first-identify hosts are excluded.', days: [], sinceLaunch: [], underReview: { label: 'Under review', reason: 'Unclassified first-identify hosts are excluded.' } },
+      countries: { status: 'pending', rows: [] },
+      funnel: { steps: [], note: '' },
+      changed: { phrases: [] },
+    },
+  });
+  A.views.executive.render();
+  await new Promise((resolve) => setImmediate(resolve));
+  const html = A.views.executive.render();
+  assert.match(html, /<span class="under-review-value">5<\/span>/);
+  assert.match(html, /<span class="under-review-value">US\$20\.27<\/span>/);
+  assert.match(html, /Under review · Unclassified first-identify hosts are excluded/);
+  assert.match(html, /Under review · LinkedIn has not reported/);
+  assert.match(html, /kpi-compare\">Paid spend incomplete/);
+  assert.match(html, /Under review: Unclassified first-identify hosts are excluded/);
+});
+
 test('Executive view renders the proposed goal label from its monthly API response', async () => {
   const A = dashboard();
   A.api = (url) => Promise.resolve({
