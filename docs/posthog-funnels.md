@@ -31,7 +31,13 @@ PostHog offers four ordered funnels:
    and “Project View/Project Created”. The dashboard discovers the saved insight by its
    exact title and six ordered steps: the first three event names, then “Registration Finished”
    (the table also shows the literal label “REGISTGRATION FINISHED IDENTIFY”), “Login”, and
-   “Project View/Project Created”. When PostHog includes downstream labels, the dashboard
+   “Project View/Project Created”. Step 4 is recognized either as the `$identify` event
+   (whatever its label) or by one of the accepted labels “Registration Finished”,
+   “REGISTGRATION FINISHED IDENTIFY” or “Registgration Finished” (the live insight
+   `K5KD9MSL` uses this misspelled label); the dashboard always displays it as
+   “Registration Finished”. If an insight with the exact title exists but a step does not
+   match, the error names the step number, what was expected and what was found, instead
+   of reporting “not found”. When PostHog includes downstream labels, the dashboard
    matches those labels; if an ActionsNode is returned only as `{kind, id}`, it trusts that
    step's position in the exactly titled saved insight and preserves the ID. The label is
    not independently verifiable from that response shape. The saved conversion window,
