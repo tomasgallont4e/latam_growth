@@ -130,21 +130,38 @@ test('assistant forwards only bounded aggregate dashboard data to Anthropic', as
     apiKey: 'test-secret', model: 'claude-sonnet-5-5',
     fetchImpl: async (url, options) => {
       request = { url, options };
-      return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'Organic Search led.' }] }) };
+      return { ok: true, status: 200, json: async () => ({ content: [
+        { type: 'thinking', thinking: 'private internal analysis' },
+        { type: 'text', text: 'Organic Search ' },
+        { type: 'text', text: 'led.' },
+      ] }) };
     },
   });
   assert.equal(result.answer, 'Organic Search led.');
+  const payload = JSON.parse(request.options.body);
+  assert.equal(payload.max_tokens, 16000);
+  assert.deepEqual(payload.output_config, { effort: 'low' });
   assert.equal(request.url, 'https://api.anthropic.com/v1/messages');
   assert.equal(request.options.headers['x-api-key'], 'test-secret');
   assert.equal(request.options.headers['anthropic-version'], '2023-06-01');
   assert.equal(request.options.headers['content-type'], 'application/json');
-  const payload = JSON.parse(request.options.body);
   assert.equal(payload.model, 'claude-sonnet-5-5');
-  assert.ok(payload.max_tokens <= 800);
   assert.match(payload.system, /first \$identify per person/i);
   assert.match(payload.system, /do not simply list every metric/i);
   assert.match(payload.messages[0].content, /¿Qué canal trajo más sesiones\?/);
   assert.doesNotMatch(payload.messages[0].content, /private@example\.com|raw_events/);
+});
+
+test('assistant reports only a sanitized stop reason when Anthropic returns no text', async () => {
+  const body = { question: 'Summarize the dashboard', context: {} };
+  await assert.rejects(ask(body, {
+    apiKey: 'test-secret',
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'thinking', thinking: 'private' }], stop_reason: 'max_tokens' }) }),
+  }), (error) => error.status === 502 && error.message.includes('stop reason: max_tokens') && !error.message.includes('private'));
+  await assert.rejects(ask(body, {
+    apiKey: 'test-secret',
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ content: [], stop_reason: 'unsafe reason <script>' }) }),
+  }), (error) => error.status === 502 && !error.message.includes('unsafe') && !error.message.includes('<script>'));
 });
 
 test('assistant rejects empty prompts, oversize data, and secret-looking prompt text', () => {

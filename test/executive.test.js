@@ -85,6 +85,28 @@ test('Executive account zero requires successful account coverage', async () => 
   assert.equal(measuredZero.metrics.find((metric) => metric.id === 'platform_signups').noData, undefined);
 });
 
+test('Executive response exposes covered approved-host accounts separately from unavailable subscription type', async () => {
+  const data = await build(storeWithMetrics([
+    { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-10-02', dim: 'account_type', dim_value: 'External', value: 3 },
+    { source: 'posthog', metric: 'ph_exec_accounts_geo', date: '2026-10-02', dim: 'country', dim_value: 'Colombia', value: 2 },
+    { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-10-20', dim: 'account_type', dim_value: 'External', value: 4 },
+    { source: 'posthog', metric: 'ph_exec_accounts_geo', date: '2026-10-20', dim: 'country', dim_value: 'Brazil', value: 1 },
+    { source: 'ga4', metric: 'ga_exec_geo_sessions', date: '2026-10-20', dim: 'country', dim_value: 'Colombia', value: 1 },
+  ], [
+    { source: 'posthog', key: 'executive_accounts', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true, country_available: true, external_accounts: 7, country_assigned: 3, country_missing: 4, excluded_host_accounts: 2 }] },
+    { source: 'ga4', key: 'executive_landing', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true, country_available: true }] },
+  ]), '2026-10', new Date('2026-10-29T17:00:00.000Z'));
+  assert.deepEqual(data.executiveAccounts, {
+    month: 7,
+    sinceLaunch: 7,
+    byCountry: { Colombia: 2, Brazil: 1 },
+    country_assigned: 3,
+    country_missing: 4,
+    excludedHosts: 2,
+    byPlan: { status: 'pending', free: null, paid: null, reason: 'No account subscription-plan report is configured.' },
+  });
+});
+
 test('Executive month validation rejects malformed calendar months', () => {
   assert.equal(monthOk('2026-10'), true);
   assert.equal(monthOk('2026-01'), true);

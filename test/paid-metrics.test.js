@@ -17,6 +17,7 @@ test('Executive is the default tab unless the URL or a non-default saved tab sel
 test('Executive follows the spec layout and shows only its four-step cross-source funnel', async () => {
   const A = dashboard(), requests = [];
   const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).format(new Date());
+  const expectedOrder = ['Sign-ups this month', 'Sign-ups since launch', 'Ad spend this month', 'Cost per sign-up', 'Visit to sign-up rate', 'Sign-ups this month vs goal', 'Top 5 countries', 'Marketing-to-Project Activation Funnel', 'Executive accounts by subscription type', 'What changed'];
   const paidSteps = [
     { name: 'Paid impressions', value: null, status: 'pending', reason: 'Meta ad account access pending', source: 'Meta, LinkedIn, Google Ads' },
     { name: 'Landing sessions', value: 335, status: 'loaded', source: 'GA4 · go.think4ever.com' },
@@ -25,9 +26,11 @@ test('Executive follows the spec layout and shows only its four-step cross-sourc
   ];
   A.api = (url) => {
     requests.push(url);
+    if (url.startsWith('api/funnels/posthog?')) return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: '2026-10-01', to: '2026-10-28', window_days: 14, steps: [{ name: 'Marketing page', n: 99 }, { name: 'CTA', n: 9 }, { name: 'Registration', n: 5 }, { name: 'Registration Finished', n: 1 }, { name: 'Login', n: 0 }, { name: 'Project Created', n: 0 }] });
     if (url.startsWith('api/executive?')) return Promise.resolve({
-      month,
-      view: {
+      month, from: '2026-10-01', asOf: '2026-10-28',
+      executiveAccounts: { sinceLaunch: 7, byPlan: { status: 'pending', free: null, paid: null, reason: 'No account subscription-plan report is configured.' } },
+      view: { cutoff: '2026-10-28', executiveAccounts: { sinceLaunch: 7, byPlan: { status: 'pending', free: null, paid: null, reason: 'No account subscription-plan report is configured.' } },
         cards: {
           signups: { status: 'pending', reason: 'PostHog host coverage pending', lines: [] },
           sinceLaunch: { status: 'pending', reason: 'PostHog host coverage pending', lines: [] },
@@ -48,20 +51,24 @@ test('Executive follows the spec layout and shows only its four-step cross-sourc
   A.views.executive.render();
   await new Promise((resolve) => setImmediate(resolve));
   const executive = A.views.executive.render();
-  const expectedOrder = ['Sign-ups this month', 'Sign-ups since launch', 'Ad spend this month', 'Cost per sign-up', 'Visit to sign-up rate', 'Sign-ups this month vs goal', 'Top 5 countries', 'Paid acquisition funnel', 'What changed'];
+  const funnelBox = { isConnected: true, innerHTML: '' };
+  A.views.executive.mount({ querySelector: (selector) => selector === '[data-posthog-funnel]' ? funnelBox : null, querySelectorAll: () => [], addEventListener() {} });
+  await new Promise((resolve) => setImmediate(resolve));
   const positions = expectedOrder.map((label) => executive.indexOf(label));
   assert.ok(positions.every((position) => position >= 0), 'Executive should contain all spec sections');
   assert.deepEqual(positions, positions.slice().sort((a, b) => a - b));
   assert.match(executive, /No data yet/);
   assert.match(executive, /PostHog host coverage pending/);
   assert.match(executive, /Meta ad account access pending/);
-  assert.match(executive, /Paid acquisition funnel/);
-  assert.match(executive, /Biggest drop/);
-  assert.match(executive, /Steps come from different tools/);
-  const funnelSteps = [...executive.matchAll(/<span class="funnel-idx">(\d+)<\/span><span class="funnel-name">(.*?)<small>(.*?)<\/small>/g)];
-  assert.deepEqual(funnelSteps.map((match) => [Number(match[1]), match[2], match[3]]), paidSteps.map((step, index) => [index + 1, step.name, step.source]));
-  assert.doesNotMatch(executive, /Marketing-to-Project Activation Funnel|marketing_page_viewed|PostHog activation funnel/);
-  assert.equal(requests.filter((url) => url.startsWith('api/funnels/posthog?')).length, 0);
+  assert.match(executive, /Marketing-to-Project Activation Funnel/);
+  assert.doesNotMatch(executive, /Paid acquisition funnel/);
+  assert.match(executive, /product activation, not an advertising funnel/i);
+  assert.match(executive, /Free \/ Paid unavailable/);
+  assert.match(executive, /No account subscription-plan report is configured/);
+  assert.equal(requests.filter((url) => url.startsWith('api/funnels/posthog?')).length, 1);
+  assert.match(requests.find((url) => url.startsWith('api/funnels/posthog?')), /to=2026-10-28&exclude=1/);
+  assert.match(funnelBox.innerHTML, /Marketing page/);
+  assert.doesNotMatch(executive, /Biggest drop|Steps come from different tools/);
 });
 
 test('Executive renders known PostHog sign-ups and social spend with coverage caveats', async () => {
@@ -939,10 +946,39 @@ test('loaded PostHog funnel exposes only aggregate step counts to the assistant 
   assert.equal(JSON.stringify(summary).includes('private@example.com'), false);
 });
 
+test('Overview and Executive country totals use independent PostHog populations', () => {
+  const A = auditedDashboard();
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true, country_available: true }] });
+  A.S.data.snapshots.push({ ...available('posthog', 'executive_accounts'), rows: [{ available: true, country_available: false, external_accounts: 0, excluded_host_accounts: 0 }] });
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts', 20, 'External'), dim: 'account_type' });
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts', 5, 'Unknown'), dim: 'account_type' });
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts_geo', 12, 'Colombia'), dim: 'country' });
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts_geo_unknown', 5, 'Colombia'), dim: 'country' });
+  assert.equal(A.D.accounts(), 25);
+  assert.equal(A.D.accounts('2026-10-01', '2026-10-28', 'Colombia'), 12);
+  const executiveCoverage = A.S.data.snapshots.find((row) => row.key === 'executive_accounts');
+  executiveCoverage.rows[0].available = false;
+  assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28'), null);
+  executiveCoverage.rows[0].available = true;
+  assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28'), 0);
+  assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28', 'Colombia'), null);
+  assert.match(A.views.overview.render(), /Executive approved-host External population: 0/);
+  executiveCoverage.rows[0].country_available = true;
+  executiveCoverage.rows[0].external_accounts = 12;
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_exec_accounts', 12, 'External'), dim: 'account_type' });
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_exec_accounts_geo', 8, 'Colombia'), dim: 'country' });
+  assert.equal(A.D.execAccounts(), 12);
+  assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28', 'Colombia'), 8);
+});
+
 test('the goal counts accounts created (first identify) without adding registration_started, CRM or new people', () => {
   const A = auditedDashboard();
   A.S.data.snapshots.push(available('posthog', 'registration_coverage'));
   A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true, country_available: true }] });
+  A.S.data.snapshots.push({ ...available('posthog', 'executive_accounts'), rows: [{ available: true, country_available: true, external_accounts: 12, excluded_host_accounts: 0 }] });
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_exec_accounts', 12, 'External'), dim: 'account_type' });
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_exec_accounts_geo', 5, 'Colombia'), dim: 'country' });
   A.S.data.metrics.push({ ...metric('posthog', 'ph_signups', 28, 'External'), dim: 'account_type' });
   A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts', 21, 'External'), dim: 'account_type' });
   A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts', 4, 'Internal'), dim: 'account_type' });
@@ -953,6 +989,9 @@ test('the goal counts accounts created (first identify) without adding registrat
   assert.equal(A.D.actual('total_signups', A.S.from, A.S.to), 21);
   assert.equal(A.D.accounts(A.S.from, A.S.to, 'Colombia'), 15);
   assert.equal(A.D.accountsCountries()['Brazil'], 6);
+  assert.equal(A.D.execAccounts(), 12);
+  assert.equal(A.D.execAccountsByCountry().Colombia, 5);
+  assert.equal(A.D.accountBreakdown().byPlan.status, 'pending');
   A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
   const html = A.views.overview.render();
   assert.match(html, /Accounts created/);
@@ -963,6 +1002,8 @@ test('the goal counts accounts created (first identify) without adding registrat
   assert.match(html, />6</);
   assert.match(html, /Colombia/);
   assert.match(html, />15</);
+  assert.match(html, /Executive approved-host external accounts by country/);
+  assert.match(html, /Executive approved-host External population: 12/);
   assert.doesNotMatch(html, /series-line/);
   assert.doesNotMatch(html, /Brazil · accounts created/);
   assert.doesNotMatch(html, /Progress by country/);

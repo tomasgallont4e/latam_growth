@@ -82,6 +82,33 @@
     return D.sum('posthog', 'ph_accounts', D.peopleFilter, from, to);
   };
   // Every country that has accounts (planned markets and the rest), for the "Other markets" row.
+  D.execAccounts = (from = S.from, to = S.to, country) => {
+    const coverage = D.covered('posthog', 'executive_accounts', from, to);
+    if (!coverage) return null;
+    if (country) {
+      if (coverage.country_available !== true) return null;
+      return D.sum('posthog', 'ph_exec_accounts_geo', (r) => r.dim === 'country' && r.dim_value === country, from, to);
+    }
+    return D.sum('posthog', 'ph_exec_accounts', (r) => r.dim === 'account_type' && String(r.dim_value || '').toLowerCase() === 'external', from, to);
+  };
+  D.execAccountsByCountry = (from = S.from, to = S.to) => {
+    const coverage = D.covered('posthog', 'executive_accounts', from, to);
+    if (!coverage || coverage.country_available !== true) return null;
+    const out = {};
+    for (const r of D.M()) if (r.source === 'posthog' && r.metric === 'ph_exec_accounts_geo' && r.dim === 'country' && inR(r.date, from, to)) out[r.dim_value] = (out[r.dim_value] || 0) + (Number(r.value) || 0);
+    return out;
+  };
+  D.accountBreakdown = (from = S.from, to = S.to) => {
+    const coverage = D.covered('posthog', 'executive_accounts', from, to);
+    const total = D.execAccounts(from, to);
+    return {
+      status: total == null ? 'pending' : 'loaded', total,
+      byCountry: D.execAccountsByCountry(from, to),
+      byPlan: { status: 'pending', free: null, paid: null, reason: 'No account subscription-plan report is configured; Free/Paid counts cannot be derived from first-identify data.' },
+      excludedHosts: coverage && Number.isFinite(Number(coverage.excluded_host_accounts)) ? Number(coverage.excluded_host_accounts) : null,
+    };
+  };
+  // Overview remains the separate all-host first-identify population.
   D.accountsCountries = (from = S.from, to = S.to) => {
     const out = {};
     for (const r of D.M()) {

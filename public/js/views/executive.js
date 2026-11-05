@@ -2,6 +2,10 @@
 (function (A) {
   const U = A.ui;
   const state = { month: '', zoom: false, span: 'month', data: null, error: '', loading: false };
+  function activationFunnelOptions() {
+    const view = state.data && state.data.view || {};
+    return { path: 'marketing_project', from: A.LAUNCH, to: state.data && (state.data.cutoff || view.cutoff || state.data.asOf) || state.month + '-01', exclude: true };
+  }
 
   function bogotaMonth() {
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).formatToParts(new Date()).map((part) => [part.type, part.value]));
@@ -95,6 +99,18 @@
     return table + missing + link;
   }
 
+  function subscriptionBreakdown(block) {
+    const details = block || {};
+    const reason = details.byPlan && details.byPlan.reason || 'No billing or subscription-plan source is connected. Free/Paid account counts cannot be inferred from first-identify data.';
+    const byCountry = details.byCountry || {};
+    const rows = Object.entries(byCountry).map(([country, accounts]) => ({ country, accounts }));
+    const countryTable = rows.length ? U.table([
+      { t: 'Country', k: 'country' }, { t: 'Approved-host accounts', num: 1, f: (row) => U.fmt(row.accounts) },
+    ], rows) : U.empty('No approved-host country split yet', 'Country attribution is unavailable or no approved-host account has a country.', 'earth-americas');
+    const coverage = `<p class="card-note">Approved-host accounts since launch: ${U.fmt(details.sinceLaunch)} · ${U.fmt(details.country_assigned)} assigned a country · ${U.fmt(details.country_missing)} without country · ${U.fmt(details.excludedHosts)} external accounts on unapproved hosts excluded.</p>`;
+    return U.empty('Free / Paid unavailable', reason, 'circle-question') + coverage + countryTable;
+  }
+
   function chartControls() {
     return `<div class="form-row">
       <button type="button" class="btn btn-secondary btn-sm" data-exec-span="month" aria-pressed="${state.span === 'month'}">This month</button>
@@ -145,6 +161,7 @@
     const cps = cards.cps || {};
     const visit = cards.visit || {};
     const paidFunnel = funnel(view.funnel || { steps: [] });
+    const activationFunnelHtml = A.posthogFunnel ? A.posthogFunnel.render(activationFunnelOptions()) : '<p class="card-note">PostHog funnel unavailable.</p>';
     const pendingReason = (item, fallback) => U.esc(item.reason || fallback);
     const tiles = [
       card({ ...signups, label: 'Sign-ups this month' }, signups.value != null ? U.fmt(signups.value) : pending(signups)),
@@ -172,7 +189,8 @@
     return U.section('Executive', 'Monthly progress for the business owner. Internal and test accounts stay excluded.', `${header}`)
       + `<section class="section">${U.kpiRow(tiles)}</section>`
       + U.section('Sign-ups this month vs goal', state.span === 'launch' ? 'Cumulative external sign-ups since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s sign-ups. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Sign-ups vs goal', right: chartControls, body: `${chartSources}${chartBody}` }))
-      + `<section class="section"><div class="grid-2">${U.card({ title: 'Top 5 countries', sub: 'Sources: PostHog (sign-ups) · GA4 (sessions). Countries with either measure appear; zero rows are omitted.', body: countries(view.countries) })}${U.card({ title: 'Paid acquisition funnel', sub: 'Cross-source paid impressions, landing sessions, form starts and external sign-ups. Rates are indicative.', body: paidFunnel })}</div></section>`
+      + `<section class="section"><div class="grid-2">${U.card({ title: 'Top 5 countries', sub: 'Sources: PostHog (sign-ups) · GA4 (sessions). Countries with either measure appear; zero rows are omitted.', body: countries(view.countries) })}${U.card({ title: 'Marketing-to-Project Activation Funnel', sub: 'Saved PostHog ordered funnel · aggregate selected range · excludes internal and test accounts. This is product activation, not an advertising funnel.', body: activationFunnelHtml })}</div></section>`
+      + `<section class="section">${U.card({ title: 'Executive accounts by subscription type', sub: `Approved-host external first-identify accounts · ${U.fmt((view.executiveAccounts || {}).sinceLaunch)} since launch`, body: subscriptionBreakdown(view.executiveAccounts) })}</section>`
       + U.section('What changed', 'The last 7 complete days against the 7 days before them.', U.card({ title: 'What changed', body: research + phrases }));
   }
 
@@ -190,6 +208,7 @@
     }));
     const zoom = el.querySelector('[data-exec-zoom]');
     if (zoom) zoom.addEventListener('click', () => { state.zoom = !state.zoom; A.render(); });
+    if (A.posthogFunnel) A.posthogFunnel.mount(el, activationFunnelOptions());
   }
 
   A.views.executive = { title: 'Executive', render, mount };
