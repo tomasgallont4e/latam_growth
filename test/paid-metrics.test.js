@@ -57,6 +57,7 @@ test('Executive shows the same saved PostHog funnel as Conversion and labels its
     addEventListener() {},
   });
   await executiveMount;
+  assert.match(box.innerHTML, /<strong>0 persons<\/strong>/);
   await A.platformFunnels.ensureSummary();
   await new Promise((resolve) => setImmediate(resolve));
   const conversion = A.views.conversion.render();
@@ -93,7 +94,7 @@ test('Executive shows the same saved PostHog funnel as Conversion and labels its
   assert.match(posthog, /Marketing-to-Project Activation Funnel/);
   assert.match(executive, /Paid acquisition funnel/);
   assert.match(executive, /PostHog activation funnel/);
-  assert.match(executive, /shared range/);
+  assert.ok(executive.includes(`shared range ${A.S.from} to ${A.S.to}`));
   assert.match(executive, /not the selected Executive month/);
   assert.match(executive, /Paid impressions/);
   assert.match(executive, /data-posthog-funnel/);
