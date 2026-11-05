@@ -14,6 +14,64 @@ test('Executive is the default tab unless the URL or a non-default saved tab sel
   assert.equal(dashboard({}, '#acquisition').S.tab, 'acquisition');
 });
 
+test('Executive shows the same saved PostHog funnel as Conversion and labels its paid funnel separately', async () => {
+  const A = dashboard(), requests = [];
+  const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).format(new Date());
+  const posthogSteps = [
+    { name: 'marketing_page_viewed', n: 1000 },
+    { name: 'marketing_cta_clicked', n: 500 },
+    { name: 'registration_started', n: 200 },
+    { name: 'Registration Finished', n: 100 },
+    { name: 'Login', n: 80 },
+    { name: 'Project View/Project Created', n: 20 },
+  ];
+  A.api = (url) => {
+    requests.push(url);
+    if (url.startsWith('api/executive?')) return Promise.resolve({
+      month,
+      view: {
+        cards: {
+          signups: { status: 'pending', reason: 'PostHog pending', lines: [] },
+          sinceLaunch: { status: 'pending', reason: 'PostHog pending', lines: [] },
+          spend: { status: 'pending', reason: 'LinkedIn pending', lines: [] },
+          cps: { status: 'pending', reason: 'spend incomplete' },
+          visit: { status: 'pending', reason: 'GA4 pending' },
+        },
+        chart: { certified: false, reason: 'PostHog pending' },
+        countries: { status: 'pending', rows: [] },
+        funnel: { steps: [{ name: 'Paid impressions', value: null, status: 'pending', reason: 'LinkedIn pending' }] },
+        changed: { phrases: [] },
+      },
+    });
+    if (url.startsWith('api/funnels/posthog?')) return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: A.S.from, to: A.S.to, window_days: 14, steps: posthogSteps });
+    throw new Error(`Unexpected API request: ${url}`);
+  };
+  A.render = () => {};
+
+  A.views.executive.render();
+  await new Promise((resolve) => setImmediate(resolve));
+  const box = { isConnected: true, innerHTML: '' };
+  const root = {
+    querySelector: (selector) => selector === '[data-platform-funnel]' ? box : null,
+    querySelectorAll: () => [],
+    addEventListener() {},
+  };
+  A.views.executive.mount(root);
+  await A.platformFunnels.ensureSummary();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const executive = A.views.executive.render();
+  const conversion = A.views.conversion.render();
+  for (const { name, n } of posthogSteps) {
+    assert.ok(executive.includes(name), `Executive should show ${name}`);
+    assert.ok(conversion.includes(name), `Conversion should show ${name}`);
+    assert.ok(executive.includes(n.toLocaleString('en-US')), `Executive should show ${n} persons`);
+  }
+  assert.match(executive, /Paid acquisition funnel/);
+  assert.match(executive, /Paid impressions/);
+  assert.equal(requests.filter((url) => url.startsWith('api/funnels/posthog?')).length, 1);
+});
+
 test('Executive view renders the proposed goal label from its monthly API response', async () => {
   const A = dashboard();
   A.api = (url) => Promise.resolve({
