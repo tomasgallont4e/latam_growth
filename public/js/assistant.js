@@ -117,7 +117,7 @@
     rerender();
     try {
       const result = await A.api('api/assistant/ask', { method: 'POST', body: JSON.stringify({
-        mode: 'insights', question: 'Generate the Overview executive insight report from the supplied data. Follow the required headings and prioritize evidence over metric listings.', context: snapshot,
+        mode: 'insights', question: 'Generate the Overview executive insight report in English from the supplied data. Use English for all headings, findings and recommendations; prioritize evidence over metric listings.', context: snapshot,
       }) });
       if (sequence !== state.insightSeq) return;
       if (JSON.stringify(context()) !== key) {
