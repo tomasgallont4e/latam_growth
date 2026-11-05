@@ -4,7 +4,8 @@
   const paths = { marketing_project: 'Marketing-to-Project Activation Funnel', website: 'Website → Registration', mvp: 'MVP acquisition → completed review', landing_project: 'Landing → cuenta y proyecto (sin internos)' };
   const cache = new Map();
   const state = { platform: 'posthog', path: 'marketing_project' };
-  const key = () => [state.path, A.S.from, A.S.to, A.S.exInt].join('|');
+  const keyFor = (path, from = A.S.from, to = A.S.to, exclude = A.S.exInt) => [path, from, to, exclude].join('|');
+  const key = () => keyFor(state.path);
   function nativeBody(data) {
     const U = A.ui;
     const base = data.steps[0]?.n;
@@ -49,7 +50,7 @@
       : state.path === 'marketing_project'
         ? `Ordered persons · ${U.win(A.S.from, A.S.to)} · saved PostHog steps, action IDs and filters are reused · Marketing page → CTA → registration → Registration Finished → Login → Project View/Project Created · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`
         : `PostHog: ${U.win(A.S.from, A.S.to)} · full selected-range funnel, not split into ${A.D.grainName().toLowerCase()} cohorts · registration_started is the step before account creation (first identify) · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`;
-    return U.card({ cls: 'chart-card', title: 'Funnels by platform', sub: state.platform === 'posthog' ? posthogSub : `Selected-range activity totals · not split into ${A.D.grainName().toLowerCase()} buckets · each platform keeps its own definitions`, body: controls + `<div data-platform-funnel>${body()}</div>` });
+    return U.card({ cls: 'chart-card', title: 'Funnels by platform', sub: state.platform === 'posthog' ? posthogSub : `Selected-range activity totals · not split into ${A.D.grainName().toLowerCase()} buckets · each platform keeps its own definitions`, body: `${controls}<div data-platform-funnel>${body()}</div>` });
   }
   function summary() {
     if (state.platform !== 'posthog') return null;
@@ -65,17 +66,21 @@
       })),
     };
   }
+  function loadCached(path, from, to, exclude, force = false) {
+    const cacheKey = keyFor(path, from, to, exclude);
+    let entry = cache.get(cacheKey);
+    if (entry && !force && Date.now() - entry.at < 300000) {
+      return entry.promise ? entry.promise.then(() => entry) : Promise.resolve(entry);
+    }
+    entry = { at: Date.now() };
+    cache.set(cacheKey, entry);
+    const query = `funnel=${encodeURIComponent(path)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&exclude=${exclude ? '1' : '0'}`;
+    entry.promise = A.api(`api/funnels/posthog?${query}`).then((data) => { entry.data = data; }).catch((error) => { entry.error = error.message; });
+    return entry.promise.then(() => entry);
+  }
   async function loadData(force = false) {
     if (state.platform !== 'posthog') return null;
-    const k = key(), old = cache.get(k);
-    let entry = old;
-    if (force || !entry || Date.now() - entry.at >= 300000) {
-      entry = { at: Date.now() }; cache.set(k, entry);
-      const query = `funnel=${state.path}&from=${A.S.from}&to=${A.S.to}&exclude=${A.S.exInt ? '1' : '0'}`;
-      entry.promise = A.api(`api/funnels/posthog?${query}`).then((data) => { entry.data = data; }).catch((e) => { entry.error = e.message; });
-    }
-    if (entry.promise) await entry.promise;
-    return entry;
+    return loadCached(state.path, A.S.from, A.S.to, A.S.exInt, force);
   }
   async function ensureSummary() {
     if (state.platform !== 'posthog') return null;
@@ -98,4 +103,28 @@
     load();
   }
   A.platformFunnels = { render, mount, nativeBody, summary, ensureSummary };
+  A.posthogFunnel = {
+    render: ({ path = 'marketing_project', from = A.S.from, to = A.S.to, exclude = A.S.exInt } = {}) => {
+      const cacheEntry = cache.get(keyFor(path, from, to, exclude));
+      const data = cacheEntry && cacheEntry.data;
+      return `<div data-posthog-funnel>${data ? nativeBody(data) : '<div class="empty-state slim">Loading PostHog funnel…</div>'}</div>`;
+    },
+    mount: (el, options = {}) => {
+      const { path = 'marketing_project', from = A.S.from, to = A.S.to, exclude = A.S.exInt } = options;
+      const box = el.querySelector('[data-posthog-funnel]');
+      if (!box) return Promise.resolve(null);
+      const load = (force = false) => loadCached(path, from, to, exclude, force).then((entry) => {
+        if (!box.isConnected) return entry;
+        if (entry.error) {
+          const permanent = /\((?:401|403)\)/.test(entry.error);
+          box.innerHTML = `<div class="empty-state slim"><b>Funnel unavailable</b><span>${A.ui.esc(entry.error)}</span>${permanent ? '' : '<button class="btn btn-secondary btn-sm" data-funnel-retry>Retry</button>'}</div>`;
+        } else if (entry.data) box.innerHTML = nativeBody(entry.data);
+        return entry;
+      });
+      el.addEventListener('click', (event) => {
+        if (event.target.closest('[data-funnel-retry]')) load(true);
+      });
+      return load();
+    },
+  };
 })(window.App);

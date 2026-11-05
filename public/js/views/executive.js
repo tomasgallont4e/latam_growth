@@ -141,6 +141,9 @@
     const spend = cards.spend || {};
     const cps = cards.cps || {};
     const visit = cards.visit || {};
+    const posthogFunnelOptions = { path: 'marketing_project', from: A.S.from, to: A.S.to, exclude: A.S.exInt };
+    const paidFunnel = funnel(view.funnel || { steps: [] });
+    const posthogFunnel = A.posthogFunnel.render(posthogFunnelOptions);
     const tiles = [
       card({ ...signups, label: 'Sign-ups this month' }, signups.status === 'loaded' ? U.fmt(signups.value) : pending(signups)),
       card({ ...since, label: 'Sign-ups since launch' }, since.status === 'loaded' ? U.fmt(since.value) : pending(since)),
@@ -164,7 +167,8 @@
     return U.section('Executive', 'Monthly progress for the business owner. Internal and test accounts stay excluded.', `${header}`)
       + `<section class="section">${U.kpiRow(tiles)}</section>`
       + U.section('Sign-ups this month vs goal', state.span === 'launch' ? 'Cumulative external sign-ups since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s sign-ups. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Sign-ups vs goal', right: chartControls, body: `${chartSources}${chartBody}` }))
-      + `<section class="section"><div class="grid-2">${U.card({ title: 'Top 5 countries', sub: 'Sources: PostHog (sign-ups) · GA4 (sessions). Countries with either measure appear; zero rows are omitted.', body: countries(view.countries) })}${U.card({ title: 'Funnel', sub: 'Paid impressions to external sign-ups.', body: funnel(view.funnel || { steps: [] }) })}</div></section>`
+      + `<section class="section"><div class="grid-2">${U.card({ title: 'Top 5 countries', sub: 'Sources: PostHog (sign-ups) · GA4 (sessions). Countries with either measure appear; zero rows are omitted.', body: countries(view.countries) })}${U.card({ title: 'Paid acquisition funnel', sub: 'Cross-source paid impressions, landing sessions, form starts and external sign-ups. Rates are indicative.', body: paidFunnel })}</div></section>`
+      + `<section class="section">${U.card({ title: 'PostHog activation funnel', sub: `Same saved funnel and internal/test filter as Conversion · shared range ${U.win(A.S.from, A.S.to)}; not the selected Executive month.`, body: posthogFunnel })}</section>`
       + U.section('What changed', 'The last 7 complete days against the 7 days before them.', U.card({ title: 'What changed', body: research + phrases }));
   }
 
@@ -180,6 +184,7 @@
       state.span = button.dataset.execSpan;
       A.render();
     }));
+    A.posthogFunnel.mount(el, { path: 'marketing_project', from: A.S.from, to: A.S.to, exclude: A.S.exInt });
     const zoom = el.querySelector('[data-exec-zoom]');
     if (zoom) zoom.addEventListener('click', () => { state.zoom = !state.zoom; A.render(); });
   }
