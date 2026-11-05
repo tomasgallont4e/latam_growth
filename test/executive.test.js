@@ -201,6 +201,8 @@ test('Executive shows allowlisted sign-ups and known spend with honest review st
   assert.equal(data.view.cards.visit.status, 'pending');
   assert.equal(data.view.cards.visit.underReview.label, 'Under review');
   assert.match(data.view.cards.visit.reason, /Unclassified first-identify hosts are excluded/);
+  assert.equal(data.view.funnel.steps.find((step) => step.id === 'signups').status, 'pending');
+  assert.match(data.view.funnel.steps.find((step) => step.id === 'signups').reason, /Unclassified first-identify hosts are excluded/);
   assert.equal(data.view.chart.certified, true);
   assert.match(data.view.chart.note, /Under review: Unclassified first-identify hosts are excluded/);
   assert.equal(data.view.chart.days.some((day) => day.signups != null), true);

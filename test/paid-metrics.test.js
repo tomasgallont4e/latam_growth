@@ -77,8 +77,8 @@ test('Executive renders known PostHog sign-ups and social spend with coverage ca
         visit: { status: 'pending', reason: 'PostHog host coverage incomplete', underReview: { label: 'Under review', reason: 'Unclassified first-identify hosts are excluded.' } },
       },
       chart: { certified: true, note: 'Under review: Unclassified first-identify hosts are excluded.', days: [], sinceLaunch: [], underReview: { label: 'Under review', reason: 'Unclassified first-identify hosts are excluded.' } },
-      countries: { status: 'pending', rows: [] },
-      funnel: { steps: [], note: '' },
+        countries: { status: 'loaded', underReview: { label: 'Under review', reason: 'Unclassified first-identify hosts are excluded.' }, noCountry: 0, rows: [{ country: 'Colombia', signups: 5, sessions: 335, rate: 5 / 335, percentOfMin: null, pace: 'No goal' }] },
+        funnel: { steps: [{ id: 'impressions', name: 'Paid impressions', source: 'Meta', value: 1000, status: 'loaded' }, { id: 'sessions', name: 'Landing sessions', source: 'GA4', value: 335, status: 'loaded' }, { id: 'form_start', name: 'Sign-up started', source: 'GA4', value: 3, status: 'loaded' }, { id: 'signups', name: 'Sign-ups', source: 'PostHog', value: null, status: 'pending', reason: 'Unclassified first-identify hosts are excluded.' }], note: 'Steps come from different tools.' },
       changed: { phrases: [] },
     },
   });
@@ -89,7 +89,10 @@ test('Executive renders known PostHog sign-ups and social spend with coverage ca
   assert.match(html, /<span class="under-review-value">US\$20\.27<\/span>/);
   assert.match(html, /Under review · Unclassified first-identify hosts are excluded/);
   assert.match(html, /Under review · LinkedIn has not reported/);
-  assert.match(html, /kpi-compare\">Paid spend incomplete/);
+  assert.match(html, /Under review · Unclassified first-identify hosts are excluded/);
+  assert.match(html, /<td class="td-num">5<\/td>/);
+  assert.match(html, /class="funnel-count"><span class="awaiting-chip">No data yet · Unclassified first-identify hosts are excluded/);
+  assert.match(html, /Paid spend incomplete/);
   assert.match(html, /Under review: Unclassified first-identify hosts are excluded/);
 });
 

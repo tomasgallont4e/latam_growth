@@ -91,8 +91,9 @@
       { t: '% of min.', num: 1, f: (row) => row.percentOfMin == null ? 'n/a' : U.pct(row.percentOfMin, 0) },
       { t: 'Pace', f: (row) => `<span class="${paceClass(row.pace)}">${U.esc(row.pace)}</span>` },
     ], rows);
+    const caveat = block.underReview ? `<p class="card-note">Under review · ${U.esc(block.underReview.reason)}</p>` : '';
     const missing = block.noCountry ? `<p class="card-note">No country: ${U.fmt(block.noCountry)} sign-ups</p>` : '';
-    return table + missing + link;
+    return caveat + table + missing + link;
   }
 
   function chartControls() {
