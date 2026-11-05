@@ -51,24 +51,35 @@ test('Executive shows the same saved PostHog funnel as Conversion and labels its
   A.views.executive.render();
   await new Promise((resolve) => setImmediate(resolve));
   const box = { isConnected: true, innerHTML: '' };
-  const root = {
-    querySelector: (selector) => selector === '[data-platform-funnel]' ? box : null,
+  A.views.executive.mount({
+    querySelector: (selector) => selector === '[data-posthog-funnel]' ? box : null,
     querySelectorAll: () => [],
     addEventListener() {},
-  };
-  A.views.executive.mount(root);
+  });
   await A.platformFunnels.ensureSummary();
   await new Promise((resolve) => setImmediate(resolve));
+  box.innerHTML = A.posthogFunnel.render();
+  const conversion = A.views.conversion.render();
+  const posthog = A.posthogFunnel.render({ path: 'marketing_project', from: A.S.from, to: A.S.to, exclude: A.S.exInt });
+  const conversionHandlers = {};
+  A.platformFunnels.mount({
+    querySelector: () => null,
+    addEventListener: (name, handler) => { conversionHandlers[name] = handler; },
+  });
+  conversionHandlers.change({ target: { value: 'ga4', hasAttribute: (name) => name === 'data-funnel-platform' } });
 
   const executive = A.views.executive.render();
-  const conversion = A.views.conversion.render();
+  const conversionAfterSwitch = A.views.conversion.render();
   for (const { name, n } of posthogSteps) {
     assert.ok(executive.includes(name), `Executive should show ${name}`);
     assert.ok(conversion.includes(name), `Conversion should show ${name}`);
     assert.ok(executive.includes(n.toLocaleString('en-US')), `Executive should show ${n} persons`);
   }
+  assert.match(posthog, /Marketing-to-Project Activation Funnel/);
   assert.match(executive, /Paid acquisition funnel/);
+  assert.match(executive, /PostHog activation funnel/);
   assert.match(executive, /Paid impressions/);
+  assert.match(executive, /data-posthog-funnel/);
   assert.equal(requests.filter((url) => url.startsWith('api/funnels/posthog?')).length, 1);
 });
 
