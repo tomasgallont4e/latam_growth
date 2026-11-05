@@ -29,8 +29,8 @@ test('Executive follows the spec layout and shows only its four-step cross-sourc
     if (url.startsWith('api/funnels/posthog?')) return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: '2026-10-01', to: '2026-10-28', window_days: 14, steps: [{ name: 'Marketing page', n: 99 }, { name: 'CTA', n: 9 }, { name: 'Registration', n: 5 }, { name: 'Registration Finished', n: 1 }, { name: 'Login', n: 0 }, { name: 'Project Created', n: 0 }] });
     if (url.startsWith('api/executive?')) return Promise.resolve({
       month, from: '2026-10-01', asOf: '2026-10-28',
-      executiveAccounts: { sinceLaunch: 7, byPlan: { status: 'pending', free: null, paid: null, reason: 'No account subscription-plan report is configured.' } },
-      view: { cutoff: '2026-10-28', executiveAccounts: { sinceLaunch: 7, byPlan: { status: 'pending', free: null, paid: null, reason: 'No account subscription-plan report is configured.' } },
+      executiveAccounts: { sinceLaunch: 7, byPlan: { status: 'loaded', free: 4, paid: 2, other: 0, unknown: 1, semantics: 'last_observed_plan_from_signed_in_or_plan_changed_not_verified_billing_status', reason: 'Last plan reported by signed_in or plan_changed; not verified current billing status.' } },
+      view: { cutoff: '2026-10-28', executiveAccounts: { sinceLaunch: 7, byPlan: { status: 'loaded', free: 4, paid: 2, other: 0, unknown: 1, semantics: 'last_observed_plan_from_signed_in_or_plan_changed_not_verified_billing_status', reason: 'Last plan reported by signed_in or plan_changed; not verified current billing status.' } },
         cards: {
           signups: { status: 'pending', reason: 'PostHog host coverage pending', lines: [] },
           sinceLaunch: { status: 'pending', reason: 'PostHog host coverage pending', lines: [] },
@@ -63,8 +63,9 @@ test('Executive follows the spec layout and shows only its four-step cross-sourc
   assert.match(executive, /Marketing-to-Project Activation Funnel/);
   assert.doesNotMatch(executive, /Paid acquisition funnel/);
   assert.match(executive, /product activation, not an advertising funnel/i);
-  assert.match(executive, /Free \/ Paid unavailable/);
-  assert.match(executive, /No account subscription-plan report is configured/);
+  assert.match(executive, /Last reported Paid/);
+  assert.match(executive, /not verified current billing status/i);
+  assert.doesNotMatch(executive, /Plan data unavailable/);
   assert.equal(requests.filter((url) => url.startsWith('api/funnels/posthog?')).length, 1);
   assert.match(requests.find((url) => url.startsWith('api/funnels/posthog?')), /to=2026-10-28&exclude=1/);
   assert.match(funnelBox.innerHTML, /Marketing page/);
@@ -821,6 +822,9 @@ test('Executive PostHog account country rows use event GeoIP on external first i
   });
 
   const load = await connectors.posthog();
+  const accountQuery = requests.find((r) => r.query.query.includes("event = '$identify'") && !r.query.query.includes('first_host'));
+  assert.match(accountQuery.query.query, /argMin\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name/);
+  assert.match(accountQuery.query.query, /person\.properties\.country/);
   const executiveTotal = load.metrics.find((r) => r.metric === 'ph_exec_accounts');
   const executiveGeo = load.metrics.find((r) => r.metric === 'ph_exec_accounts_geo');
   const coverage = load.snapshots.find((r) => r.key === 'executive_accounts');
@@ -841,6 +845,41 @@ test('Executive PostHog account country rows use event GeoIP on external first i
   assert.equal((query.query.query.match(/tuple\(timestamp, uuid\)/g) || []).length, 3);
   assert.match(query.query.query, /LIMIT 5001$/);
   assert.equal(query.query.filters.filterTestAccounts, true);
+});
+
+test('PostHog aggregates last reported plans for approved-host external accounts', async (t) => {
+  env(t, {
+    POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test',
+    POSTHOG_EXECUTIVE_HOSTS: 'portal.think4ever.com,think4ever.com,www.think4ever.com',
+    POSTHOG_PLAN_PROPERTY: 'plan', POSTHOG_PROJECT_CREATED_ENABLED: '0',
+  });
+  const { connectors } = require('../lib/connectors');
+  let planQuery = '';
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    const sql = JSON.parse(opts.body).query.query;
+    if (sql.includes("event IN ('signed_in','plan_changed')")) {
+      planQuery = sql;
+      return response({ results: [['free', 2], ['paid', 1], ['Other', 1], ['', 1]] });
+    }
+    if (sql.includes('properties.$geoip_country_name') && sql.includes('first_host')) return response({ results: [[date, 'External', 'Colombia', 'portal.think4ever.com', 5]] });
+    if (sql.includes("event = '$identify'")) return response({ results: [[date, 'External', '', 5]] });
+    if (sql.includes("event = 'registration_started'")) return response({ results: [] });
+    if (sql.includes('matchesAction')) return response({ results: [] });
+    return response({ results: [] });
+  });
+  const load = await connectors.posthog();
+  const coverage = load.snapshots.find((row) => row.key === 'executive_plan_accounts');
+  assert.ok(planQuery, 'sync should read the signed-in and plan-changed events');
+  assert.match(planQuery, /properties\.plan/);
+  assert.match(planQuery, /argMaxIf/);
+  assert.match(planQuery, /event IN \('signed_in','plan_changed'\)/);
+  assert.match(planQuery, /portal\.think4ever\.com/);
+  assert.match(planQuery, /person_id IN \(SELECT person_id FROM events/);
+  assert.match(planQuery, /properties\.\$host.*portal\.think4ever\.com/);
+  assert.equal(coverage.rows[0].available, true);
+  assert.deepEqual(coverage.rows[0].last_reported_plan, { free: 2, paid: 1, other: 1, unknown: 1 });
+  assert.equal(coverage.rows[0].semantics, 'last_observed_plan_from_signed_in_or_plan_changed_not_verified_billing_status');
 });
 
 test('Executive PostHog account query with truncated result pages is pending, not a partial count', async (t) => {
@@ -1240,6 +1279,22 @@ test('Overview ranks country account growth and lets the CEO select one market',
   assert.match(html, /id="goal-country"/);
   assert.match(html, /Accounts per 1,000 sessions/);
   assert.match(html, /GA4 session is a group of interactions/);
+});
+
+test('Overview keeps the country selector usable when account attribution is missing', () => {
+  const A = dashboard();
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  A.S.data.snapshots.push({ source: 'posthog', key: 'account_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true, country_available: false }] });
+  A.S.data.metrics = [{ ...metric('posthog', 'ph_accounts', 20, 'External'), dim: 'account_type' }];
+  let listener;
+  const box = { isConnected: true, innerHTML: '' };
+  const root = { querySelector: () => box, addEventListener: (type, callback) => { if (type === 'change') listener = callback; } };
+  const html = A.views.overview.render();
+  assert.match(html, /<select id="goal-country"/);
+  assert.match(html, /Country attribution unavailable/);
+  A.views.overview.mount(root);
+  listener({ target: { id: 'goal-country', value: 'Brazil' } });
+  assert.equal(A.S.goalCountry, 'Brazil');
 });
 
 test('Acquisition prioritizes GA4 sessions and engagement by channel', () => {

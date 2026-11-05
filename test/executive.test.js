@@ -103,8 +103,26 @@ test('Executive response exposes covered approved-host accounts separately from 
     country_assigned: 3,
     country_missing: 4,
     excludedHosts: 2,
-    byPlan: { status: 'pending', free: null, paid: null, reason: 'No account subscription-plan report is configured.' },
+    byPlan: { status: 'pending', free: null, paid: null, other: null, unknown: null, reason: 'Plan events are unavailable or POSTHOG_PLAN_PROPERTY is not configured.' },
   });
+});
+
+test('Executive exposes last reported plan counts without asserting billing status', async () => {
+  const data = await build(storeWithMetrics([
+    { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-10-02', dim: 'account_type', dim_value: 'External', value: 5 },
+  ], [
+    { source: 'posthog', key: 'executive_accounts', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true, country_available: false, external_accounts: 5, country_assigned: 0, country_missing: 5, excluded_host_accounts: 0 }] },
+    { source: 'posthog', key: 'executive_plan_accounts', from: '2026-10-01', to: '2026-10-28', rows: [{
+      available: true, last_reported_plan: { free: 2, paid: 1, other: 1, unknown: 1 },
+      semantics: 'last_observed_plan_from_signed_in_or_plan_changed_not_verified_billing_status',
+    }] },
+  ]), '2026-10', new Date('2026-10-29T17:00:00.000Z'));
+  assert.deepEqual(data.executiveAccounts.byPlan, {
+    status: 'loaded', free: 2, paid: 1, other: 1, unknown: 1,
+    semantics: 'last_observed_plan_from_signed_in_or_plan_changed_not_verified_billing_status',
+    reason: 'Last plan reported by signed_in or plan_changed; not verified current billing status.',
+  });
+  assert.match(data.view.executiveAccounts.byPlan.reason, /not verified current billing status/i);
 });
 
 test('Executive month validation rejects malformed calendar months', () => {

@@ -71,8 +71,8 @@
       U.kpi({ label: 'Accounts per 1,000 sessions', source: 'Directional', value: rate == null ? '–' : U.fmt(rate, 1), compare: 'Not a cohort conversion rate' }),
     ], 5);
     const marketNote = '<p class="card-note">Accounts and sessions are separate source populations, not linked journeys. Use the ratio as a directional market comparison—not as a visit-to-account conversion rate. Unmatched country names appear in the chart above but do not inherit a plan target.</p>';
-    const marketCard = geoOk ? U.card({ title: selectedCountry || 'Country metrics', sub: `Since launch · ${U.win(from, to)}`, right: countryPicker, body: marketKpis + marketNote })
-      : U.card({ title: 'Country metrics', right: U.srcPill('posthog', 'country'), body: U.empty('No country split yet', 'PostHog has no country for new accounts. Enable GeoIP or send a country property with identify, and each market fills in here.', 'earth-americas') });
+    const marketCard = U.card({ title: selectedCountry || 'Country metrics', sub: `Since launch · ${U.win(from, to)}`, right: countryPicker,
+      body: marketKpis + marketNote + (geoOk ? '' : U.empty('Country attribution unavailable', 'The selected market target and GA4 sessions are shown, but PostHog has not attributed new accounts to countries. Enable GeoIP or send country data with the first identify event.', 'earth-americas')) });
     const coverageNote = geoOk ? `<p class="card-note">${U.fmt(known)} of ${U.fmt(total)} all-host accounts have a country · ${U.fmt(unknown)} have no country · ${U.fmt(other)} are outside the plan markets. Executive approved-host External population: ${executive.total == null ? 'pending' : U.fmt(executive.total)}; the totals use different host/type rules.</p>` : `<p class="card-note">All-host first-identify accounts: ${U.fmt(total)}. Executive approved-host External population: ${executive.total == null ? 'pending' : U.fmt(executive.total)}; these totals use different host/type rules.</p>`;
     const executiveCountryTable = executiveCountryRows.length ? U.table([
       { t: 'Country', k: 'country' }, { t: 'Executive accounts', num: 1, f: (r) => U.fmt(r.count) },
