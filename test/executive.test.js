@@ -208,6 +208,32 @@ test('Executive shows allowlisted sign-ups and known spend with honest review st
   assert.equal(data.view.chart.days.some((day) => day.signups != null), true);
 });
 
+test('Executive preserves a reconciliation review reason without claiming host exclusions', async () => {
+  const metrics = [];
+  for (let day = 1; day <= 3; day += 1) {
+    const date = `2026-11-0${day}`;
+    metrics.push(
+      { source: 'posthog', metric: 'ph_exec_accounts', date, dim: 'account_type', dim_value: 'External', value: day },
+      { source: 'posthog', metric: 'ph_exec_accounts_geo', date, dim: 'country', dim_value: 'Colombia', value: day },
+      { source: 'ga4', metric: 'ga_exec_geo_sessions', date, dim: 'country', dim_value: 'Colombia', value: 100 },
+      { source: 'ga4', metric: 'ga_exec_form_starts', date, value: 1 },
+    );
+  }
+  const data = await build(coveredMonth(metrics, {
+    note: [{ _k: 'exec_flag|signups', label: 'Awaiting reconciliation from Finance.' }],
+  }), '2026-11', new Date('2026-11-04T17:00:00.000Z'));
+  assert.equal(data.view.cards.signups.value, 6);
+  assert.equal(data.view.cards.signups.underReview.label, 'Under review');
+  assert.match(data.view.cards.signups.underReview.reason, /Awaiting reconciliation from Finance/);
+  assert.doesNotMatch(data.view.cards.signups.underReview.reason, /host/i);
+  assert.equal(data.view.cards.signups.pace, null);
+  assert.equal(data.view.cards.signups.projection, null);
+  assert.equal(data.view.cards.visit.underReview.label, 'Under review');
+  assert.match(data.view.cards.visit.reason, /Awaiting reconciliation from Finance/);
+  assert.ok(data.view.changed.phrases.join(' ').includes('Awaiting reconciliation from Finance'));
+  assert.doesNotMatch(data.view.changed.phrases.join(' '), /sign-ups: .*from .* to/);
+});
+
 test('Executive shows approved-host sign-ups when other hosts were excluded', async () => {
   const store = coveredMonth([
     { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-11-02', dim: 'account_type', dim_value: 'External', value: 5 },
