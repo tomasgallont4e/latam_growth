@@ -22,8 +22,8 @@ test('Executive shows the same saved PostHog funnel as Conversion and labels its
     { name: 'marketing_cta_clicked', n: 500 },
     { name: 'registration_started', n: 200 },
     { name: 'Registration Finished', n: 100 },
-    { name: 'Login', n: 80 },
-    { name: 'Project View/Project Created', n: 20 },
+    { name: 'Login', n: 0 },
+    { name: 'Project View/Project Created', n: null },
   ];
   A.api = (url) => {
     requests.push(url);
@@ -51,11 +51,12 @@ test('Executive shows the same saved PostHog funnel as Conversion and labels its
   A.views.executive.render();
   await new Promise((resolve) => setImmediate(resolve));
   const box = { isConnected: true, innerHTML: '' };
-  A.views.executive.mount({
+  const executiveMount = A.views.executive.mount({
     querySelector: (selector) => selector === '[data-posthog-funnel]' ? box : null,
     querySelectorAll: () => [],
     addEventListener() {},
   });
+  await executiveMount;
   await A.platformFunnels.ensureSummary();
   await new Promise((resolve) => setImmediate(resolve));
   const conversion = A.views.conversion.render();
@@ -72,16 +73,37 @@ test('Executive shows the same saved PostHog funnel as Conversion and labels its
   for (const { name, n } of posthogSteps) {
     assert.ok(executive.includes(name), `Executive should show ${name}`);
     assert.ok(conversion.includes(name), `Conversion should show ${name}`);
-    assert.ok(executive.includes(n.toLocaleString('en-US')), `Executive should show ${n} persons`);
+    assert.ok(box.innerHTML.includes(name), `Mounted Executive card should show ${name}`);
+    if (n == null) {
+      assert.match(box.innerHTML, /Awaiting events/);
+      assert.match(conversion, /Awaiting events/);
+    } else {
+      assert.ok(executive.includes(n.toLocaleString('en-US')), `Executive should show ${n} persons`);
+      assert.ok(conversion.includes(n.toLocaleString('en-US')), `Conversion should show ${n} persons`);
+      assert.ok(box.innerHTML.includes(n.toLocaleString('en-US')), `Mounted Executive card should show ${n} persons`);
+    }
   }
+  const renderedSteps = (html) => [...html.matchAll(/<div class="native-funnel-step" role="listitem"><b>(.*?)<\/b>.*?<div class="native-funnel-caption">(.*?)<\/div>/gs)].map((match) => [match[1], match[2]]);
+  assert.deepEqual(renderedSteps(box.innerHTML), renderedSteps(conversion));
+  assert.equal(renderedSteps(box.innerHTML).length, 6);
+  assert.match(box.innerHTML, /<strong>0 persons<\/strong>/);
+  assert.match(box.innerHTML, /Awaiting events/);
   assert.match(conversionAfterSwitch, /Google Analytics 4 activity/);
   assert.doesNotMatch(conversionAfterSwitch, /Marketing-to-Project Activation Funnel/);
   assert.match(posthog, /Marketing-to-Project Activation Funnel/);
   assert.match(executive, /Paid acquisition funnel/);
   assert.match(executive, /PostHog activation funnel/);
+  assert.match(executive, /shared range/);
+  assert.match(executive, /not the selected Executive month/);
   assert.match(executive, /Paid impressions/);
   assert.match(executive, /data-posthog-funnel/);
-  assert.equal(requests.filter((url) => url.startsWith('api/funnels/posthog?')).length, 1);
+  const funnelRequests = requests.filter((url) => url.startsWith('api/funnels/posthog?'));
+  assert.equal(funnelRequests.length, 1);
+  const funnelQuery = new URLSearchParams(funnelRequests[0].split('?')[1]);
+  assert.equal(funnelQuery.get('funnel'), 'marketing_project');
+  assert.equal(funnelQuery.get('from'), A.S.from);
+  assert.equal(funnelQuery.get('to'), A.S.to);
+  assert.equal(funnelQuery.get('exclude'), A.S.exInt ? '1' : '0');
 });
 
 test('Executive view renders the proposed goal label from its monthly API response', async () => {
