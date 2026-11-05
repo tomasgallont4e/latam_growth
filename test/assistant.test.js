@@ -141,6 +141,8 @@ test('assistant forwards only bounded aggregate dashboard data to Anthropic', as
   const payload = JSON.parse(request.options.body);
   assert.equal(payload.max_tokens, 16000);
   assert.deepEqual(payload.output_config, { effort: 'low' });
+  assert.match(payload.system, /Answer in English/);
+  assert.doesNotMatch(payload.system, /Answer in Spanish/);
   assert.equal(request.url, 'https://api.anthropic.com/v1/messages');
   assert.equal(request.options.headers['x-api-key'], 'test-secret');
   assert.equal(request.options.headers['anthropic-version'], '2023-06-01');

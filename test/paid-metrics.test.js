@@ -821,6 +821,9 @@ test('Executive PostHog account country rows use event GeoIP on external first i
   });
 
   const load = await connectors.posthog();
+  const accountQuery = requests.find((r) => r.query.query.includes("event = '$identify'") && !r.query.query.includes('first_host'));
+  assert.match(accountQuery.query.query, /argMin\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name/);
+  assert.match(accountQuery.query.query, /person\.properties\.country/);
   const executiveTotal = load.metrics.find((r) => r.metric === 'ph_exec_accounts');
   const executiveGeo = load.metrics.find((r) => r.metric === 'ph_exec_accounts_geo');
   const coverage = load.snapshots.find((r) => r.key === 'executive_accounts');
@@ -1240,6 +1243,22 @@ test('Overview ranks country account growth and lets the CEO select one market',
   assert.match(html, /id="goal-country"/);
   assert.match(html, /Accounts per 1,000 sessions/);
   assert.match(html, /GA4 session is a group of interactions/);
+});
+
+test('Overview keeps the country selector usable when account attribution is missing', () => {
+  const A = dashboard();
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  A.S.data.snapshots.push({ source: 'posthog', key: 'account_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true, country_available: false }] });
+  A.S.data.metrics = [{ ...metric('posthog', 'ph_accounts', 20, 'External'), dim: 'account_type' }];
+  let listener;
+  const box = { isConnected: true, innerHTML: '' };
+  const root = { querySelector: () => box, addEventListener: (type, callback) => { if (type === 'change') listener = callback; } };
+  const html = A.views.overview.render();
+  assert.match(html, /<select id="goal-country"/);
+  assert.match(html, /Country attribution unavailable/);
+  A.views.overview.mount(root);
+  listener({ target: { id: 'goal-country', value: 'Brazil' } });
+  assert.equal(A.S.goalCountry, 'Brazil');
 });
 
 test('Acquisition prioritizes GA4 sessions and engagement by channel', () => {
