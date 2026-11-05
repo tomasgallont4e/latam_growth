@@ -875,8 +875,8 @@ test('PostHog aggregates last reported plans for approved-host external accounts
   assert.match(planQuery, /argMaxIf/);
   assert.match(planQuery, /event IN \('signed_in','plan_changed'\)/);
   assert.match(planQuery, /portal\.think4ever\.com/);
-  assert.match(planQuery, /lower\(coalesce\(toString\(properties\.\$host\)/);
-  assert.match(planQuery, /\) = ''\) AND coalesce\(toString\(properties\.qa_probe\)/);
+  assert.match(planQuery, /person_id IN \(SELECT person_id FROM events/);
+  assert.match(planQuery, /properties\.\$host.*portal\.think4ever\.com/);
   assert.equal(coverage.rows[0].available, true);
   assert.deepEqual(coverage.rows[0].last_reported_plan, { free: 2, paid: 1, other: 1, unknown: 1 });
   assert.equal(coverage.rows[0].semantics, 'last_observed_plan_from_signed_in_or_plan_changed_not_verified_billing_status');
