@@ -14,7 +14,9 @@
 
     const ratio = goal ? total / goal : 0;
     const markets = Object.entries(p.countries || {}).sort((a, b) => b[1] - a[1]);
-    const byCountry = D.accountsCountries(from, to);
+    const byCountry = D.accountsCountries(from, to) || {};
+    const executive = D.accountBreakdown(from, to);
+    const executiveCountries = executive.byCountry || {};
     const coverage = D.covered('posthog', 'account_coverage', from, to);
     const geoOk = coverage && coverage.country_available === true;
     const planned = new Set(markets.map(([name]) => name));
@@ -37,6 +39,7 @@
       <dl class="acct-hero-side"><div><dt>Selected date range</dt><dd>${U.fmt(D.accounts())}</dd></div>${goalChange}<div><dt>Markets with accounts</dt><dd>${geoOk ? `${active} of ${markets.length}` : '–'}</dd></div><div><dt>CRM contacts</dt><dd>${U.fmt(D.crmTotal(from, to) || 0)}</dd></div></dl>${trend}</div>`;
 
     const countryRows = Object.entries(byCountry).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+    const executiveCountryRows = Object.entries(executiveCountries).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
     const countryBars = countryRows.map(([name, value], i) => ({ name, value, color: A.charts.COUNTRY_COLORS[i % A.charts.COUNTRY_COLORS.length], label: U.fmt(value) }));
     const countryPeriodRows = geoOk && goalComparison ? countryRows.map(([country]) => ({
       country,
@@ -70,9 +73,14 @@
     const marketNote = '<p class="card-note">Accounts and sessions are separate source populations, not linked journeys. Use the ratio as a directional market comparison—not as a visit-to-account conversion rate. Unmatched country names appear in the chart above but do not inherit a plan target.</p>';
     const marketCard = geoOk ? U.card({ title: selectedCountry || 'Country metrics', sub: `Since launch · ${U.win(from, to)}`, right: countryPicker, body: marketKpis + marketNote })
       : U.card({ title: 'Country metrics', right: U.srcPill('posthog', 'country'), body: U.empty('No country split yet', 'PostHog has no country for new accounts. Enable GeoIP or send a country property with identify, and each market fills in here.', 'earth-americas') });
-    const coverageNote = geoOk ? `<p class="card-note">${U.fmt(known)} of ${U.fmt(total)} accounts have a country · ${U.fmt(unknown)} have no country · ${U.fmt(other)} are outside the plan markets.</p>` : '';
-    return U.section('LATAM 500K goal', sub, U.card({ cls: 'acct-hero-card', body: hero }))
+    const coverageNote = geoOk ? `<p class="card-note">${U.fmt(known)} of ${U.fmt(total)} all-host accounts have a country · ${U.fmt(unknown)} have no country · ${U.fmt(other)} are outside the plan markets. Executive approved-host External population: ${executive.total == null ? 'pending' : U.fmt(executive.total)}; the totals use different host/type rules.</p>` : `<p class="card-note">All-host first-identify accounts: ${U.fmt(total)}. Executive approved-host External population: ${executive.total == null ? 'pending' : U.fmt(executive.total)}; these totals use different host/type rules.</p>`;
+    const executiveCountryTable = executiveCountryRows.length ? U.table([
+      { t: 'Country', k: 'country' }, { t: 'Executive accounts', num: 1, f: (r) => U.fmt(r.count) },
+    ], executiveCountryRows.map(([country, count]) => ({ country, count }))) : U.empty('No Executive country breakdown yet', 'No approved-host external accounts with a country are available.', 'earth-americas');
+    const executiveSection = U.section('Executive approved-host external accounts by country', 'Separate restricted population · first identify · not the all-host Overview total', U.card({ title: 'Executive approved-host External accounts', body: executiveCountryTable }));
+    return U.section('LATAM 500K goal', sub, U.card({ cls: 'acct-hero-card', body: hero + coverageNote }))
       + (countryChart ? U.section('New accounts by country', 'One horizontal bar per identified country · sorted by accounts created', countryChart) : '')
+      + executiveSection
       + U.section('Accounts by country', 'Select a market to focus on its accounts, plan target and traffic context', marketCard + coverageNote);
   }
 
