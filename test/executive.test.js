@@ -36,8 +36,9 @@ test('Executive new accounts use the dedicated external first-identify country s
   assert.equal(data.series.platform_signups.Colombia[day], 2);
   assert.equal(data.series.platform_signups[UNSPLIT][day], 1);
   const metric = data.metrics.find((item) => item.id === 'platform_signups');
-  assert.equal(metric.status, 'pending');
-  assert.match(metric.reason, /unclassified.*host/i);
+  assert.equal(metric.status, 'loaded');
+  assert.equal(metric.underReview.label, 'Under review');
+  assert.match(metric.underReview.reason, /hosts were excluded/i);
   assert.match(metric.definition, /first.*identify/i);
 });
 
@@ -169,6 +170,64 @@ function coveredMonth(metrics, extra = {}) {
   return storeWithMetrics(metrics, snapshots, extra);
 }
 
+test('Executive shows allowlisted sign-ups and known spend with honest review states', async () => {
+  const store = coveredMonth([
+    { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-11-02', dim: 'account_type', dim_value: 'External', value: 5 },
+    { source: 'posthog', metric: 'ph_exec_accounts_geo', date: '2026-11-02', dim: 'country', dim_value: 'Colombia', value: 5 },
+    { source: 'ga4', metric: 'ga_exec_geo_sessions', date: '2026-11-02', dim: 'country', dim_value: 'Colombia', value: 335 },
+    { source: 'ga4', metric: 'ga_exec_form_starts', date: '2026-11-02', value: 3 },
+    { source: 'meta', metric: 'ad_spend', date: '2026-11-02', dim: 'campaign', dim_value: 'Boost', value: 20.27 },
+  ], { source: [{ _k: 'google_ads', state: 'connected', window: '2026-10-01 to 2026-11-30' }] });
+  const posthogSnapshot = (await store.list('snapshot')).find((row) => row.key === 'executive_accounts');
+  posthogSnapshot.rows[0].excluded_host_accounts = 4;
+  const data = await build(store, '2026-11', new Date('2026-11-04T17:00:00.000Z'));
+  assert.equal(data.view.cards.signups.status, 'loaded');
+  assert.equal(data.view.cards.signups.value, 5);
+  assert.equal(data.view.cards.signups.pace, null);
+  assert.equal(data.view.cards.signups.projection, null);
+  assert.equal(data.view.cards.signups.underReview.label, 'Under review');
+  assert.match(data.view.cards.signups.lines.join(' '), /Under review: Unclassified first-identify hosts are excluded/);
+  assert.equal(data.view.cards.sinceLaunch.status, 'loaded');
+  assert.equal(data.view.cards.sinceLaunch.value, 5);
+  assert.equal(data.view.cards.sinceLaunch.underReview.label, 'Under review');
+  assert.match(data.view.cards.sinceLaunch.lines.join(' '), /Under review: Unclassified first-identify hosts are excluded/);
+  assert.equal(data.view.cards.spend.status, 'loaded');
+  assert.equal(data.view.cards.spend.value, 20.27);
+  assert.equal(data.view.cards.spend.complete, false);
+  assert.equal(data.view.cards.spend.underReview.label, 'Under review');
+  assert.match(data.view.cards.spend.underReview.reason, /LinkedIn paid reporting is not connected/);
+  assert.equal(data.view.cards.cps.status, 'pending');
+  assert.match(data.view.cards.cps.reason, /Unclassified first-identify hosts are excluded/);
+  assert.equal(data.view.cards.cps.underReview.label, 'Under review');
+  assert.match(data.view.cards.cps.underReview.reason, /Paid spend incomplete/);
+  assert.equal(data.view.cards.visit.status, 'pending');
+  assert.equal(data.view.cards.visit.underReview.label, 'Under review');
+  assert.match(data.view.cards.visit.reason, /Unclassified first-identify hosts are excluded/);
+  assert.equal(data.view.chart.certified, true);
+  assert.match(data.view.chart.note, /Under review: Unclassified first-identify hosts are excluded/);
+  assert.equal(data.view.chart.days.some((day) => day.signups != null), true);
+});
+
+test('Executive shows approved-host sign-ups when other hosts were excluded', async () => {
+  const store = coveredMonth([
+    { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-11-02', dim: 'account_type', dim_value: 'External', value: 5 },
+    { source: 'posthog', metric: 'ph_exec_accounts_geo', date: '2026-11-02', dim: 'country', dim_value: 'Colombia', value: 5 },
+    { source: 'ga4', metric: 'ga_exec_geo_sessions', date: '2026-11-02', dim: 'country', dim_value: 'Colombia', value: 335 },
+    { source: 'ga4', metric: 'ga_exec_form_starts', date: '2026-11-02', value: 3 },
+  ]);
+  const snapshot = (await store.list('snapshot')).find((row) => row.key === 'executive_accounts');
+  Object.assign(snapshot.rows[0], { external_accounts: 5, country_assigned: 5, excluded_host_accounts: 4 });
+  const data = await build(store, '2026-11', new Date('2026-11-04T17:00:00.000Z'));
+  assert.equal(data.view.cards.signups.status, 'loaded');
+  assert.equal(data.view.cards.signups.value, 5);
+  assert.equal(data.view.cards.signups.underReview.label, 'Under review');
+  assert.equal(data.view.cards.sinceLaunch.value, 5);
+  assert.equal(data.view.cards.sinceLaunch.status, 'loaded');
+  assert.equal(data.view.cards.sinceLaunch.underReview.label, 'Under review');
+  assert.equal(data.view.chart.certified, true);
+  assert.match(data.view.chart.note, /Under review: Unclassified first-identify hosts are excluded/);
+});
+
 test('Executive month sign-ups keep outside LATAM off the goal number and October has no goal', async () => {
   const data = await build(coveredMonth([
     { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-10-02', dim: 'account_type', dim_value: 'External', value: 8 },
@@ -206,6 +265,7 @@ test('Executive spend stays unavailable while Meta is pending and Google with no
   assert.equal(data.view.channels.google_ads.status, 'no_campaigns');
   assert.equal(data.view.channels.linkedin.status, 'pending');
   assert.equal(data.view.cards.spend.value, null);
+  assert.equal(data.view.cards.spend.status, 'pending');
   assert.equal(data.view.cards.cps.status, 'pending');
   assert.match(data.view.cards.cps.reason, /spend incomplete/);
   assert.equal(data.view.funnel.steps[0].status, 'pending');

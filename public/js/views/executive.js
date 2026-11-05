@@ -109,7 +109,7 @@
     if (!block.certified) return { controls, body: U.empty('No data yet', block.reason || 'Sign-ups are not available for this month.', 'chart-column') };
     const points = state.span === 'launch' ? (block.sinceLaunch || []) : (block.days || []);
     const goal = state.span === 'launch' ? null : block.goal;
-    const note = state.span === 'month' && block.note ? `<p class="card-note">${U.esc(block.note)}</p>` : '';
+    const note = state.span === 'month' && block.note ? `<p class="card-note">${U.esc(block.note)}</p>` : state.span === 'launch' && block.underReview ? `<p class="card-note">Under review: ${U.esc(block.underReview.reason)}</p>` : '';
     const drawn = A.charts.executiveSignups({ points, goal, goalLabel: state.span === 'launch' ? null : block.goalLabel, zoom: state.zoom || state.span === 'launch', label: 'Sign-ups this month vs goal' });
     return { controls, body: drawn + note };
   }
@@ -145,18 +145,22 @@
     const cps = cards.cps || {};
     const visit = cards.visit || {};
     const paidFunnel = funnel(view.funnel || { steps: [] });
+    const pendingReason = (item, fallback) => U.esc(item.reason || fallback);
     const tiles = [
-      card({ ...signups, label: 'Sign-ups this month' }, signups.status === 'loaded' ? U.fmt(signups.value) : pending(signups)),
-      card({ ...since, label: 'Sign-ups since launch' }, since.status === 'loaded' ? U.fmt(since.value) : pending(since)),
-      card({ ...spend, label: 'Ad spend this month' }, spend.status === 'loaded' ? money(spend.value) : pending(spend)),
-      card({ ...cps, label: 'Cost per sign-up' }, cps.status === 'loaded' ? money(cps.value) : pending(cps)),
-      card({ ...visit, label: 'Visit to sign-up rate' }, visit.status === 'loaded' ? U.pct(visit.value, 2) : pending(visit)),
+      card({ ...signups, label: 'Sign-ups this month' }, signups.value != null ? U.fmt(signups.value) : pending(signups)),
+      card({ ...since, label: 'Sign-ups since launch' }, since.value != null ? U.fmt(since.value) : pending(since)),
+      card({ ...spend, label: 'Ad spend this month', labelStatus: spend.underReview && spend.underReview.label }, spend.value != null ? money(spend.value) : pending(spend)),
+      card({ ...cps, label: 'Cost per sign-up' }, cps.value != null ? money(cps.value) : pending(cps)),
+      card({ ...visit, label: 'Visit to sign-up rate' }, visit.value != null ? U.pct(visit.value, 2) : pending(visit)),
     ];
-    if (signups.status !== 'loaded' && signups.reason) tiles[0] = U.kpi({ label: 'Sign-ups this month', source: 'PostHog', value: pending(signups), compare: U.esc(signups.reason) });
-    if (since.status !== 'loaded' && since.reason) tiles[1] = U.kpi({ label: 'Sign-ups since launch', source: 'PostHog', value: pending(since), compare: U.esc(since.reason) });
-    if (spend.status !== 'loaded') tiles[2] = U.kpi({ label: 'Ad spend this month', source: spend.source || 'Paid', value: pending(spend), compare: (spend.lines || []).map((line) => `<div>${U.esc(line)}</div>`).join('') });
-    if (cps.status !== 'loaded') tiles[3] = U.kpi({ label: 'Cost per sign-up', source: 'Paid spend / PostHog', value: cps.status === 'no_signups' ? 'No sign-ups yet' : pending(cps), compare: U.esc(cps.reason === 'spend incomplete' ? 'Paid spend incomplete' : (cps.reason === 'No data yet' ? '' : (cps.reason || ''))) });
-    if (visit.status !== 'loaded' && visit.reason) tiles[4] = U.kpi({ label: 'Visit to sign-up rate', source: 'PostHog / GA4', value: pending(visit), compare: U.esc(visit.reason) });
+    if (signups.value == null) tiles[0] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups this month', source: 'PostHog', value: pending(signups), compare: pendingReason(signups, 'PostHog account coverage is incomplete.') });
+    if (signups.status === 'loaded' && signups.underReview) tiles[0] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups this month', source: 'PostHog', value: `<span class="under-review-value">${U.fmt(signups.value)}</span>`, compare: `<span class="under-review">Under review · ${pendingReason(signups.underReview, '')}</span>` });
+    if (since.value == null) tiles[1] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups since launch', source: 'PostHog', value: pending(since), compare: pendingReason(since, 'PostHog account coverage is incomplete.') });
+    if (since.status === 'loaded' && since.underReview) tiles[1] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups since launch', source: 'PostHog', value: `<span class="under-review-value">${U.fmt(since.value)}</span>`, compare: `<span class="under-review">Under review · ${pendingReason(since.underReview, '')}</span>` });
+    if (spend.value == null) tiles[2] = A.ui.kpi({ label: 'Ad spend this month', source: spend.source || 'Paid', value: pending(spend), compare: (spend.lines || []).map((line) => `<div>${U.esc(line)}</div>`).join('') });
+    else if (spend.underReview || spend.complete === false) tiles[2] = A.ui.kpi({ cls: 'under-review', label: 'Ad spend this month', source: spend.source || 'Paid', value: `<span class="under-review-value">${money(spend.value)}</span>`, compare: `<span class="under-review">Under review · ${pendingReason(spend.underReview, 'One or more paid sources are pending.')}</span>${(spend.lines || []).map((line) => `<div>${U.esc(line)}</div>`).join('')}` });
+    if (cps.status !== 'loaded') tiles[3] = A.ui.kpi({ cls: cps.underReview ? 'under-review' : '', label: 'Cost per sign-up', source: 'Paid spend / PostHog', value: cps.status === 'no_signups' ? 'No sign-ups yet' : pending(cps), compare: `${cps.underReview ? `<span class="under-review">Under review · ${pendingReason(cps.underReview, '')}</span>` : ''}${U.esc(cps.reason === 'spend incomplete' ? 'Paid spend incomplete' : (cps.reason === 'No data yet' ? '' : (cps.reason || '')) )}` });
+    if (visit.status !== 'loaded') tiles[4] = A.ui.kpi({ cls: visit.underReview ? 'under-review' : '', label: 'Visit to sign-up rate', source: 'PostHog / GA4', value: pending(visit), compare: `${visit.underReview ? `<span class="under-review">Under review · ${pendingReason(visit.underReview, '')}</span>` : ''}${U.esc(visit.reason || (signups.underReview ? signups.underReview.reason : 'Required coverage is incomplete.'))}` });
 
     const drawn = chart(view);
     const chartControls = drawn && drawn.controls ? drawn.controls : '';
