@@ -299,14 +299,30 @@ test('Executive month sign-ups keep outside LATAM off the goal number and Octobe
   assert.match(data.view.changed.phrases.join(' '), /Ad spend not compared: Meta ad account access pending/);
 });
 
+test('Executive keeps Meta spend pending when only impressions were delivered', async () => {
+  const data = await build(coveredMonth([
+    { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-11-02', dim: 'account_type', dim_value: 'External', value: 5 },
+    { source: 'posthog', metric: 'ph_exec_accounts_geo', date: '2026-11-02', dim: 'country', dim_value: 'Colombia', value: 5 },
+    { source: 'ga4', metric: 'ga_exec_geo_sessions', date: '2026-11-02', dim: 'country', dim_value: 'Colombia', value: 335 },
+    { source: 'meta', metric: 'ad_impressions', date: '2026-11-02', value: 1000 },
+  ], { source: [{ _k: 'google_ads', state: 'connected', window: '2026-10-01 to 2026-11-30' }] }), '2026-11', new Date('2026-11-04T17:00:00.000Z'));
+  assert.equal(data.view.channels.meta.status, 'pending');
+  assert.equal(data.view.channels.meta.spend, null);
+  assert.equal(data.view.cards.spend.value, null);
+  assert.equal(data.view.cards.spend.status, 'pending');
+  assert.equal(data.view.cards.spend.complete, false);
+});
+
 test('Executive spend stays unavailable while Meta is pending and Google with no rows is no campaigns', async () => {
   const data = await build(coveredMonth([
     { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-10-04', dim: 'account_type', dim_value: 'External', value: 3 },
     { source: 'posthog', metric: 'ph_exec_accounts_geo', date: '2026-10-04', dim: 'country', dim_value: 'Mexico', value: 3 },
     { source: 'ga4', metric: 'ga_exec_geo_sessions', date: '2026-10-04', dim: 'country', dim_value: 'Mexico', value: 100 },
     { source: 'meta', metric: 'ad_spend', date: '2026-10-04', value: 0 },
+    { source: 'meta', metric: 'ad_impressions', date: '2026-10-04', value: 1000 },
   ], { source: [{ _k: 'google_ads', state: 'connected', window: '2026-10-01 to 2026-10-30' }] }), '2026-10', new Date('2026-10-30T17:00:00.000Z'));
-  assert.equal(data.view.channels.meta.status, 'pending');
+  assert.equal(data.view.channels.meta.status, 'loaded');
+  assert.equal(data.view.channels.meta.spend, 0);
   assert.equal(data.view.channels.google_ads.status, 'no_campaigns');
   assert.equal(data.view.channels.linkedin.status, 'pending');
   assert.equal(data.view.cards.spend.value, null);
