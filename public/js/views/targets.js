@@ -7,14 +7,14 @@
   const T = A.targets = { meta: {}, byMonth: {}, loading: {} };
   const SRC = {
     landing_sessions: 'GA4', unique_visitors: 'GA4', engagement_rate: 'GA4', total_signups: 'PostHog first identify',
-    platform_signups: 'PostHog first identify', crm_contacts: 'HubSpot', new_people: 'PostHog', visit_to_signup_rate: 'linked session/account cohort', ad_spend_budget: 'ads platforms', clicks: 'ads platforms', ctr: 'ads platforms',
+    platform_signups: 'PostHog first $identify per person (all-host operational proxy)', crm_contacts: 'HubSpot', new_people: 'PostHog observed people (not sign-ups)', visit_to_signup_rate: 'unlinked source ratio; confirm same window and denominator', ad_spend_budget: 'ads platforms', clicks: 'ads platforms', ctr: 'ads platforms',
     total_impressions: 'paid ad reports only',
     cps: 'paid UTM contacts + spend', activation_7d: 'mature seven-day signup/project cohort',
   };
   const FALLBACK_META = {
     landing_sessions: { label: 'Site sessions (GA4)', kind: 'count' }, unique_visitors: { label: 'Unique visitors', kind: 'count' },
-    engagement_rate: { label: 'Engagement rate', kind: 'rate' }, total_signups: { label: 'Sign-ups (PostHog first identify)', kind: 'count' },
-    platform_signups: { label: 'Platform sign-ups (same definition)', kind: 'count' }, crm_contacts: { label: 'CRM contacts (HubSpot)', kind: 'count' }, new_people: { label: 'New observed people (PostHog)', kind: 'count' }, visit_to_signup_rate: { label: 'Linked visit-to-sign-up rate (pending)', kind: 'rate' },
+    engagement_rate: { label: 'Engagement rate', kind: 'rate' }, total_signups: { label: 'Sign-ups (first PostHog $identify; all-host proxy)', kind: 'count' },
+    platform_signups: { label: 'Sign-ups (same first-$identify definition)', kind: 'count' }, crm_contacts: { label: 'CRM contacts (HubSpot)', kind: 'count' }, new_people: { label: 'New observed people (not sign-ups)', kind: 'count' }, visit_to_signup_rate: { label: 'Visit-to-sign-up rate (same-window source ratio; internal GA4 traffic may be included; not linked cohort conversion)', kind: 'rate' },
     ad_spend_budget: { label: 'Ad spend budget', kind: 'money' }, clicks: { label: 'Clicks', kind: 'count' }, ctr: { label: 'Click-through rate', kind: 'rate' },
     cps: { label: 'Cost / attributed CRM contact', kind: 'money' }, activation_7d: { label: 'Activation within 7 days', kind: 'rate' },
     total_impressions: { label: 'Paid impressions', kind: 'count' },

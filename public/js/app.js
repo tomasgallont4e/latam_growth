@@ -71,7 +71,7 @@
     }
     return D.sum('posthog', 'ph_signups', D.peopleFilter, from, to);
   };
-  // Accounts created = first PostHog identify per person (the dashboard's sign-up definition).
+  // Sign-ups = first PostHog $identify per person (the dashboard's operational proxy).
   // registration_started (D.registrations) is the funnel step before it, never added on top.
   D.accounts = (from = S.from, to = S.to, country) => {
     if (!D.covered('posthog', 'account_coverage', from, to)) return null;
