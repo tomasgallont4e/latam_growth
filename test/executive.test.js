@@ -103,7 +103,7 @@ test('Executive response exposes covered approved-host accounts separately from 
     country_assigned: 3,
     country_missing: 4,
     excludedHosts: 2,
-    allAccounts: { status: 'pending', month: null, sinceLaunch: null, dataThrough: '2026-10-20', monthByType: null, byType: null, semantics: 'all_first_identifies_all_hosts_including_internal' },
+    allAccounts: { status: 'pending', month: null, sinceLaunch: null, dataThrough: '2026-10-28', monthByType: null, byType: null, semantics: 'all_first_identifies_all_hosts_including_internal' },
     byPlan: { status: 'pending', free: null, paid: null, other: null, unknown: null, reason: 'Plan events are unavailable or POSTHOG_PLAN_PROPERTY is not configured.' },
   });
 });
@@ -126,6 +126,41 @@ test('Executive exposes last reported plan counts without asserting billing stat
   assert.match(data.view.executiveAccounts.byPlan.reason, /not verified current billing status/i);
 });
 
+test('all-host since-launch total and data-through cutoff match the same completed Bogota day', async () => {
+  const snapshot = { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-06', rows: [{ available: true }] };
+  const metrics = [
+    { source: 'posthog', metric: 'ph_accounts', date: '2026-11-05', dim: 'account_type', dim_value: 'External', value: 2 },
+    { source: 'posthog', metric: 'ph_accounts', date: '2026-11-06', dim: 'account_type', dim_value: 'External', value: 2 },
+  ];
+  const data = await build(storeWithMetrics(metrics, [
+    snapshot,
+    { source: 'posthog', key: 'executive_accounts', from: '2026-10-01', to: '2026-11-06', rows: [{ available: true }] },
+    { source: 'ga4', key: 'executive_landing', from: '2026-10-01', to: '2026-11-06', rows: [{ available: true }] },
+  ]), '2026-11', new Date('2026-11-06T17:00:00.000Z'));
+  assert.equal(data.asOf, '2026-11-05');
+  assert.equal(data.allAccounts.dataThrough, '2026-11-05');
+  assert.equal(data.allAccounts.sinceLaunch, 2);
+  assert.equal(data.sinceLaunch.all_accounts, 2);
+});
+
+test('all-host totals clamp to the last covered completed Bogota day', async () => {
+  const data = await build(storeWithMetrics([
+    { source: 'posthog', metric: 'ph_accounts', date: '2026-11-04', dim: 'account_type', dim_value: 'External', value: 1 },
+    { source: 'posthog', metric: 'ph_accounts', date: '2026-11-05', dim: 'account_type', dim_value: 'External', value: 2 },
+    { source: 'posthog', metric: 'ph_accounts', date: '2026-11-06', dim: 'account_type', dim_value: 'External', value: 2 },
+  ], [
+    { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-05', rows: [{ available: true }] },
+    { source: 'posthog', key: 'executive_accounts', from: '2026-10-01', to: '2026-11-06', rows: [{ available: true }] },
+    { source: 'ga4', key: 'executive_landing', from: '2026-10-01', to: '2026-11-06', rows: [{ available: true }] },
+  ]), '2026-11', new Date('2026-11-06T17:00:00.000Z'));
+  assert.equal(data.allAccounts.status, 'loaded');
+  assert.equal(data.allAccounts.dataThrough, '2026-11-05');
+  assert.equal(data.allAccounts.month, 3);
+  assert.equal(data.allAccounts.sinceLaunch, 3);
+  assert.deepEqual(data.allAccounts.monthByType, { External: 3 });
+  assert.deepEqual(data.allAccounts.byType, { External: 3 });
+});
+
 test('Executive API exposes all-host account totals separately from the approved-host Executive count', async () => {
   const data = await build(storeWithMetrics([
     { source: 'posthog', metric: 'ph_accounts', date: '2026-10-01', dim: 'account_type', dim_value: 'External', value: 3 },
@@ -140,10 +175,10 @@ test('Executive API exposes all-host account totals separately from the approved
     { source: 'ga4', key: 'executive_landing', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true }] },
   ]), '2026-10', new Date('2026-10-29T17:00:00.000Z'));
   assert.deepEqual(data.allAccounts, {
-    status: 'loaded', month: 29, sinceLaunch: 29, dataThrough: '2026-10-02', monthByType: { External: 23, Unknown: 4, Internal: 2 }, byType: { External: 23, Unknown: 4, Internal: 2 },
+    status: 'loaded', month: 29, sinceLaunch: 29, dataThrough: '2026-10-28', monthByType: { External: 23, Unknown: 4, Internal: 2 }, byType: { External: 23, Unknown: 4, Internal: 2 },
     semantics: 'all_first_identifies_all_hosts_including_internal',
   });
-  assert.deepEqual(data.executiveAccounts.allAccounts, { status: 'loaded', month: 29, sinceLaunch: 29, dataThrough: '2026-10-02', monthByType: { External: 23, Unknown: 4, Internal: 2 }, byType: { External: 23, Unknown: 4, Internal: 2 }, semantics: 'all_first_identifies_all_hosts_including_internal' });
+  assert.deepEqual(data.executiveAccounts.allAccounts, { status: 'loaded', month: 29, sinceLaunch: 29, dataThrough: '2026-10-28', monthByType: { External: 23, Unknown: 4, Internal: 2 }, byType: { External: 23, Unknown: 4, Internal: 2 }, semantics: 'all_first_identifies_all_hosts_including_internal' });
   assert.equal(data.allAccounts.month, 29);
   assert.deepEqual(data.allAccounts.monthByType, { External: 23, Unknown: 4, Internal: 2 });
   assert.equal(data.monthTotals.all_accounts, 29);
