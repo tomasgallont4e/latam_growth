@@ -1,6 +1,6 @@
 
 'use strict';
-/* Conversion: acquisition intent through account creation. Keep registration starts, accounts and CRM contacts distinct. */
+/* Conversion: acquisition intent through sign-up. Keep registration starts, sign-ups and CRM contacts distinct. */
 (function (A) {
   const EVENT_INFO = {
     form_start: 'Started the sign-up form on the landing', sign_up: 'Submitted the sign-up form', generate_lead: 'Submitted a lead to HubSpot',
@@ -21,21 +21,21 @@
     const accountsDaily = total == null ? null : D.rollNum(D.accountsByDay(S.from, S.to));
 
     const kpis = U.kpiRow([
-      U.kpi({ label: 'Accounts created', source: 'PostHog', value: U.fmt(total), hero: true, compare: 'First identify · once per person' }),
-      U.kpi({ label: 'Registration starts', source: 'PostHog', value: U.fmt(registrations), compare: 'Unique people starting registration · before account creation' }),
-      U.kpi({ label: 'CRM contacts', source: 'HubSpot', value: U.fmt(D.crmTotal()), delta: U.delta(form, pForm), compare: `${all.length - shown.length} internal/QA contacts excluded · leads/contacts, not product accounts` }),
+      U.kpi({ label: 'Sign-ups', source: 'PostHog', value: U.fmt(total), hero: true, compare: 'First identify · once per person' }),
+      U.kpi({ label: 'Registration starts', source: 'PostHog', value: U.fmt(registrations), compare: 'Unique people starting registration · before sign-up' }),
+      U.kpi({ label: 'CRM contacts', source: 'HubSpot', value: U.fmt(D.crmTotal()), delta: U.delta(form, pForm), compare: `${all.length - shown.length} internal/QA contacts excluded · leads/contacts, not product sign-ups` }),
       U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(ga && ga.rate), compare: ga ? `${U.fmt(ga.engaged)} engaged / ${U.fmt(ga.sessions)} GA4 sessions` : 'Awaiting GA4' }),
     ], 4);
     const goals = A.targets.strip(['total_signups', 'platform_signups', 'visit_to_signup_rate']);
 
     const funnel = A.platformFunnels.render();
     const periodRows = D.periods().map((p) => ({ ...p, registrations: D.registrations(p.from, p.to), accounts: D.accounts(p.from, p.to), crm: D.crmTotal(p.from, p.to) }));
-    const chart = U.card({ cls: 'chart-card', title: `${grain} registration starts and accounts created`, sub: `PostHog unique people · ${U.win(S.from, S.to)} · registration starts precede first identify`, body:
-      '<h3>Registration starts · before account creation</h3>' + (registrationDaily ? C.stacked({ dates: ticks, keys: [{ name: 'Registration starts', color: 'var(--series-a)' }], value: (d) => registrationDaily[d] || 0, label: `${grain} registration starts` }) : U.awaiting('posthog', 'Registration coverage is not available for this period'))
-      + '<h3>Accounts created · first identify</h3>' + (accountsDaily ? C.stacked({ dates: ticks, keys: [{ name: 'Accounts created', color: 'var(--series-b)' }], value: (d) => accountsDaily[d] || 0, label: `${grain} accounts created` }) : U.awaiting('posthog', 'Account coverage is not available for this period'))
+    const chart = U.card({ cls: 'chart-card', title: `${grain} registration starts and sign-ups`, sub: `PostHog unique people · ${U.win(S.from, S.to)} · registration starts precede first identify`, body:
+      '<h3>Registration starts · before sign-up</h3>' + (registrationDaily ? C.stacked({ dates: ticks, keys: [{ name: 'Registration starts', color: 'var(--series-a)' }], value: (d) => registrationDaily[d] || 0, label: `${grain} registration starts` }) : U.awaiting('posthog', 'Registration coverage is not available for this period'))
+      + '<h3>Sign-ups · first identify</h3>' + (accountsDaily ? C.stacked({ dates: ticks, keys: [{ name: 'Sign-ups', color: 'var(--series-b)' }], value: (d) => accountsDaily[d] || 0, label: `${grain} sign-ups` }) : U.awaiting('posthog', 'Sign-up coverage is not available for this period'))
       + U.details('Activity by period', `${periodRows.length} periods`, U.table([
       { t: 'Period', f: (r) => U.esc(U.win(r.from, r.to)) }, { t: 'Registration starts', num: 1, f: (r) => U.fmt(r.registrations) },
-      { t: 'Accounts created', num: 1, f: (r) => U.fmt(r.accounts) }, { t: 'CRM contacts', num: 1, f: (r) => U.fmt(r.crm) },
+      { t: 'Sign-ups', num: 1, f: (r) => U.fmt(r.accounts) }, { t: 'CRM contacts', num: 1, f: (r) => U.fmt(r.crm) },
     ], periodRows)) });
 
     const KEY = ['form_start', 'sign_up', 'generate_lead'];
@@ -68,7 +68,7 @@
       ${U.details('GA4 conversion-intent events', hasEv ? `${evRows.length} selected event types · ${U.win(S.from, S.to)}` : '', hasEv ? (evRows.length ? U.table([
         { t: 'Event', f: (r) => `<code>${U.esc(r.event)}</code>${U.pill('info', 'intent')}<br><small>${U.esc(EVENT_INFO[r.event])}</small>` },
         { t: 'Event occurrences', num: 1, f: (r) => U.fmt(r.count) },
-      ], evRows) + '<p class="card-note">These are event counts, not unique people. Use the PostHog ordered funnel for person-level progression; GA4 events are not added to accounts created.</p>' : U.empty('No GA4 conversion-intent events in this period')) : U.awaiting('ga4'))}
+      ], evRows) + '<p class="card-note">These are event counts, not unique people. Use the PostHog ordered funnel for person-level progression; GA4 events are not added to sign-ups.</p>' : U.empty('No GA4 conversion-intent events in this period')) : U.awaiting('ga4'))}
       ${U.details('Platform activity (PostHog)', platRows.length ? `${platRows.length} days` : '', people ? (platRows.length ? U.table([
         { t: 'Date', f: (r) => `<span class="mono">${U.dshort(r.d)}</span>` }, { t: 'New people', num: 1, f: (r) => U.fmt(r.p) }, { t: 'Active people', num: 1, f: (r) => U.fmt(r.a) },
       ], platRows) : U.empty('No platform activity in this period')) : U.awaiting('posthog', 'Observed people, active people and product events will appear here'))}

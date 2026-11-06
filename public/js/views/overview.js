@@ -2,15 +2,15 @@
 (function (A) {
   // Where the project stands against the LATAM 500K goal. Measurement only: no deadline and no
   // pace. The count is cumulative since launch whatever period is selected, because the goal is a
-  // total, and it is people whose account was created (first identify), counted once each.
+  // total, and it is each person's first PostHog $identify (the sign-up proxy), counted once.
   function accountsGoal() {
     const U = A.ui, D = A.D, S = A.S, p = S.data && S.data.goalPlan;
     if (!p) return '';
     const cov = D.snap('posthog', 'account_coverage'), from = A.LAUNCH, to = cov && cov.to < U.today() ? cov.to : U.today();
     const total = D.accounts(from, to);
     const goal = Number(p.verified_users) || 0;
-    const sub = `Since launch · ${U.win(from, to)} · accounts created once per person · first identify in PostHog`;
-    if (total == null) return U.section('LATAM 500K goal', sub, U.card({ title: 'Accounts created', right: U.srcPill('posthog'), body: U.awaiting('posthog', 'Accounts created (first identify) are counted from PostHog.') }));
+    const sub = `Since launch · ${U.win(from, to)} · sign-ups once per person · first $identify in PostHog`;
+    if (total == null) return U.section('LATAM 500K goal', sub, U.card({ title: 'Sign-ups · all hosts', right: U.srcPill('posthog'), body: U.awaiting('posthog', 'Sign-ups (first identify) are counted from PostHog.') }));
 
     const ratio = goal ? total / goal : 0;
     const markets = Object.entries(p.countries || {}).sort((a, b) => b[1] - a[1]);
@@ -32,11 +32,11 @@
     const goalPreviousAccounts = goalComparison ? D.accounts(goalComparison.previous.from, goalComparison.previous.to) : null;
     const goalChange = goalComparison ? `<div><dt>Latest complete ${D.grainName()}</dt><dd>${U.fmt(goalCurrentAccounts)} ${U.delta(goalCurrentAccounts, goalPreviousAccounts)} <small>${U.esc(goalComparison.current.label)} vs ${U.esc(goalComparison.previous.label)}</small></dd></div>` : '<div><dt>Period change</dt><dd>Not enough complete history</dd></div>';
     const trend = `<div class="acct-hero-trend"><div class="acct-hero-label">Progress toward 500K · ${D.grainName().toLowerCase()} buckets</div>${A.charts.goalShare({ dates: goalPeriods.map((p) => p.from), labels: goalPeriods.map((p) => p.label), daily: goalNew, goal, label: 'Progress toward 500K goal' })}</div>`;
-    const hero = `<div class="acct-hero"><div class="acct-hero-main"><span class="acct-hero-label">Accounts created</span>
+    const hero = `<div class="acct-hero"><div class="acct-hero-main"><span class="acct-hero-label">Sign-ups</span>
       <div class="goal-nums"><span class="acct-hero-actual">${U.fmt(total)}</span><span class="goal-target">of ${U.fmt(goal)}</span></div>
-      ${bar(ratio, 'Accounts created toward the goal')}
+      ${bar(ratio, 'Sign-ups toward the goal')}
       <div class="goal-meta"><span><b>${A.charts.sharePct(ratio)}</b> of the goal</span><span>${U.fmt(Math.max(0, goal - total))} remaining</span></div></div>
-      <dl class="acct-hero-side"><div><dt>Selected date range</dt><dd>${U.fmt(D.accounts())}</dd></div>${goalChange}<div><dt>Markets with accounts</dt><dd>${geoOk ? `${active} of ${markets.length}` : '–'}</dd></div><div><dt>CRM contacts</dt><dd>${U.fmt(D.crmTotal(from, to) || 0)}</dd></div></dl>${trend}</div>`;
+      <dl class="acct-hero-side"><div><dt>Selected date range</dt><dd>${U.fmt(D.accounts())}</dd></div>${goalChange}<div><dt>Markets with sign-ups</dt><dd>${geoOk ? `${active} of ${markets.length}` : '–'}</dd></div><div><dt>CRM contacts</dt><dd>${U.fmt(D.crmTotal(from, to) || 0)}</dd></div></dl>${trend}</div>`;
 
     const countryRows = Object.entries(byCountry).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
     const executiveCountryRows = Object.entries(executiveCountries).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
@@ -46,11 +46,11 @@
       current: D.accounts(goalComparison.current.from, goalComparison.current.to, country),
       previous: D.accounts(goalComparison.previous.from, goalComparison.previous.to, country),
     })) : [];
-    const countryPeriodTable = countryPeriodRows.length ? `<p class="card-note">New accounts by country · ${D.grainName().toLowerCase()} · latest two complete buckets</p>${U.table([
+    const countryPeriodTable = countryPeriodRows.length ? `<p class="card-note">Sign-ups by country · ${D.grainName().toLowerCase()} · latest two complete buckets</p>${U.table([
       { t: 'Country', k: 'country' }, { t: goalComparison.current.label, num: 1, f: (r) => U.fmt(r.current) },
       { t: goalComparison.previous.label, num: 1, f: (r) => U.fmt(r.previous) }, { t: 'Change', f: (r) => U.delta(r.current, r.previous) },
     ], countryPeriodRows)}` : '';
-    const countryChart = geoOk ? U.card({ cls: 'chart-card', title: 'Accounts created by market', sub: `Since launch · ${U.fmt(known)} accounts assigned · ranked by accounts created`, body: (countryBars.length ? A.charts.hbars(countryBars, known) : U.empty('No country-attributed accounts in this period')) + countryPeriodTable }) : '';
+    const countryChart = geoOk ? U.card({ cls: 'chart-card', title: 'Sign-ups by market', sub: `Since launch · ${U.fmt(known)} sign-ups assigned · ranked by sign-ups`, body: (countryBars.length ? A.charts.hbars(countryBars, known) : U.empty('No country-attributed sign-ups in this period')) + countryPeriodTable }) : '';
 
     const options = [...new Set([...markets.map(([name]) => name), ...Object.keys(byCountry)])];
     const selectedCountry = options.includes(S.goalCountry) ? S.goalCountry : options[0];
@@ -64,24 +64,24 @@
     const marketAccountNote = goalComparison ? `First identify · since launch; ${goalComparison.current.label}: ${U.fmt(marketCurrent)} ${U.delta(marketCurrent, marketPrevious)} vs ${goalComparison.previous.label}` : 'First identify · once per person; since launch';
     const countryPicker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country">${options.map((name) => `<option value="${U.esc(name)}"${name === selectedCountry ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
     const marketKpis = U.kpiRow([
-      U.kpi({ label: 'Accounts created', source: 'PostHog', value: U.fmt(accounts), compare: marketAccountNote }),
+      U.kpi({ label: 'Sign-ups', source: 'PostHog', value: U.fmt(accounts), compare: marketAccountNote }),
       U.kpi({ label: 'Plan target', source: '500K plan', value: U.fmt(target), compare: 'Country allocation in Targets' }),
-      U.kpi({ label: 'Progress vs plan', source: 'PostHog / plan', value: A.charts.sharePct(target && accounts != null ? accounts / target : null), compare: target ? `${U.fmt(accounts)} of ${U.fmt(target)} accounts` : 'No country allocation set' }),
+      U.kpi({ label: 'Progress vs plan', source: 'PostHog / plan', value: A.charts.sharePct(target && accounts != null ? accounts / target : null), compare: target ? `${U.fmt(accounts)} of ${U.fmt(target)} sign-ups` : 'No country allocation set' }),
       U.kpi({ label: 'GA4 sessions', source: 'GA4', value: U.fmt(sessions), compare: 'Traffic in the selected period' }),
-      U.kpi({ label: 'Accounts per 1,000 sessions', source: 'Directional', value: rate == null ? '–' : U.fmt(rate, 1), compare: 'Not a cohort conversion rate' }),
+      U.kpi({ label: 'Sign-ups per 1,000 landing sessions', source: 'Directional', value: rate == null ? '–' : U.fmt(rate, 1), compare: 'Not a cohort conversion rate' }),
     ], 5);
-    const marketNote = '<p class="card-note">Accounts and sessions are separate source populations, not linked journeys. Use the ratio as a directional market comparison—not as a visit-to-account conversion rate. Unmatched country names appear in the chart above but do not inherit a plan target.</p>';
+    const marketNote = '<p class="card-note">Sign-ups and sessions are independent source populations, not linked journeys. Use this ratio as a directional market comparison—not as a visit-to-sign-up conversion rate. Unmatched country names appear in the chart above but do not inherit a plan target.</p>';
     const marketCard = U.card({ title: selectedCountry || 'Country metrics', sub: `Since launch · ${U.win(from, to)}`, right: countryPicker,
-      body: marketKpis + marketNote + (geoOk ? '' : U.empty('Country attribution unavailable', 'The selected market target and GA4 sessions are shown, but PostHog has not attributed new accounts to countries. Enable GeoIP or send country data with the first identify event.', 'earth-americas')) });
-    const coverageNote = geoOk ? `<p class="card-note">${U.fmt(known)} of ${U.fmt(total)} all-host accounts have a country · ${U.fmt(unknown)} have no country · ${U.fmt(other)} are outside the plan markets. Executive approved-host External population: ${executive.total == null ? 'pending' : U.fmt(executive.total)}; the totals use different host/type rules.</p>` : `<p class="card-note">All-host first-identify accounts: ${U.fmt(total)}. Executive approved-host External population: ${executive.total == null ? 'pending' : U.fmt(executive.total)}; these totals use different host/type rules.</p>`;
+      body: marketKpis + marketNote + (geoOk ? '' : U.empty('Country attribution unavailable', 'The selected market target and GA4 sessions are shown, but PostHog has not attributed sign-ups to countries. Enable GeoIP or send country data with the first identify event.', 'earth-americas')) });
+    const coverageNote = geoOk ? `<p class="card-note">${U.fmt(known)} of ${U.fmt(total)} all-host sign-ups have a country · ${U.fmt(unknown)} have no country · ${U.fmt(other)} are outside the plan markets. Executive approved-host External sign-ups are a separate population; not directly comparable.</p>` : `<p class="card-note">All-host sign-ups: ${U.fmt(total)}. Executive approved-host External sign-ups are a separate population; not directly comparable.</p>`;
     const executiveCountryTable = executiveCountryRows.length ? U.table([
-      { t: 'Country', k: 'country' }, { t: 'Executive accounts', num: 1, f: (r) => U.fmt(r.count) },
-    ], executiveCountryRows.map(([country, count]) => ({ country, count }))) : U.empty('No Executive country breakdown yet', 'No approved-host external accounts with a country are available.', 'earth-americas');
-    const executiveSection = U.section('Executive approved-host external accounts by country', 'Separate restricted population · first identify · not the all-host Overview total', U.card({ title: 'Executive approved-host External accounts', body: executiveCountryTable }));
+      { t: 'Country', k: 'country' }, { t: 'Executive sign-ups', num: 1, f: (r) => U.fmt(r.count) },
+    ], executiveCountryRows.map(([country, count]) => ({ country, count }))) : U.empty('No Executive country breakdown yet', 'No approved-host external sign-ups with a country are available.', 'earth-americas');
+    const executiveSection = U.section('Executive approved-host External sign-ups by country', 'Separate restricted population · first identify · not the all-host Overview total', U.card({ title: 'Executive approved-host External sign-ups', body: executiveCountryTable }));
     return U.section('LATAM 500K goal', sub, U.card({ cls: 'acct-hero-card', body: hero + coverageNote }))
-      + (countryChart ? U.section('New accounts by country', 'One horizontal bar per identified country · sorted by accounts created', countryChart) : '')
+      + (countryChart ? U.section('Sign-ups by country', 'One horizontal bar per identified country · sorted by sign-ups', countryChart) : '')
       + executiveSection
-      + U.section('Accounts by country', 'Select a market to focus on its accounts, plan target and traffic context', marketCard + coverageNote);
+      + U.section('Sign-ups by country', 'Select a market to focus on its sign-ups, plan target and traffic context', marketCard + coverageNote);
   }
 
   function periodComparison(comparison = A.D.completeBucketComparison()) {
@@ -95,7 +95,7 @@
       { label: 'Engagement rate', source: 'GA4', cur: a && a.rate, prev: b && b.rate, format: U.pct, delta: U.deltaPoints },
       { label: 'HubSpot sessions', source: 'HubSpot', cur: D.has('hubspot', 'sessions') ? D.sessions(cur.from, cur.to) : null, prev: D.has('hubspot', 'sessions') ? D.sessions(prev.from, prev.to) : null, format: U.fmt, delta: U.delta },
       { label: 'CRM contacts', source: 'HubSpot', cur: D.crmTotal(cur.from, cur.to), prev: D.crmTotal(prev.from, prev.to), format: U.fmt, delta: U.delta },
-      { label: 'Accounts created', source: 'PostHog', cur: D.accounts(cur.from, cur.to), prev: D.accounts(prev.from, prev.to), format: U.fmt, delta: U.delta },
+      { label: 'Sign-ups (PostHog first identify; all-host proxy)', source: 'PostHog', cur: D.accounts(cur.from, cur.to), prev: D.accounts(prev.from, prev.to), format: U.fmt, delta: U.delta },
       { label: 'Registration starts', source: 'PostHog', cur: D.registrations(cur.from, cur.to), prev: D.registrations(prev.from, prev.to), format: U.fmt, delta: U.delta },
     ].filter((x) => x.cur != null || x.prev != null);
     const tiles = fields.map((x) => U.kpi({ label: x.label, source: x.source, value: x.format(x.cur), delta: x.delta(x.cur, x.prev), compare: `${prev.label}: ${x.format(x.prev)}` }));
@@ -125,7 +125,7 @@
       U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(ga && ga.rate), delta: bucketComparison ? U.deltaPoints(bucketCurrentGA && bucketCurrentGA.rate, bucketPreviousGA && bucketPreviousGA.rate) : null, spark: ga ? D.seriesRate(D.byDay('ga4', 'ga_engaged_sessions'), D.byDay('ga4', 'ga_sessions')) : null, compare: `${ga ? `${U.fmt(ga.engaged)} engaged / ${U.fmt(ga.sessions)} range sessions` : 'Awaiting GA4'} · ${bucketDeltaLabel}` }),
       U.kpi({ label: 'CRM contacts', source: 'HubSpot', value: U.fmt(crm), delta: countDelta(currentCRM, previousCRM), spark: crm == null ? null : D.ticks().map((d) => activity[d].form), compare: `Contact creation date; may overlap product people · ${bucketDeltaLabel}` }),
       U.kpi({ label: 'New observed people', source: 'PostHog', value: U.fmt(people), delta: countDelta(currentPeople, previousPeople), spark: people == null ? null : D.series(D.byDay('posthog', 'ph_new_persons', S.from, S.to, D.peopleFilter)), compare: `${people == null ? 'Sync PostHog to classify internal accounts' : `${S.exInt ? 'Known internal accounts excluded' : 'Internal accounts included'} · ${U.fmt(unknown)} unknown identity class · not verified sign-ups`} · ${bucketDeltaLabel}` }),
-      U.kpi({ label: 'Registrations started', source: 'PostHog', value: U.fmt(D.registrations()), delta: countDelta(currentRegistrations, previousRegistrations), spark: D.registrations() == null ? null : D.series(D.byDay('posthog', 'ph_signups', S.from, S.to, D.peopleFilter)), compare: `registration_started · funnel step before the account; not added to accounts created · ${bucketDeltaLabel}` }),
+      U.kpi({ label: 'Registrations started', source: 'PostHog', value: U.fmt(D.registrations()), delta: countDelta(currentRegistrations, previousRegistrations), spark: D.registrations() == null ? null : D.series(D.byDay('posthog', 'ph_signups', S.from, S.to, D.peopleFilter)), compare: `registration_started · funnel step before the sign-up; not added to sign-ups · ${bucketDeltaLabel}` }),
     ], 3);
     const sessionsByBucket = D.rollNum(D.byDay('ga4', 'ga_sessions'));
     const chart = U.card({ cls: 'chart-card', title: `${D.grainName()} GA4 site sessions`, sub: `Grouped by ${D.grainBar()} · ${U.win(S.from, S.to)}`, body: C.stacked({ dates: D.ticks(), keys: [{ name: 'GA4 sessions', color: 'var(--series-a)' }], value: (d) => sessionsByBucket[d] || 0, label: 'GA4 site sessions' }) + '<p class="card-note">A GA4 session is a group of interactions with your site or app. By default, it ends after 30 minutes of inactivity; one person can have multiple sessions.</p>' });

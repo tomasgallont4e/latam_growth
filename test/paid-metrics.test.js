@@ -17,7 +17,7 @@ test('Executive is the default tab unless the URL or a non-default saved tab sel
 test('Executive follows the spec layout and shows only its four-step cross-source funnel', async () => {
   const A = dashboard(), requests = [];
   const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).format(new Date());
-  const expectedOrder = ['Sign-ups this month', 'Sign-ups since launch', 'Ad spend this month', 'Cost per sign-up', 'Visit to sign-up rate', 'Sign-ups this month vs goal', 'Top 5 countries', 'Marketing-to-Project Activation Funnel', 'Executive accounts by subscription type', 'What changed'];
+  const expectedOrder = ['Sign-ups this month', 'Sign-ups since launch', 'Ad spend this month', 'Cost per sign-up', 'Visit to sign-up rate', 'Sign-ups this month vs goal', 'Top 5 countries', 'Marketing-to-Project Activation Funnel', 'Executive sign-ups by reported plan', 'What changed'];
   const paidSteps = [
     { name: 'Paid impressions', value: null, status: 'pending', reason: 'Meta ad account access pending', source: 'Meta, LinkedIn, Google Ads' },
     { name: 'Landing sessions', value: 335, status: 'loaded', source: 'GA4 · go.think4ever.com' },
@@ -100,12 +100,11 @@ test('Executive renders known PostHog sign-ups and social spend with coverage ca
   assert.match(html, /Under review · Unclassified first-identify hosts are excluded/);
   assert.match(html, /Under review · LinkedIn has not reported/);
   assert.match(html, /kpi-compare\">Paid spend incomplete/);
-  assert.match(html, /All-host first-identify accounts/);
+  assert.match(html, /All-host sign-ups · first identify/);
   assert.match(html, /Selected month:<\/b> 20 total · External 18 · Unknown 1 · Internal 1/);
   assert.match(html, /Since launch:<\/b> 27 total · External 22 · Unknown 2 · Internal 3/);
   assert.match(html, /data through 2026-11-04/);
-  assert.match(html, /Executive accounts by subscription type/);
-  assert.match(html, /Approved-host external first-identify accounts/);
+  assert.match(html, /Executive sign-ups by reported plan/);
 });
 
 test('Executive view renders the proposed goal label from its monthly API response', async () => {
@@ -168,12 +167,14 @@ test('metric corrections preserve the goal, channel and conversion charts', () =
   A.S.data.events = [{ kind: 'form_signup', date, internal: false }];
   const overview = A.views.overview.render(), conversion = A.views.conversion.render();
   assert.match(overview, /LATAM 500K goal/);
-  assert.match(overview, /Accounts created/);
+  assert.match(overview, /sign-ups once per person/);
+  assert.match(conversion, /Sign-ups/);
+  assert.doesNotMatch(overview + conversion, /Accounts created/);
   assert.doesNotMatch(overview, /Plan needs review/);
   assert.match(overview, /Channel mix/);
   assert.match(overview, /aria-label="HubSpot sessions by channel"/);
   assert.match(overview, /Timeline Notes/);
-  assert.match(conversion, /Daily registration starts and accounts created/);
+  assert.match(conversion, /Daily registration starts and sign-ups/);
   assert.doesNotMatch(overview, /class="goal-col"/);
   const realZero = A.charts.goalProgress({ dates: ['2026-10-01'], values: [0], goal: 500000 });
   assert.match(realZero, /class="goal-dot"/);
@@ -417,7 +418,7 @@ test('audited 4 CRM + 34 PostHog case never claims 38 verified accounts or 850% 
   assert.equal(A.D.ga().rate, 508 / 1752);
   const conversion = A.views.conversion.render(), overview = A.views.overview.render();
   assert.match(conversion, /29\.0%/);
-  assert.match(overview, /first identify in PostHog/);
+  assert.match(overview, /Since launch · .*sign-ups once per person · first \$identify in PostHog/);
   assert.doesNotMatch(conversion + overview, /850|72\.1%|35\.6%|38 sign-ups|Weakest step|drop-off<|continue<|Direct Platform Sign-ups/);
   A.S.exInt = false;
   assert.equal(A.D.platform(), 34);
@@ -1009,7 +1010,7 @@ test('Overview and Executive country totals use independent PostHog populations'
   executiveCoverage.rows[0].available = true;
   assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28'), 0);
   assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28', 'Colombia'), null);
-  assert.match(A.views.overview.render(), /Executive approved-host External population: 0/);
+  assert.match(A.views.overview.render(), /Executive approved-host External sign-ups are a separate population; not directly comparable/);
   executiveCoverage.rows[0].country_available = true;
   executiveCoverage.rows[0].external_accounts = 12;
   A.S.data.metrics.push({ ...metric('posthog', 'ph_exec_accounts', 12, 'External'), dim: 'account_type' });
@@ -1018,7 +1019,7 @@ test('Overview and Executive country totals use independent PostHog populations'
   assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28', 'Colombia'), 8);
 });
 
-test('the goal counts accounts created (first identify) without adding registration_started, CRM or new people', () => {
+test('the goal counts sign-ups (first identify) without adding registration_started, CRM or new people', () => {
   const A = auditedDashboard();
   A.S.data.snapshots.push(available('posthog', 'registration_coverage'));
   A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true, country_available: true }] });
@@ -1040,18 +1041,19 @@ test('the goal counts accounts created (first identify) without adding registrat
   assert.equal(A.D.accountBreakdown().byPlan.status, 'pending');
   A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
   const html = A.views.overview.render();
-  assert.match(html, /Accounts created/);
+  assert.match(html, /sign-ups once per person/);
+  assert.doesNotMatch(html, /Accounts created/);
   assert.match(html, /of 500,000/);
-  assert.match(html, /New accounts by country/);
+  assert.match(html, /Sign-ups by country/);
   assert.match(html, /class="hbar-list"/);
   assert.match(html, /Brazil/);
   assert.match(html, />6</);
   assert.match(html, /Colombia/);
   assert.match(html, />15</);
-  assert.match(html, /Executive approved-host external accounts by country/);
-  assert.match(html, /Executive approved-host External population: 12/);
+  assert.match(html, /Executive approved-host External sign-ups by country/);
+  assert.match(html, /Executive approved-host External sign-ups are a separate population; not directly comparable/);
   assert.doesNotMatch(html, /series-line/);
-  assert.doesNotMatch(html, /Brazil · accounts created/);
+  assert.doesNotMatch(html, /Brazil · sign-ups/);
   assert.doesNotMatch(html, /Progress by country/);
   assert.doesNotMatch(html, /axis fixed at 0/);
   assert.match(html, /have no country/);
@@ -1280,11 +1282,11 @@ test('Overview ranks country account growth and lets the CEO select one market',
     { ...metric('ga4', 'ga_geo_sessions', 400, 'Brazil'), dim: 'country' },
   ];
   const html = A.views.overview.render();
-  assert.match(html, /New accounts by country/);
+  assert.match(html, /Sign-ups by country/);
   assert.match(html, /class="hbar-list"/);
   assert.doesNotMatch(html, /month-to-date total|count starts again at 0/i);
   assert.match(html, /id="goal-country"/);
-  assert.match(html, /Accounts per 1,000 sessions/);
+  assert.match(html, /Sign-ups per 1,000 landing sessions/);
   assert.match(html, /GA4 session is a group of interactions/);
 });
 
@@ -1333,7 +1335,8 @@ test('Conversion highlights the ordered steps, not unclassified observed people 
   ];
   const html = A.views.conversion.render();
   assert.match(html, /Registration starts/);
-  assert.match(html, /Accounts created/);
+  assert.match(html, /Sign-ups/);
+  assert.doesNotMatch(html, /Accounts created/);
   assert.doesNotMatch(html, /class="kpi-label">New observed people/);
   assert.doesNotMatch(html, /page_view/);
   assert.match(html, /event counts, not unique people/);

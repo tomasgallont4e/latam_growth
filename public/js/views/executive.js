@@ -106,12 +106,12 @@
     const byCountry = details.byCountry || {};
     const rows = Object.entries(byCountry).map(([country, accounts]) => ({ country, accounts }));
     const countryTable = rows.length ? U.table([
-      { t: 'Country', k: 'country' }, { t: 'Approved-host accounts', num: 1, f: (row) => U.fmt(row.accounts) },
+      { t: 'Country', k: 'country' }, { t: 'Approved-host sign-ups', num: 1, f: (row) => U.fmt(row.accounts) },
     ], rows) : U.empty('No approved-host country split yet', 'Country attribution is unavailable or no approved-host account has a country.', 'earth-americas');
-    const coverage = `<p class="card-note">Approved-host accounts since launch: ${U.fmt(details.sinceLaunch)} · ${U.fmt(details.country_assigned)} assigned a country · ${U.fmt(details.country_missing)} without country · ${U.fmt(details.excludedHosts)} external accounts on unapproved hosts excluded.</p>`;
+    const coverage = `<p class="card-note">Approved-host external sign-ups since launch: ${U.fmt(details.sinceLaunch)} · ${U.fmt(details.country_assigned)} assigned a country · ${U.fmt(details.country_missing)} without country · ${U.fmt(details.excludedHosts)} external sign-ups on unapproved hosts excluded.</p>`;
     const plans = plan.status === 'loaded' ? `<p class="card-note">Last plan reported by signed_in / plan_changed · not verified current billing status.</p>${U.kpiRow([
-      U.kpi({ label: 'Last reported Free', source: 'PostHog', value: U.fmt(plan.free), compare: 'Latest reported plan event per approved-host external account' }),
-      U.kpi({ label: 'Last reported Paid', source: 'PostHog', value: U.fmt(plan.paid), compare: 'Latest reported plan event per approved-host external account' }),
+      U.kpi({ label: 'Last reported Free', source: 'PostHog', value: U.fmt(plan.free), compare: 'Latest reported plan event per approved-host external sign-up' }),
+      U.kpi({ label: 'Last reported Paid', source: 'PostHog', value: U.fmt(plan.paid), compare: 'Latest reported plan event per approved-host external sign-up' }),
       U.kpi({ label: 'Other plan', source: 'PostHog', value: U.fmt(plan.other), compare: 'Plan value other than free or paid' }),
       U.kpi({ label: 'Plan unknown', source: 'PostHog', value: U.fmt(plan.unknown), compare: 'No plan value found in plan events' }),
     ], 4)}` : U.empty('Plan data unavailable', reason, 'circle-question');
@@ -177,9 +177,9 @@
       card({ ...cps, label: 'Cost per sign-up' }, cps.value != null ? money(cps.value) : pending(cps)),
       card({ ...visit, label: 'Visit to sign-up rate' }, visit.value != null ? U.pct(visit.value, 2) : pending(visit)),
     ];
-    if (signups.value == null) tiles[0] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups this month', source: 'PostHog', value: pending(signups), compare: pendingReason(signups, 'PostHog account coverage is incomplete.') });
+    if (signups.value == null) tiles[0] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups this month', source: 'PostHog', value: pending(signups), compare: pendingReason(signups, 'PostHog sign-up coverage is incomplete.') });
     if (signups.status === 'loaded' && signups.underReview) tiles[0] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups this month', source: 'PostHog', value: `<span class="under-review-value">${U.fmt(signups.value)}</span>`, compare: `<span class="under-review">Under review · ${pendingReason(signups.underReview, '')}</span>` });
-    if (since.value == null) tiles[1] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups since launch', source: 'PostHog', value: pending(since), compare: pendingReason(since, 'PostHog account coverage is incomplete.') });
+    if (since.value == null) tiles[1] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups since launch', source: 'PostHog', value: pending(since), compare: pendingReason(since, 'PostHog sign-up coverage is incomplete.') });
     if (since.status === 'loaded' && since.underReview) tiles[1] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups since launch', source: 'PostHog', value: `<span class="under-review-value">${U.fmt(since.value)}</span>`, compare: `<span class="under-review">Under review · ${pendingReason(since.underReview, '')}</span>` });
     if (spend.value == null) tiles[2] = A.ui.kpi({ label: 'Ad spend this month', source: spend.source || 'Paid', value: pending(spend), compare: (spend.lines || []).map((line) => `<div>${U.esc(line)}</div>`).join('') });
     else if (spend.underReview || spend.complete === false) tiles[2] = A.ui.kpi({ cls: 'under-review', label: 'Ad spend this month', source: spend.source || 'Paid', value: `<span class="under-review-value">${money(spend.value)}</span>`, compare: `<span class="under-review">Under review · ${pendingReason(spend.underReview, 'One or more paid sources are pending.')}</span>${(spend.lines || []).map((line) => `<div>${U.esc(line)}</div>`).join('')}` });
@@ -191,7 +191,7 @@
     const formatPeriod = (label, count, types) => `<p><b>${label}:</b> ${count == null ? 'Unavailable (coverage incomplete)' : `${U.fmt(count)} total · ${formatTypes(types)}`}</p>`;
     const totalBody = total.status === 'loaded'
       ? `${formatPeriod('Selected month', total.month, total.monthByType)}${formatPeriod('Since launch', total.sinceLaunch, total.byType)}<p class="card-note">All hosts · Unknown is not classified as External · data through ${U.esc(total.dataThrough || 'unknown')}</p>`
-      : U.empty('All-host account total unavailable', 'PostHog first-identify coverage for this population is missing or incomplete.', 'users');
+      : U.empty('All-host sign-up total unavailable', 'PostHog first-identify coverage for this population is missing or incomplete.', 'users');
     const drawn = chart(view);
     const chartControls = drawn && drawn.controls ? drawn.controls : '';
     const chartBody = drawn && drawn.body ? drawn.body : drawn;
@@ -203,7 +203,7 @@
       + `<section class="section">${U.kpiRow(tiles)}</section>`
       + U.section('Sign-ups this month vs goal', state.span === 'launch' ? 'Cumulative external sign-ups since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s sign-ups. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Sign-ups vs goal', right: chartControls, body: `${chartSources}${chartBody}` }))
       + `<section class="section"><div class="grid-2">${U.card({ title: 'Top 5 countries', sub: 'Sources: PostHog (sign-ups) · GA4 (sessions). Countries with either measure appear; zero rows are omitted.', body: countries(view.countries) })}${U.card({ title: 'Marketing-to-Project Activation Funnel', sub: 'Saved PostHog ordered funnel · aggregate selected range · excludes internal and test accounts. This is product activation, not an advertising funnel.', body: activationFunnelHtml })}</div></section>`
-      + `<section class="section"><div class="grid-2">${U.card({ title: 'All-host first-identify accounts', sub: 'Separate total across every host; Unknown remains unclassified and Internal is shown explicitly.', body: totalBody })}${U.card({ title: 'Executive accounts by subscription type', sub: `Approved-host external first-identify accounts · ${U.fmt((view.executiveAccounts || {}).sinceLaunch)} since launch`, body: subscriptionBreakdown(view.executiveAccounts) })}</div></section>`
+      + `<section class="section"><div class="grid-2">${U.card({ title: 'All-host sign-ups · first identify', sub: 'Separate total across every host; Unknown remains unclassified and Internal is shown explicitly.', body: totalBody })}${U.card({ title: 'Executive sign-ups by reported plan', sub: `Sign-ups · first identify · approved-host External population · ${U.fmt((view.executiveAccounts || {}).sinceLaunch)} since launch`, body: subscriptionBreakdown(view.executiveAccounts) })}</div></section>`
       + U.section('What changed', 'The last 7 complete days against the 7 days before them.', U.card({ title: 'What changed', body: research + phrases }));
   }
 
