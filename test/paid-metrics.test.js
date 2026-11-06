@@ -149,7 +149,7 @@ function dashboard(stored = {}, hash = '') {
     },
   } });
   App.testLoad = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
-  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'assistant.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
+  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'aggregate.js', 'assistant.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
   }
   App.S.from = '2026-10-01'; App.S.to = '2026-10-28';
@@ -1340,4 +1340,43 @@ test('Conversion highlights the ordered steps, not unclassified observed people 
   assert.doesNotMatch(html, /class="kpi-label">New observed people/);
   assert.doesNotMatch(html, /page_view/);
   assert.match(html, /event counts, not unique people/);
+});
+
+test('Overview and Executive show the all-channel funnel with one source per step and no invented platforms', async () => {
+  const A = dashboard();
+  A.S.data.metrics = [
+    { ...metric('meta', 'ad_impressions', 348000, 'latam_co_launch'), dim: 'campaign' },
+    { ...metric('meta', 'ad_link_clicks', 6468, 'latam_co_launch'), dim: 'campaign' },
+    { ...metric('meta', 'ad_spend', 900, 'latam_co_launch'), dim: 'campaign' },
+    { ...metric('ga4', 'ga_sessions', 2604, 'Paid Social'), dim: 'channel' },
+    { ...metric('ga4', 'ga_sessions', 296, 'Direct'), dim: 'channel' },
+    { ...metric('ga4', 'ga_paid_sessions', 2604, 'meta'), dim: 'platform' },
+  ];
+  A.S.data.snapshots.push(available('ga4', 'paid_sessions'));
+  const requests = [];
+  A.api = (url) => {
+    requests.push(url);
+    if (/breakdown=channel/.test(url)) return Promise.resolve({ breakdown: 'channel', groups: [{ value: 'Paid Social', steps: [600, 50, 20, 4, 1, 1].map((n) => ({ n })) }, { value: 'Direct', steps: [76, 23, 13, 5, 2, 2].map((n) => ({ n })) }] });
+    if (url.startsWith('api/funnels/posthog?')) return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: A.S.from, to: A.S.to, window_days: 14, steps: [676, 73, 33, 9, 3, 3].map((n, i) => ({ name: `s${i}`, n })) });
+    return new Promise(() => {});
+  };
+  const box = { isConnected: true, innerHTML: '' };
+  const root = { querySelector: (selector) => (selector === '[data-agg-funnel]' ? box : null), addEventListener() {} };
+  await A.aggregateFunnel.mount(root);
+  assert.ok(requests.some((url) => /funnel=marketing_project/.test(url) && !/breakdown/.test(url)));
+  assert.ok(requests.some((url) => /breakdown=channel/.test(url)));
+  const html = A.views.overview.render();
+  assert.match(html, /All-channel funnel/);
+  for (const label of ['Ad impressions', 'Ad clicks', 'Landing sessions', 'CTA clicked', 'Registration started', 'Registration finished (sign-up)', 'Login', 'Project view / created']) assert.ok(html.includes(label), label);
+  assert.match(html, /348,000 <em>impressions<\/em>/);
+  assert.match(html, /6,468 <em>clicks<\/em>/);
+  assert.match(html, /2,900 <em>sessions<\/em>/);
+  assert.match(html, /73 <em>persons<\/em>/);
+  assert.match(html, /LinkedIn Ads <b><span class="awaiting-chip">No data connected/);
+  assert.match(html, /Unit changes: sessions \(GA4\) → persons \(PostHog\)/);
+  assert.match(html, /not divided by GA4 sessions/);
+  const context = A.assistant.context();
+  assert.equal(context.aggregate_funnel.highlights.total_impressions, 348000);
+  assert.equal(context.aggregate_funnel.channels[0].channel, 'Paid Social');
+  assert.equal(context.aggregate_funnel.posthog_channel_split_available, true);
 });

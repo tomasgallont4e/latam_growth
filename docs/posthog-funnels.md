@@ -70,6 +70,12 @@ events in the selected period show Awaiting events. Steps with observed instrume
 and zero ordered conversions can display zero. Missing downstream instrumentation never
 produces a claimed 100% abandonment.
 
-API: `GET /api/funnels/posthog?funnel=website|mvp|landing_project|marketing_project&from=YYYY-MM-DD&to=YYYY-MM-DD&exclude=1|0`. Dashboard default: `marketing_project`. Requests use a bounded five-minute cache with concurrent requests coalesced.
+API: `GET /api/funnels/posthog?funnel=website|mvp|landing_project|marketing_project&from=YYYY-MM-DD&to=YYYY-MM-DD&exclude=1|0`. Dashboard default: `marketing_project`.
+
+Optional `&breakdown=channel|campaign` reruns the same saved funnel split by PostHog's session
+`$channel_type` (channel) or the first step's `utm_campaign` (campaign), with first-touch
+attribution, and returns `groups: [{ value, steps }]` instead of `steps`. The all-channel funnel on
+Overview and Executive uses it for the per-channel PostHog columns; if the split fails, only those
+columns show unavailable. Requests use a bounded five-minute cache with concurrent requests coalesced.
 
 Reference: https://posthog.com/docs/api/queries (FunnelsQuery / funnel response).

@@ -73,7 +73,9 @@ app.get('/api/funnels/posthog', async (req, res) => {
   try {
     const from = String(req.query.from || ''), to = String(req.query.to || '');
     if (from < (process.env.LAUNCH_DATE || '2026-10-01') || to > new Date().toISOString().slice(0, 10)) return res.status(400).json({ error: 'Date outside launch window' });
-    res.json(await funnels.read(String(req.query.funnel || 'website'), from, to, req.query.exclude !== '0'));
+    const breakdown = req.query.breakdown == null || req.query.breakdown === '' ? null : String(req.query.breakdown);
+    if (breakdown && !funnels.BREAKDOWNS[breakdown]) return res.status(400).json({ error: 'breakdown must be channel or campaign' });
+    res.json(await funnels.read(String(req.query.funnel || 'website'), from, to, req.query.exclude !== '0', fetch, breakdown));
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
 

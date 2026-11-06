@@ -203,6 +203,7 @@
       + `<section class="section">${U.kpiRow(tiles)}</section>`
       + U.section('Sign-ups this month vs goal', state.span === 'launch' ? 'Cumulative external sign-ups since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s sign-ups. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Sign-ups vs goal', right: chartControls, body: `${chartSources}${chartBody}` }))
       + `<section class="section"><div class="grid-2">${U.card({ title: 'Top 5 countries', sub: 'Sources: PostHog (sign-ups) · GA4 (sessions). Countries with either measure appear; zero rows are omitted.', body: countries(view.countries) })}${U.card({ title: 'Marketing-to-Project Activation Funnel', sub: 'Saved PostHog ordered funnel · aggregate selected range · excludes internal and test accounts. This is product activation, not an advertising funnel.', body: activationFunnelHtml })}</div></section>`
+      + (A.aggregateFunnel ? `<section class="section">${A.aggregateFunnel.render(activationFunnelOptions())}</section>` : '')
       + `<section class="section"><div class="grid-2">${U.card({ title: 'All-host sign-ups · first identify', sub: 'Separate total across every host; Unknown remains unclassified and Internal is shown explicitly.', body: totalBody })}${U.card({ title: 'Executive sign-ups by reported plan', sub: `Sign-ups · first identify · approved-host External population · ${U.fmt((view.executiveAccounts || {}).sinceLaunch)} since launch`, body: subscriptionBreakdown(view.executiveAccounts) })}</div></section>`
       + U.section('What changed', 'The last 7 complete days against the 7 days before them.', U.card({ title: 'What changed', body: research + phrases }));
   }
@@ -222,6 +223,7 @@
     const zoom = el.querySelector('[data-exec-zoom]');
     if (zoom) zoom.addEventListener('click', () => { state.zoom = !state.zoom; A.render(); });
     if (A.posthogFunnel) A.posthogFunnel.mount(el, activationFunnelOptions());
+    if (A.aggregateFunnel) A.aggregateFunnel.mount(el, activationFunnelOptions());
   }
 
   A.views.executive = { title: 'Executive', render, mount };
