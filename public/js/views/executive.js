@@ -186,6 +186,12 @@
     if (cps.status !== 'loaded') tiles[3] = A.ui.kpi({ cls: cps.underReview ? 'under-review' : '', label: 'Cost per sign-up', source: 'Paid spend / PostHog', value: cps.status === 'no_signups' ? 'No sign-ups yet' : pending(cps), compare: `${cps.underReview ? `<span class="under-review">Under review · ${pendingReason(cps.underReview, '')}</span>` : ''}${U.esc(cps.reason === 'spend incomplete' ? 'Paid spend incomplete' : (cps.reason === 'No data yet' ? '' : (cps.reason || '')) )}` });
     if (visit.status !== 'loaded') tiles[4] = A.ui.kpi({ cls: visit.underReview ? 'under-review' : '', label: 'Visit to sign-up rate', source: 'PostHog / GA4', value: pending(visit), compare: `${visit.underReview ? `<span class="under-review">Under review · ${pendingReason(visit.underReview, '')}</span>` : ''}${U.esc(visit.reason || (signups.underReview ? signups.underReview.reason : 'Required coverage is incomplete.'))}` });
 
+    const total = view.allAccounts || state.data.allAccounts || (view.executiveAccounts || {}).allAccounts || state.data.executiveAccounts?.allAccounts || {};
+    const formatTypes = (values) => `External ${U.fmt((values || {}).External || 0)} · Unknown ${U.fmt((values || {}).Unknown || 0)} · Internal ${U.fmt((values || {}).Internal || 0)}`;
+    const formatPeriod = (label, count, types) => `<p><b>${label}:</b> ${count == null ? 'Unavailable (coverage incomplete)' : `${U.fmt(count)} total · ${formatTypes(types)}`}</p>`;
+    const totalBody = total.status === 'loaded'
+      ? `${formatPeriod('Selected month', total.month, total.monthByType)}${formatPeriod('Since launch', total.sinceLaunch, total.byType)}<p class="card-note">All hosts · Unknown is not classified as External · data through ${U.esc(total.dataThrough || 'unknown')}</p>`
+      : U.empty('All-host account total unavailable', 'PostHog first-identify coverage for this population is missing or incomplete.', 'users');
     const drawn = chart(view);
     const chartControls = drawn && drawn.controls ? drawn.controls : '';
     const chartBody = drawn && drawn.body ? drawn.body : drawn;
@@ -197,7 +203,7 @@
       + `<section class="section">${U.kpiRow(tiles)}</section>`
       + U.section('Sign-ups this month vs goal', state.span === 'launch' ? 'Cumulative external sign-ups since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s sign-ups. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Sign-ups vs goal', right: chartControls, body: `${chartSources}${chartBody}` }))
       + `<section class="section"><div class="grid-2">${U.card({ title: 'Top 5 countries', sub: 'Sources: PostHog (sign-ups) · GA4 (sessions). Countries with either measure appear; zero rows are omitted.', body: countries(view.countries) })}${U.card({ title: 'Marketing-to-Project Activation Funnel', sub: 'Saved PostHog ordered funnel · aggregate selected range · excludes internal and test accounts. This is product activation, not an advertising funnel.', body: activationFunnelHtml })}</div></section>`
-      + `<section class="section">${U.card({ title: 'Executive accounts by subscription type', sub: `Approved-host external first-identify accounts · ${U.fmt((view.executiveAccounts || {}).sinceLaunch)} since launch`, body: subscriptionBreakdown(view.executiveAccounts) })}</section>`
+      + `<section class="section"><div class="grid-2">${U.card({ title: 'All-host first-identify accounts', sub: 'Separate total across every host; Unknown remains unclassified and Internal is shown explicitly.', body: totalBody })}${U.card({ title: 'Executive accounts by subscription type', sub: `Approved-host external first-identify accounts · ${U.fmt((view.executiveAccounts || {}).sinceLaunch)} since launch`, body: subscriptionBreakdown(view.executiveAccounts) })}</div></section>`
       + U.section('What changed', 'The last 7 complete days against the 7 days before them.', U.card({ title: 'What changed', body: research + phrases }));
   }
 
