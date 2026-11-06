@@ -17,7 +17,8 @@ test('Executive is the default tab unless the URL or a non-default saved tab sel
 test('Executive follows the spec layout and shows only its four-step cross-source funnel', async () => {
   const A = dashboard(), requests = [];
   const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).format(new Date());
-  const expectedOrder = ['Sign-ups this month', 'Sign-ups since launch', 'Ad spend this month', 'Cost per sign-up', 'Visit to sign-up rate', 'Sign-ups this month vs goal', 'Top 5 countries', 'Marketing-to-Project Activation Funnel', 'Executive sign-ups by reported plan', 'What changed'];
+  // The PostHog activation funnel sits at the end of Executive, below the campaign funnel sections.
+  const expectedOrder = ['Sign-ups this month', 'Sign-ups since launch', 'Ad spend this month', 'Cost per sign-up', 'Visit to sign-up rate', 'Sign-ups this month vs goal', 'Top 5 countries', 'Executive sign-ups by reported plan', 'What changed', 'Marketing-to-Project Activation Funnel'];
   const paidSteps = [
     { name: 'Paid impressions', value: null, status: 'pending', reason: 'Meta ad account access pending', source: 'Meta, LinkedIn, Google Ads' },
     { name: 'Landing sessions', value: 335, status: 'loaded', source: 'GA4 · go.think4ever.com' },
