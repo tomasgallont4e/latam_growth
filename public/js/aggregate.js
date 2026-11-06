@@ -15,7 +15,8 @@
     { key: 'sessions', name: 'Landing sessions', unit: 'sessions', source: 'GA4 · all sources · configured hosts' },
     { key: 'cta', name: 'CTA clicked', unit: 'persons', source: 'PostHog · marketing_cta_clicked' },
     { key: 'registration_started', name: 'Registration started', unit: 'persons', source: 'PostHog · registration_started' },
-    { key: 'registration_finished', name: 'Registration finished (sign-up)', unit: 'persons', source: 'PostHog · first $identify (sign-up proxy)' },
+    // Persons who completed the ordered funnel up to $identify: not the sign-up KPI (posthog_accounts_created).
+    { key: 'registration_finished', name: 'Sign-ups via the marketing funnel (ordered, 14-day window)', unit: 'persons', source: 'PostHog · first $identify after page view, CTA and registration' },
     { key: 'login', name: 'Login', unit: 'persons', source: 'PostHog · saved Login step' },
     { key: 'project', name: 'Project view / created', unit: 'persons', source: 'PostHog · saved Project View/Project Created step' },
   ];
@@ -27,6 +28,12 @@
   const ratio = (n, d) => (n != null && d != null && d > 0 ? n / d : null);
   const sumKnown = (list) => (list.some((v) => v != null) ? list.reduce((s, v) => s + (v == null ? 0 : v), 0) : null);
   const norm = (v) => String(v == null ? '' : v).trim().toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ');
+  // "(not set)" (GA4) and "(none)" (PostHog, empty value) both mean the value is missing: one row.
+  const UNSET = '(not set)';
+  const keyOf = (v) => { const k = norm(v); return !k || k === '(not set)' || k === '(none)' ? UNSET : k; };
+  const labelOf = (v) => (keyOf(v) === UNSET ? UNSET : String(v));
+  // Campaign names sent to the assistant: plain names only (utm_campaign is free text anyone can type).
+  const SAFE_CAMPAIGN = /^[\w .\-]{1,60}$/;
 
   // input: { from, to, exclude, platforms: [{ key, name, channel, impressions, clicks, spend, paid_sessions, campaigns: [{ campaign, impressions, clicks, spend }] }],
   //          ga4: { sessions, channels: [{ channel, sessions }], campaigns: [{ campaign, sessions }], campaigns_capped } | null,
@@ -99,8 +106,8 @@
     // PostHog $channel_type of the first funnel step. Joined by channel name only.
     const rows = new Map();
     const row = (label) => {
-      const k = norm(label) || '(not set)';
-      if (!rows.has(k)) rows.set(k, { channel: String(label || '(not set)'), impressions: null, clicks: null, sessions: null, page_persons: null, cta: null, registration_started: null, registration_finished: null, login: null, project: null });
+      const k = keyOf(label);
+      if (!rows.has(k)) rows.set(k, { channel: labelOf(label), impressions: null, clicks: null, sessions: null, page_persons: null, cta: null, registration_started: null, registration_finished: null, login: null, project: null });
       return rows.get(k);
     };
     const add = (r, field, v) => { if (v != null) r[field] = (r[field] || 0) + v; };
@@ -112,22 +119,38 @@
       for (const key of PH_KEYS) add(r, key, n(POSTHOG_INDEX[key]));
     }
     // A connected source that has no row for a channel reports zero there; an unconnected one stays unknown.
+    // Ad metrics of a paid channel depend on that channel's own platforms (Paid Social: Meta + LinkedIn;
+    // Paid Search: Google Ads): none reporting -> null ("No data connected"); only some -> partial.
+    // Channels no ad platform maps to get 0 once any ad platform reports.
     const connected = { ads: platforms.some((p) => p.connected), ga4: !!ga4, posthog: !!phChannels };
-    const channels = [...rows.values()].map((r) => {
-      const out = { ...r };
-      if (connected.ads) { if (out.impressions == null && platforms.some((p) => p.impressions != null)) out.impressions = 0; if (out.clicks == null && platforms.some((p) => p.clicks != null)) out.clicks = 0; }
+    const phKeys = new Set((phChannels || []).map((g) => keyOf(g.value)));
+    const phOther = phKeys.has('other');
+    const channels = [...rows.entries()].map(([k, r]) => {
+      const out = { ...r, partial: false, missing_platforms: [], posthog_in_other: false };
+      const mine = platforms.filter((p) => keyOf(p.channel) === k);
+      for (const field of ['impressions', 'clicks']) {
+        if (!mine.length) { if (connected.ads && out[field] == null) out[field] = 0; continue; }
+        const missing = mine.filter((p) => p[field] == null);
+        if (missing.length === mine.length) out[field] = null;
+        else if (missing.length) { out.partial = true; for (const p of missing) if (!out.missing_platforms.includes(p.name)) out.missing_platforms.push(p.name); }
+      }
       if (connected.ga4 && out.sessions == null) out.sessions = 0;
-      if (connected.posthog) for (const key of ['page_persons', ...PH_KEYS]) if (out[key] == null) out[key] = 0;
+      // PostHog folds groups beyond breakdown_limit into "Other": a channel without its own group is counted there, not zero.
+      if (connected.posthog && !phKeys.has(k)) {
+        if (phOther) out.posthog_in_other = true;
+        else for (const key of ['page_persons', ...PH_KEYS]) if (out[key] == null) out[key] = 0;
+      }
       out.signups_per_1000_sessions = out.sessions > 0 && out.registration_finished != null ? out.registration_finished / out.sessions * 1000 : null;
       out.signup_rate_of_cta = ratio(out.registration_finished, out.cta);
       return out;
     }).sort((a, b) => (b.sessions || 0) - (a.sessions || 0) || (b.page_persons || 0) - (a.page_persons || 0) || (b.impressions || 0) - (a.impressions || 0));
 
-    // Campaign view: ad platform campaign names and utm_campaign values joined only on an exact name.
+    // Campaign view: ad platform campaign names and utm_campaign values joined on the normalized
+    // name (case, spaces, "-" and "_" ignored).
     const camps = new Map();
     const camp = (name) => {
-      const k = norm(name) || '(not set)';
-      if (!camps.has(k)) camps.set(k, { campaign: String(name || '(not set)'), platform: '', impressions: null, clicks: null, spend: null, sessions: null, cta: null, registration_started: null, registration_finished: null, login: null, project: null });
+      const k = keyOf(name);
+      if (!camps.has(k)) camps.set(k, { campaign: labelOf(name), platform: '', impressions: null, clicks: null, spend: null, sessions: null, cta: null, registration_started: null, registration_finished: null, login: null, project: null });
       return camps.get(k);
     };
     for (const p of platforms) for (const c of p.campaigns) {
@@ -148,9 +171,10 @@
       total_impressions: values.impressions, total_ad_clicks: values.clicks, total_landing_sessions: values.sessions,
       top_channel_by_landing_sessions: topSessions ? { channel: topSessions.channel, sessions: topSessions.sessions, share_of_sessions: ratio(topSessions.sessions, values.sessions) } : null,
       persons_viewed_marketing_page: pagePersons,
-      registrations_finished: values.registration_finished,
-      registrations_finished_of_marketing_page_persons: ratio(values.registration_finished, pagePersons),
-      registrations_finished_per_1000_landing_sessions: values.sessions > 0 && values.registration_finished != null ? values.registration_finished / values.sessions * 1000 : null,
+      // Ordered-funnel completions up to $identify (14-day window), not the sign-up KPI.
+      marketing_funnel_signups_ordered: values.registration_finished,
+      marketing_funnel_signups_of_marketing_page_persons: ratio(values.registration_finished, pagePersons),
+      marketing_funnel_signups_per_1000_landing_sessions: values.sessions > 0 && values.registration_finished != null ? values.registration_finished / values.sessions * 1000 : null,
     };
     return {
       from: input.from || null, to: input.to || null, exclude: !!input.exclude,
@@ -161,15 +185,19 @@
   }
   function fmt(n) { return n == null || !Number.isFinite(Number(n)) ? '–' : Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
 
-  // Compact, bounded summary for the Growth assistant (aggregates only).
+  // Compact, bounded summary for the Growth assistant (aggregates only). It never uses the optional
+  // PostHog campaign split, so opening "Campaign / ad" does not change the context.
   function summarize(model) {
-    const clip = (s) => String(s == null ? '' : s).slice(0, 60);
+    const clip = (s, max = 60) => String(s == null ? '' : s).slice(0, max);
     return {
       period: { from: model.from, to: model.to },
-      steps: model.steps.map((s) => ({ step: s.name, source: clip(s.source.split(' · ')[0]), unit: s.unit, value: s.value, rate_vs_previous: s.rate, rate_basis: clip(s.basis), status: s.status })),
+      // 160 = what the server keeps of rate_basis (safeText).
+      steps: model.steps.map((s) => ({ step: s.name, source: clip(s.source.split(' · ')[0]), unit: s.unit, value: s.value, rate_vs_previous: s.rate, rate_basis: clip(s.basis, 160), status: s.status })),
       platforms: model.platforms.map((p) => ({ platform: p.name, connected: p.connected, impressions: p.impressions, clicks: p.clicks, spend: p.spend, paid_sessions: p.paid_sessions })),
-      channels: model.channels.slice(0, 10).map((c) => ({ channel: clip(c.channel), impressions: c.impressions, clicks: c.clicks, sessions: c.sessions, page_persons: c.page_persons, cta_persons: c.cta, registration_started: c.registration_started, registration_finished: c.registration_finished, login: c.login, project: c.project })),
-      campaigns: model.campaigns.slice(0, 10).map((c) => ({ campaign: clip(c.campaign), impressions: c.impressions, clicks: c.clicks, spend: c.spend, sessions: c.sessions, cta_persons: c.cta, registration_finished: c.registration_finished })),
+      channels: model.channels.slice(0, 10).map((c) => ({ channel: clip(c.channel), impressions: c.impressions, clicks: c.clicks, partial: c.partial, missing_platforms: c.missing_platforms, sessions: c.sessions, page_persons: c.page_persons, cta_persons: c.cta, registration_started: c.registration_started, marketing_funnel_signups: c.registration_finished, login: c.login, project: c.project, posthog_in_other: c.posthog_in_other })),
+      // Only campaigns that exist on an ad platform and have a plain name: GA4 utm_campaign values are free text.
+      campaigns: model.campaigns.filter((c) => c.platform && keyOf(c.campaign) !== UNSET && SAFE_CAMPAIGN.test(c.campaign)).slice(0, 10)
+        .map((c) => ({ campaign: c.campaign, impressions: c.impressions, clicks: c.clicks, spend: c.spend, sessions: c.sessions })),
       highlights: model.highlights,
       posthog_channel_split_available: !!(model.posthog_channels && model.posthog_channels.status === 'loaded'),
     };
@@ -190,7 +218,7 @@
     if (entry.error) return { status: 'error', error: entry.error };
     return { status: 'loaded', ...entry.data };
   }
-  function collect(o = {}) {
+  function collect(o = {}, { withCampaignSplit = true } = {}) {
     const D = A.D, { from, to, exclude, path } = optsOf(o);
     const platforms = PLATFORMS.map((p) => {
       const stats = D.paidStats(p.key, from, to);
@@ -204,11 +232,13 @@
     const ga = D.ga(from, to);
     const utm = D.utmRows(from, to), byCampaign = {};
     for (const r of utm) byCampaign[r.campaign || '(not set)'] = (byCampaign[r.campaign || '(not set)'] || 0) + (Number(r.sessions) || 0);
-    const ga4 = ga ? { sessions: ga.sessions, channels: D.gaChannels(from, to).map((r) => ({ channel: r.channel, sessions: r.sessions })), campaigns: Object.entries(byCampaign).map(([campaign, sessions]) => ({ campaign, sessions })), campaigns_capped: utm.length >= 1000 } : null;
+    // Cap check on the whole GA4 snapshot (as Acquisition does), not the rows left after the date filter.
+    const utmSnap = D.snap('ga4', 'utm_attribution');
+    const ga4 = ga ? { sessions: ga.sessions, channels: D.gaChannels(from, to).map((r) => ({ channel: r.channel, sessions: r.sessions })), campaigns: Object.entries(byCampaign).map(([campaign, sessions]) => ({ campaign, sessions })), campaigns_capped: !!(utmSnap && (utmSnap.rows || []).length >= 1000) } : null;
     const F = A.posthogFunnel;
     const posthog = F && F.cached ? entryState(F.cached({ path, from, to, exclude })) : { status: 'error', error: 'PostHog funnel unavailable' };
     const posthogChannels = F && F.cached ? entryState(F.cached({ path, from, to, exclude, breakdown: 'channel' })) : null;
-    const campaignsEntry = F && F.cached ? F.cached({ path, from, to, exclude, breakdown: 'campaign' }) : null;
+    const campaignsEntry = withCampaignSplit && F && F.cached ? F.cached({ path, from, to, exclude, breakdown: 'campaign' }) : null;
     return build({ from, to, exclude, platforms, ga4, posthog, posthogChannels, posthogCampaigns: campaignsEntry ? entryState(campaignsEntry) : null });
   }
   function bar(value, max) {
@@ -261,21 +291,23 @@
         { t: 'Campaign', f: (r) => `${U.esc(r.campaign)}${r.platform ? `<br><small class="text-muted">${U.esc(r.platform)}</small>` : ''}` },
         { t: 'Impressions', num: 1, f: (r) => (r.impressions == null ? '–' : U.fmt(r.impressions)) }, { t: 'Ad clicks', num: 1, f: (r) => (r.clicks == null ? '–' : U.fmt(r.clicks)) },
         { t: 'GA4 sessions', num: 1, f: (r) => (r.sessions == null ? '–' : U.fmt(r.sessions)) }, { t: 'CTA persons', num: 1, f: (r) => (r.cta == null ? '–' : U.fmt(r.cta)) },
-        { t: 'Reg. started', num: 1, f: (r) => (r.registration_started == null ? '–' : U.fmt(r.registration_started)) }, { t: 'Sign-ups', num: 1, f: (r) => (r.registration_finished == null ? '–' : U.fmt(r.registration_finished)) },
+        { t: 'Reg. started', num: 1, f: (r) => (r.registration_started == null ? '–' : U.fmt(r.registration_started)) }, { t: 'Funnel sign-ups (ordered)', num: 1, f: (r) => (r.registration_finished == null ? '–' : U.fmt(r.registration_finished)) },
         { t: 'Project', num: 1, f: (r) => (r.project == null ? '–' : U.fmt(r.project)) },
       ], rows) : U.empty('No campaign rows yet', 'No ad campaign, UTM campaign or PostHog campaign data in this period.', 'bullhorn'))
-        + `<p class="card-note">Ad platform campaign names and utm_campaign values are joined only when the names match exactly; "–" means that source has no row with that name. GA4 sessions by campaign come from the UTM detail snapshot${model.ga4_campaigns_capped ? ', which hit its 1,000-row cap and can omit rows' : ''}. ${phNote}</p>`;
+        + `<p class="card-note">Ad platform campaign names and utm_campaign values are joined when the names match ignoring case, spaces, "-" and "_"; "(not set)" also groups PostHog "(none)". "–" means that source has no row with that name. GA4 sessions by campaign come from the UTM detail snapshot${model.ga4_campaigns_capped ? ', which hit its 1,000-row cap and can omit rows' : ''}. ${phNote}</p>`;
     } else {
       const ph = model.posthog_channels;
       const phNote = !ph || ph.status === 'loading' ? 'Loading PostHog split by channel…' : ph.status === 'error' ? `PostHog split by channel unavailable: ${U.esc(ph.error)}. Ad and GA4 columns are unaffected.` : 'PostHog persons by $channel_type of the first funnel step (first touch).';
+      const ad = (r, v) => (v != null && r.partial ? `${U.fmt(v)} <span class="awaiting-chip" title="${U.esc(`${r.missing_platforms.join(', ')}: ${NO_DATA}`)}">partial · no ${U.esc(r.missing_platforms.join(', '))}</span>` : n(v));
+      const phCell = (r, v) => (r.posthog_in_other ? '<span class="text-muted">in Other</span>' : n(v));
       body = (model.channels.length ? U.table([
-        { t: 'Channel', k: 'channel' }, { t: 'Impressions', num: 1, f: (r) => n(r.impressions) }, { t: 'Ad clicks', num: 1, f: (r) => n(r.clicks) },
-        { t: 'Landing sessions', num: 1, f: (r) => n(r.sessions) }, { t: 'CTA persons', num: 1, f: (r) => n(r.cta) },
-        { t: 'Reg. started', num: 1, f: (r) => n(r.registration_started) }, { t: 'Sign-ups', num: 1, f: (r) => n(r.registration_finished) },
-        { t: 'Login', num: 1, f: (r) => n(r.login) }, { t: 'Project', num: 1, f: (r) => n(r.project) },
-        { t: 'Sign-ups ÷ CTA persons', num: 1, f: (r) => U.pct(r.signup_rate_of_cta) }, { t: 'Sign-ups per 1,000 sessions', num: 1, f: (r) => (r.signups_per_1000_sessions == null ? '–' : U.fmt(r.signups_per_1000_sessions, 1)) },
+        { t: 'Channel', k: 'channel' }, { t: 'Impressions', num: 1, f: (r) => ad(r, r.impressions) }, { t: 'Ad clicks', num: 1, f: (r) => ad(r, r.clicks) },
+        { t: 'Landing sessions', num: 1, f: (r) => n(r.sessions) }, { t: 'CTA persons', num: 1, f: (r) => phCell(r, r.cta) },
+        { t: 'Reg. started', num: 1, f: (r) => phCell(r, r.registration_started) }, { t: 'Funnel sign-ups (ordered)', num: 1, f: (r) => phCell(r, r.registration_finished) },
+        { t: 'Login', num: 1, f: (r) => phCell(r, r.login) }, { t: 'Project', num: 1, f: (r) => phCell(r, r.project) },
+        { t: 'Funnel sign-ups ÷ CTA persons', num: 1, f: (r) => U.pct(r.signup_rate_of_cta) }, { t: 'Sign-ups per 1,000 sessions', num: 1, f: (r) => (r.signups_per_1000_sessions == null ? '–' : U.fmt(r.signups_per_1000_sessions, 1)) },
       ], model.channels) : U.empty('No channel rows yet', 'No ad, GA4 or PostHog channel data in this period.', 'diagram-project'))
-        + `<p class="card-note">Ad platforms map to their paid channel (Meta and LinkedIn: Paid Social; Google Ads: Paid Search). Landing sessions use the GA4 default channel group. ${phNote} Rows are joined by channel name. "Sign-ups per 1,000 sessions" divides PostHog persons by GA4 sessions: a directional comparison between channels, not a conversion rate.</p>`;
+        + `<p class="card-note">Ad platforms map to their paid channel (Meta and LinkedIn: Paid Social; Google Ads: Paid Search); a paid channel whose platforms are not connected shows "No data connected", and "partial" when only some of them report. Landing sessions use the GA4 default channel group. ${phNote} Rows are joined by channel name; "in Other" means PostHog counted that channel inside its "Other" group. "(not set)" groups GA4 "(not set)" and PostHog "(none)". "Sign-ups per 1,000 sessions" divides PostHog persons by GA4 sessions: a directional comparison between channels, not a conversion rate.</p>`;
     }
     return `<div class="funnel-controls">${select}</div><div class="agg-table">${body}</div>`;
   }
@@ -283,8 +315,8 @@
     const model = collect(o), U = A.ui, h = model.highlights;
     collectState.channels = model.posthog_channels;
     const top = h.top_channel_by_landing_sessions;
-    const lead = `<p class="card-note">${U.win(model.from, model.to)} · ${model.exclude ? 'internal/test accounts excluded in PostHog' : 'internal/test accounts included'} · GA4 traffic can include tests${top ? ` · most landing sessions: <b>${U.esc(top.channel)}</b> (${U.fmt(top.sessions)} of ${U.fmt(h.total_landing_sessions)})` : ''}${h.registrations_finished != null && h.persons_viewed_marketing_page ? ` · <b>${U.fmt(h.registrations_finished)}</b> sign-ups of ${U.fmt(h.persons_viewed_marketing_page)} persons who viewed a marketing page` : ''}</p>`;
-    const units = '<p class="card-note">Each step keeps its own source and unit: impressions and clicks (ad platforms), sessions (GA4; one person can have several), persons (PostHog ordered funnel, 14-day window). Bar length uses a log scale so every step stays visible. Percentages under each step say exactly what they divide.</p>';
+    const lead = `<p class="card-note">${U.win(model.from, model.to)} · ${model.exclude ? 'internal/test accounts excluded in PostHog' : 'internal/test accounts included'} · GA4 traffic can include tests${top ? ` · most landing sessions: <b>${U.esc(top.channel)}</b> (${U.fmt(top.sessions)} of ${U.fmt(h.total_landing_sessions)})` : ''}${h.marketing_funnel_signups_ordered != null && h.persons_viewed_marketing_page ? ` · <b>${U.fmt(h.marketing_funnel_signups_ordered)}</b> sign-ups via the marketing funnel (ordered, 14-day window) of ${U.fmt(h.persons_viewed_marketing_page)} persons who viewed a marketing page · not the sign-up KPI` : ''}</p>`;
+    const units = '<p class="card-note">Each step keeps its own source and unit: impressions and clicks (ad platforms), sessions (GA4; one person can have several), persons (PostHog ordered funnel, 14-day window; its sign-up step counts only persons who went through page view, CTA and registration first, so it is not the sign-up KPI and is not compared with it). Bar length uses a log scale so every step stays visible. Percentages under each step say exactly what they divide.</p>';
     return lead + funnelHtml(model) + units + tableHtml(model);
   }
   function render(o = {}) {
@@ -298,8 +330,9 @@
     const jobs = [F.load(base), F.load({ ...base, breakdown: 'channel' })];
     if (campaign) jobs.push(F.load({ ...base, breakdown: 'campaign' }));
     await Promise.all(jobs.map((p) => Promise.resolve(p).catch(() => null)));
-    return summarize(collect(o));
+    return assistantSummary(o);
   }
+  function assistantSummary(o = {}) { return summarize(collect(o, { withCampaignSplit: false })); }
   function mount(el, o = {}) {
     const box = el.querySelector('[data-agg-funnel]');
     if (!box) return Promise.resolve(null);
@@ -312,5 +345,5 @@
     });
     return ensure(o, { campaign: state.view === 'campaign' }).then((summary) => { refresh(); return summary; });
   }
-  return { STEPS, POSTHOG_INDEX, build, summarize, collect, render, mount, ensure, summary: (o) => summarize(collect(o)), state };
+  return { STEPS, POSTHOG_INDEX, build, summarize, collect, render, mount, ensure, summary: assistantSummary, state };
 });

@@ -1367,7 +1367,7 @@ test('Overview and Executive show the all-channel funnel with one source per ste
   assert.ok(requests.some((url) => /breakdown=channel/.test(url)));
   const html = A.views.overview.render();
   assert.match(html, /All-channel funnel/);
-  for (const label of ['Ad impressions', 'Ad clicks', 'Landing sessions', 'CTA clicked', 'Registration started', 'Registration finished (sign-up)', 'Login', 'Project view / created']) assert.ok(html.includes(label), label);
+  for (const label of ['Ad impressions', 'Ad clicks', 'Landing sessions', 'CTA clicked', 'Registration started', 'Sign-ups via the marketing funnel (ordered, 14-day window)', 'Login', 'Project view / created']) assert.ok(html.includes(label), label);
   assert.match(html, /348,000 <em>impressions<\/em>/);
   assert.match(html, /6,468 <em>clicks<\/em>/);
   assert.match(html, /2,900 <em>sessions<\/em>/);
@@ -1375,8 +1375,40 @@ test('Overview and Executive show the all-channel funnel with one source per ste
   assert.match(html, /LinkedIn Ads <b><span class="awaiting-chip">No data connected/);
   assert.match(html, /Unit changes: sessions \(GA4\) → persons \(PostHog\)/);
   assert.match(html, /not divided by GA4 sessions/);
+  assert.match(html, /partial · no LinkedIn Ads/);
   const context = A.assistant.context();
   assert.equal(context.aggregate_funnel.highlights.total_impressions, 348000);
   assert.equal(context.aggregate_funnel.channels[0].channel, 'Paid Social');
   assert.equal(context.aggregate_funnel.posthog_channel_split_available, true);
+});
+
+test('assistant context of the all-channel funnel does not change when the campaign split loads', async () => {
+  const A = dashboard();
+  A.S.data.metrics = [
+    { ...metric('meta', 'ad_impressions', 348000, 'latam_co_launch'), dim: 'campaign' },
+    { ...metric('meta', 'ad_link_clicks', 6468, 'latam_co_launch'), dim: 'campaign' },
+    { ...metric('ga4', 'ga_sessions', 2900, 'Paid Social'), dim: 'channel' },
+  ];
+  A.api = (url) => {
+    if (/breakdown=campaign/.test(url)) return Promise.resolve({ breakdown: 'campaign', groups: [{ value: 'latam_co_launch', steps: [9, 1, 1, 1, 0, 0].map((n) => ({ n })) }] });
+    if (/breakdown=channel/.test(url)) return Promise.resolve({ breakdown: 'channel', groups: [{ value: 'Paid Social', steps: [600, 50, 20, 4, 1, 1].map((n) => ({ n })) }] });
+    if (url.startsWith('api/funnels/posthog?')) return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: A.S.from, to: A.S.to, window_days: 14, steps: [676, 73, 33, 9, 3, 3].map((n, i) => ({ name: `s${i}`, n })) });
+    return new Promise(() => {});
+  };
+  const before = JSON.stringify(await A.aggregateFunnel.ensure());
+  const after = JSON.stringify(await A.aggregateFunnel.ensure({}, { campaign: true }));
+  assert.equal(after, before);
+  assert.equal(JSON.stringify(A.assistant.context().aggregate_funnel), before);
+  // The campaign view itself does show the PostHog split.
+  assert.equal(A.aggregateFunnel.collect().campaigns.find((c) => c.campaign === 'latam_co_launch').registration_finished, 1);
+});
+
+test('all-channel campaign cap looks at the whole GA4 UTM snapshot, not the selected dates', () => {
+  const A = dashboard();
+  A.S.data.metrics = [{ ...metric('ga4', 'ga_sessions', 100, 'Direct'), dim: 'channel' }];
+  const rows = Array.from({ length: 1000 }, (_, i) => ({ date: '2026-09-15', source: 's', medium: 'm', campaign: `c${i}`, sessions: 1 }));
+  rows[0].date = '2026-10-05';
+  A.S.data.snapshots.push({ source: 'ga4', key: 'utm_attribution', from: '2026-09-01', to: A.S.to, rows });
+  const model = A.aggregateFunnel.collect();
+  assert.equal(model.ga4_campaigns_capped, true);
 });

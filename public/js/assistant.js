@@ -89,7 +89,7 @@
         <textarea id="growth-assistant-question" name="question" maxlength="800" rows="2" placeholder="Why is this channel dominant, and what should we check?" required>${U.esc(state.question)}</textarea>
         <div class="growth-assistant-actions"><button class="btn btn-primary" type="submit"${disabled}>Ask assistant</button>
           <button class="btn btn-secondary" type="button" data-assistant-prompt="Explain the largest drop in the visible funnel and what to verify next.">Review funnel</button>
-          <button class="btn btn-secondary" type="button" data-assistant-prompt="Using the all-channel funnel: how many impressions and ad clicks in total, which channel brought the most people to the landing, how many registered out of the total, and which channel performs best and why?">Compare channels</button></div>
+          <button class="btn btn-secondary" type="button" data-assistant-prompt="Using the all-channel funnel: how many impressions and ad clicks in total, which channel brought the most people to the landing, how many signed up via the marketing funnel (ordered, not the sign-up KPI) out of the persons who viewed a marketing page, and which channel performs best and why?">Compare channels</button></div>
       </form>
       ${answer}<p class="growth-assistant-note">Overview analysis runs automatically when the selected data changes. It sends aggregated data to Anthropic, not raw person records. This app does not save the conversation; 10 requests per minute. Do not include personal data or API keys in follow-up questions.</p>`;
     return U.card({ cls: 'chart-card growth-assistant-card', title: 'Growth assistant', sub: 'Executive findings for the selected period, channels, countries and funnel.', body });
@@ -121,7 +121,7 @@
     rerender();
     try {
       const result = await A.api('api/assistant/ask', { method: 'POST', body: JSON.stringify({
-        mode: 'insights', question: 'Generate the Overview executive insight report in English from the supplied data, starting from the all-channel funnel: total impressions, total ad clicks, which channel brought the most people to the landing, how many registered out of the total, and which channel performs best and why. Use English for all headings, findings and recommendations; prioritize evidence over metric listings.', context: snapshot,
+        mode: 'insights', question: 'Generate the Overview executive insight report in English from the supplied data, starting from the all-channel funnel: total impressions, total ad clicks, which channel brought the most people to the landing, how many signed up via the marketing funnel (ordered, not the sign-up KPI) out of the persons who viewed a marketing page, and which channel performs best and why. Use English for all headings, findings and recommendations; prioritize evidence over metric listings.', context: snapshot,
       }) });
       if (sequence !== state.insightSeq) return;
       if (JSON.stringify(context()) !== key) {

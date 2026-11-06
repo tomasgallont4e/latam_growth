@@ -77,5 +77,10 @@ Optional `&breakdown=channel|campaign` reruns the same saved funnel split by Pos
 attribution, and returns `groups: [{ value, steps }]` instead of `steps`. The all-channel funnel on
 Overview and Executive uses it for the per-channel PostHog columns; if the split fails, only those
 columns show unavailable. Requests use a bounded five-minute cache with concurrent requests coalesced.
+The saved-insight lookup and the event-presence check are cached apart (five minutes) and shared by
+the unsplit funnel and both breakdowns, so a breakdown does not repeat the paginated insights scan.
+Any other `breakdown` value, including JavaScript prototype names, returns 400. Few
+`marketing_page_viewed` events carry `utm_campaign`, so most persons fall in `(none)` in the
+campaign split.
 
 Reference: https://posthog.com/docs/api/queries (FunnelsQuery / funnel response).
