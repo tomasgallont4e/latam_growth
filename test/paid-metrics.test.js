@@ -86,6 +86,8 @@ test('Executive renders known PostHog sign-ups and social spend with coverage ca
       },
       chart: { certified: true, note: 'Under review: Unclassified first-identify hosts are excluded.', days: [], sinceLaunch: [], underReview: { label: 'Under review', reason: 'Unclassified first-identify hosts are excluded.' } },
       countries: { status: 'pending', rows: [] },
+      executiveAccounts: { sinceLaunch: 8, byPlan: { status: 'pending' } },
+      allAccounts: { status: 'loaded', month: 20, sinceLaunch: 27, monthByType: { External: 18, Unknown: 1, Internal: 1 }, byType: { External: 22, Unknown: 2, Internal: 3 }, dataThrough: '2026-11-04' },
       funnel: { steps: [], note: '' },
       changed: { phrases: [] },
     },
@@ -98,7 +100,12 @@ test('Executive renders known PostHog sign-ups and social spend with coverage ca
   assert.match(html, /Under review · Unclassified first-identify hosts are excluded/);
   assert.match(html, /Under review · LinkedIn has not reported/);
   assert.match(html, /kpi-compare\">Paid spend incomplete/);
-  assert.match(html, /Under review: Unclassified first-identify hosts are excluded/);
+  assert.match(html, /All-host first-identify accounts/);
+  assert.match(html, /Selected month:<\/b> 20 total · External 18 · Unknown 1 · Internal 1/);
+  assert.match(html, /Since launch:<\/b> 27 total · External 22 · Unknown 2 · Internal 3/);
+  assert.match(html, /data through 2026-11-04/);
+  assert.match(html, /Executive accounts by subscription type/);
+  assert.match(html, /Approved-host external first-identify accounts/);
 });
 
 test('Executive view renders the proposed goal label from its monthly API response', async () => {

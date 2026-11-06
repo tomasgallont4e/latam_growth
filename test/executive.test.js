@@ -103,6 +103,7 @@ test('Executive response exposes covered approved-host accounts separately from 
     country_assigned: 3,
     country_missing: 4,
     excludedHosts: 2,
+    allAccounts: { status: 'pending', month: null, sinceLaunch: null, dataThrough: '2026-10-20', monthByType: null, byType: null, semantics: 'all_first_identifies_all_hosts_including_internal' },
     byPlan: { status: 'pending', free: null, paid: null, other: null, unknown: null, reason: 'Plan events are unavailable or POSTHOG_PLAN_PROPERTY is not configured.' },
   });
 });
@@ -123,6 +124,31 @@ test('Executive exposes last reported plan counts without asserting billing stat
     reason: 'Last plan reported by signed_in or plan_changed; not verified current billing status.',
   });
   assert.match(data.view.executiveAccounts.byPlan.reason, /not verified current billing status/i);
+});
+
+test('Executive API exposes all-host account totals separately from the approved-host Executive count', async () => {
+  const data = await build(storeWithMetrics([
+    { source: 'posthog', metric: 'ph_accounts', date: '2026-10-01', dim: 'account_type', dim_value: 'External', value: 3 },
+    { source: 'posthog', metric: 'ph_accounts', date: '2026-10-01', dim: 'account_type', dim_value: 'Internal', value: 1 },
+    { source: 'posthog', metric: 'ph_accounts', date: '2026-10-02', dim: 'account_type', dim_value: 'External', value: 20 },
+    { source: 'posthog', metric: 'ph_accounts', date: '2026-10-02', dim: 'account_type', dim_value: 'Unknown', value: 4 },
+    { source: 'posthog', metric: 'ph_accounts', date: '2026-10-02', dim: 'account_type', dim_value: 'Internal', value: 1 },
+    { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-10-02', dim: 'account_type', dim_value: 'External', value: 8 },
+  ], [
+    { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true }] },
+    { source: 'posthog', key: 'executive_accounts', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true, country_available: false, external_accounts: 8, country_assigned: 0, country_missing: 8, excluded_host_accounts: 0 }] },
+    { source: 'ga4', key: 'executive_landing', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true }] },
+  ]), '2026-10', new Date('2026-10-29T17:00:00.000Z'));
+  assert.deepEqual(data.allAccounts, {
+    status: 'loaded', month: 29, sinceLaunch: 29, dataThrough: '2026-10-02', monthByType: { External: 23, Unknown: 4, Internal: 2 }, byType: { External: 23, Unknown: 4, Internal: 2 },
+    semantics: 'all_first_identifies_all_hosts_including_internal',
+  });
+  assert.deepEqual(data.executiveAccounts.allAccounts, { status: 'loaded', month: 29, sinceLaunch: 29, dataThrough: '2026-10-02', monthByType: { External: 23, Unknown: 4, Internal: 2 }, byType: { External: 23, Unknown: 4, Internal: 2 }, semantics: 'all_first_identifies_all_hosts_including_internal' });
+  assert.equal(data.allAccounts.month, 29);
+  assert.deepEqual(data.allAccounts.monthByType, { External: 23, Unknown: 4, Internal: 2 });
+  assert.equal(data.monthTotals.all_accounts, 29);
+  assert.equal(data.sinceLaunch.all_accounts, 29);
+  assert.equal(data.executiveAccounts.sinceLaunch, 8);
 });
 
 test('Executive month validation rejects malformed calendar months', () => {
