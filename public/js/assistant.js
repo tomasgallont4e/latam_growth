@@ -16,10 +16,11 @@
       row.accounts_created = finite(count); countries.set(name, row);
     }
     const funnel = A.platformFunnels && A.platformFunnels.summary ? A.platformFunnels.summary() : null;
+    const executiveSummary = A.aggregateFunnel && A.aggregateFunnel.summary ? A.aggregateFunnel.summary() : null;
     const hubspotTotals = D.channels() || [];
     const hubspotChannels = (A.charts.CHANNELS || []).map((channel, i) => ({ channel: channel.name, sessions: finite(hubspotTotals[i]) })).filter((row) => row.sessions > 0);
     return {
-      period: { from: S.from, to: S.to, grouping: D.grainName() },
+      period: { from: S.from, to: S.to, grouping: D.grainName(), cutoff: executiveSummary && executiveSummary.period.cutoff },
       internal_tests_excluded: !!S.exInt,
       previous_period_available: typeof D.prev === 'function' && !!D.prev(),
       funnel_name: funnel ? funnel.name : null,
@@ -40,6 +41,7 @@
       hubspot_channels: hubspotChannels,
       countries: [...countries.values()].sort((a, b) => ((b.sessions || 0) + (b.accounts_created || 0)) - ((a.sessions || 0) + (a.accounts_created || 0))).slice(0, 10),
       posthog_funnel: funnel ? (funnel.steps || []).slice(0, 10).map((step) => ({ step: step.name, persons: finite(step.n), median_seconds: finite(step.median_seconds) })) : [],
+      executive_funnel: executiveSummary,
     };
   }
   function inlineMarkdown(value) {
@@ -86,7 +88,8 @@
         <label for="growth-assistant-question">Ask a follow-up</label>
         <textarea id="growth-assistant-question" name="question" maxlength="800" rows="2" placeholder="Why is this channel dominant, and what should we check?" required>${U.esc(state.question)}</textarea>
         <div class="growth-assistant-actions"><button class="btn btn-primary" type="submit"${disabled}>Ask assistant</button>
-          <button class="btn btn-secondary" type="button" data-assistant-prompt="Explain the largest drop in the visible funnel and what to verify next.">Review funnel</button></div>
+          <button class="btn btn-secondary" type="button" data-assistant-prompt="Explain the largest drop in the visible funnel and what to verify next.">Review funnel</button>
+          <button class="btn btn-secondary" type="button" data-assistant-prompt="Using the all-channel funnel: how many impressions and ad clicks in total, which channel brought the most people to the landing, how many signed up via the marketing funnel (ordered, not the sign-up KPI) out of the persons who viewed a marketing page, and which channel performs best and why?">Compare channels</button></div>
       </form>
       ${answer}<p class="growth-assistant-note">Overview analysis runs automatically when the selected data changes. It sends aggregated data to Anthropic, not raw person records. This app does not save the conversation; 10 requests per minute. Do not include personal data or API keys in follow-up questions.</p>`;
     return U.card({ cls: 'chart-card growth-assistant-card', title: 'Growth assistant', sub: 'Executive findings for the selected period, channels, countries and funnel.', body });
@@ -108,6 +111,7 @@
     if (state.ready !== true || state.insightPreparing || (!force && state.insightStatus === 'loading')) return;
     state.insightPreparing = true;
     try { if (A.platformFunnels && A.platformFunnels.ensureSummary) await A.platformFunnels.ensureSummary(); } catch { /* Overview metrics can still be analyzed without the funnel */ }
+    try { if (A.aggregateFunnel && A.aggregateFunnel.ensure) await A.aggregateFunnel.ensure(); } catch { /* the all-channel funnel keeps its unavailable steps */ }
     const snapshot = context(), key = JSON.stringify(snapshot);
     state.insightPreparing = false;
     if (!force && key === state.insightKey && ['loading', 'ready', 'error'].includes(state.insightStatus)) return;
@@ -117,7 +121,7 @@
     rerender();
     try {
       const result = await A.api('api/assistant/ask', { method: 'POST', body: JSON.stringify({
-        mode: 'insights', question: 'Generate the Overview executive insight report in English from the supplied data. Use English for all headings, findings and recommendations; prioritize evidence over metric listings.', context: snapshot,
+        mode: 'insights', question: 'Generate the Overview executive insight report in English from the supplied data, starting from the all-channel funnel: total impressions, total ad clicks, which channel brought the most people to the landing, how many signed up via the marketing funnel (ordered, not the sign-up KPI) out of the persons who viewed a marketing page, and which channel performs best and why. Use English for all headings, findings and recommendations; prioritize evidence over metric listings.', context: snapshot,
       }) });
       if (sequence !== state.insightSeq) return;
       if (JSON.stringify(context()) !== key) {

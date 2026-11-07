@@ -624,3 +624,12 @@ body[data-page="executive"] .check-chip { display: none; }
 .growth-assistant-report strong { color: var(--color-text); }
 .growth-insight-meta { margin-top: 10px; color: var(--color-text-muted); font-size: 10.5px; }
 .growth-assistant-answer > div { margin-top: 7px; }
+
+/* All-channel funnel (one source per step) */
+.agg-funnel-card .funnel { padding: 4px 20px 0; }
+.agg-funnel-card > .card-header + div > .card-note { padding: 0 20px; }
+.agg-split { margin: 0 0 6px 36px; font: 500 11px var(--font-mono); color: var(--color-text-secondary); }
+.agg-split b { color: var(--color-text); font-weight: 600; }
+.agg-unit { color: var(--color-warning); }
+.agg-table { padding: 0 20px 16px; }
+@media (max-width: 720px) { .agg-split { margin-left: 0; } }

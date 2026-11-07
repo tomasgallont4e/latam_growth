@@ -66,15 +66,15 @@
       })),
     };
   }
-  function loadCached(path, from, to, exclude, force = false) {
-    const cacheKey = keyFor(path, from, to, exclude);
+  function loadCached(path, from, to, exclude, force = false, breakdown = '') {
+    const cacheKey = keyFor(path, from, to, exclude) + (breakdown ? `|${breakdown}` : '');
     let entry = cache.get(cacheKey);
     if (entry && !force && Date.now() - entry.at < 300000) {
       return entry.promise ? entry.promise.then(() => entry) : Promise.resolve(entry);
     }
     entry = { at: Date.now() };
     cache.set(cacheKey, entry);
-    const query = `funnel=${encodeURIComponent(path)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&exclude=${exclude ? '1' : '0'}`;
+    const query = `funnel=${encodeURIComponent(path)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&exclude=${exclude ? '1' : '0'}${breakdown ? `&breakdown=${encodeURIComponent(breakdown)}` : ''}`;
     entry.promise = A.api(`api/funnels/posthog?${query}`).then((data) => { entry.data = data; }).catch((error) => { entry.error = error.message; });
     return entry.promise.then(() => entry);
   }
@@ -104,6 +104,9 @@
   }
   A.platformFunnels = { render, mount, nativeBody, summary, ensureSummary };
   A.posthogFunnel = {
+    // Shared cache for other cards (all-channel funnel): same request as the card above, no extra call.
+    load: ({ path = 'marketing_project', from = A.S.from, to = A.S.to, exclude = A.S.exInt, breakdown = '', force = false } = {}) => loadCached(path, from, to, exclude, force, breakdown),
+    cached: ({ path = 'marketing_project', from = A.S.from, to = A.S.to, exclude = A.S.exInt, breakdown = '' } = {}) => cache.get(keyFor(path, from, to, exclude) + (breakdown ? `|${breakdown}` : '')) || null,
     render: ({ path = 'marketing_project', from = A.S.from, to = A.S.to, exclude = A.S.exInt } = {}) => {
       const cacheEntry = cache.get(keyFor(path, from, to, exclude));
       const data = cacheEntry && cacheEntry.data;

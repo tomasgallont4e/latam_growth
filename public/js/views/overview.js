@@ -138,11 +138,12 @@
       body: (hasSessions ? C.stacked({ dates: D.ticks(), keys: C.CHANNELS, value: (d, i) => (channels[d] || [])[i] || 0, notes, label: 'HubSpot sessions by channel' }) : U.awaiting('hubspot'))
         + `<ul class="notes-chips">${notes.length ? notes.map((n, i) => `<li class="note-chip"><span class="note-idx">${i + 1}</span><span class="mono">${U.dshort(n.date)}</span><span class="note-txt">${U.esc(n.label)}</span></li>`).join('') : '<li class="text-muted">No timeline notes in this period.</li>'}</ul>`,
     });
+    const allChannels = A.aggregateFunnel ? `<section class="section">${A.aggregateFunnel.render()}</section>` : '';
     const stages = A.platformFunnels.render();
     const readings = A.assistant.render();
     return accountsGoal() + U.section('Launch at a glance', `${S.from} to ${S.to} · KPI values are range totals; deltas compare the latest two complete ${D.grainName().toLowerCase()} buckets`, kpis)
-      + periodComparison(bucketComparison) + `<section class="section">${mix}</section><section class="section">${channelChart}</section><section class="section">${stages}</section><section class="section">${readings}</section><section class="section">${chart}</section>`;
+      + periodComparison(bucketComparison) + `<section class="section">${mix}</section><section class="section">${channelChart}</section>${allChannels}<section class="section">${stages}</section><section class="section">${readings}</section><section class="section">${chart}</section>`;
   }
-  function mount(el) { A.platformFunnels.mount(el); A.assistant.mount(el); el.addEventListener('change', (e) => { if (e.target.id === 'goal-country') { A.S.goalCountry = e.target.value; A.render(); } }); }
+  function mount(el) { A.platformFunnels.mount(el); if (A.aggregateFunnel) A.aggregateFunnel.mount(el); A.assistant.mount(el); el.addEventListener('change', (e) => { if (e.target.id === 'goal-country') { A.S.goalCountry = e.target.value; A.render(); } }); }
   A.views.overview = { title: 'Overview', render, mount };
 })(window.App);

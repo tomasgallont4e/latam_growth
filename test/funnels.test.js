@@ -362,3 +362,79 @@ test('a PostHog 403 explains the missing read access instead of showing a retry 
   const request = async () => ({ ok: false, status: 403, json: async () => ({}) });
   await assert.rejects(read('website', from, to, true, request), /403.*insight:read.*query:read.*347861/i);
 });
+
+const { normalizeBreakdown, route } = require('../lib/funnels');
+const marketingSaved = { kind: 'FunnelsQuery', series: [
+  { kind: 'EventsNode', event: 'marketing_page_viewed' }, { kind: 'EventsNode', event: 'marketing_cta_clicked' }, { kind: 'EventsNode', event: 'registration_started' },
+  { kind: 'EventsNode', event: '$identify', custom_name: 'Registgration Finished' }, { kind: 'EventsNode', event: '$pageview', custom_name: 'Login' }, { kind: 'EventsNode', event: '$pageview', custom_name: 'Project View/Project Created' },
+], funnelsFilter: { funnelVizType: 'steps' } };
+function marketingRequest(calls) {
+  return async (url, opts) => {
+    const body = opts && opts.body ? JSON.parse(opts.body) : null;
+    calls.push({ url, kind: body ? body.query.kind : 'insights' });
+    if (!body) return { ok: true, json: async () => ({ results: [{ name: 'Marketing-to-Project Activation Funnel', short_id: 'K5KD9MSL', query: { kind: 'InsightVizNode', source: marketingSaved } }] }) };
+    if (body.query.kind === 'HogQLQuery') return { ok: true, json: async () => ({ results: [['marketing_page_viewed'], ['marketing_cta_clicked'], ['registration_started'], ['$identify'], ['$pageview']] }) };
+    const counts = [676, 73, 33, 9, 3, 3];
+    if (!body.query.breakdownFilter) return { ok: true, json: async () => ({ results: counts.map((count, order) => ({ count, order })) }) };
+    return { ok: true, json: async () => ({ results: [counts.map((count, order) => ({ count, order, breakdown_value: ['Direct'] }))] }) };
+  };
+}
+
+test('funnel and breakdown lookups ignore prototype keys', () => {
+  for (const key of ['toString', 'constructor', '__proto__', 'hasOwnProperty']) {
+    assert.throws(() => buildQuery(key, from, to, false), /Invalid funnel/);
+    assert.throws(() => buildQuery('website', from, to, false, null, key), /Invalid funnel breakdown/);
+  }
+});
+
+test('the PostHog funnel route rejects prototype and unknown breakdowns and keeps the unsplit response', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347880', POSTHOG_API_KEY: 'test', LAUNCH_DATE: '2026-10-01' });
+  const express = require('express'), http = require('node:http');
+  const calls = [];
+  const app = express();
+  app.get('/api/funnels/posthog', route(marketingRequest(calls)));
+  const server = http.createServer(app);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}/api/funnels/posthog?funnel=marketing_project&from=${from}&to=${to}&exclude=0`;
+  for (const breakdown of ['toString', 'constructor', '__proto__', 'valueOf', 'country']) {
+    const response = await fetch(`${base}&breakdown=${breakdown}`);
+    assert.equal(response.status, 400, breakdown);
+    assert.match((await response.json()).error, /breakdown must be channel or campaign/);
+  }
+  const badFunnel = await fetch(`http://127.0.0.1:${server.address().port}/api/funnels/posthog?funnel=toString&from=${from}&to=${to}`);
+  assert.equal(badFunnel.status, 502);
+  assert.match((await badFunnel.json()).error, /Invalid funnel/);
+  assert.equal(calls.length, 0, 'invalid requests never reach PostHog');
+  const plain = await fetch(base);
+  assert.equal(plain.status, 200);
+  assert.deepEqual(await plain.json(), JSON.parse(JSON.stringify(await read('marketing_project', from, to, false, marketingRequest([])))));
+  const body = await (await fetch(base)).json();
+  assert.equal(body.breakdown, undefined);
+  assert.equal(body.groups, undefined);
+  assert.deepEqual(body.steps.map((s) => s.n), [676, 73, 33, 9, 3, 3]);
+});
+
+test('breakdowns reuse the saved insight and event presence instead of rescanning PostHog', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '347881', POSTHOG_API_KEY: 'test' });
+  const calls = [], request = marketingRequest(calls);
+  await read('marketing_project', from, to, true, request);
+  await read('marketing_project', from, to, true, request, 'channel');
+  await read('marketing_project', from, to, true, request, 'campaign');
+  assert.equal(calls.filter((c) => c.kind === 'insights').length, 1);
+  assert.equal(calls.filter((c) => c.kind === 'HogQLQuery').length, 1);
+  assert.equal(calls.filter((c) => c.kind === 'FunnelsQuery').length, 3);
+  // Another date range needs its own presence check, still not a new insights scan.
+  await read('marketing_project', from, '2026-10-20', true, request, 'channel');
+  assert.equal(calls.filter((c) => c.kind === 'insights').length, 1);
+  assert.equal(calls.filter((c) => c.kind === 'HogQLQuery').length, 2);
+});
+
+test('normalizeBreakdown names PostHog null and other buckets', () => {
+  const query = { series: [{ kind: 'EventsNode', event: 'a' }, { kind: 'EventsNode', event: 'b' }] };
+  const group = (value, counts) => counts.map((count, order) => ({ count, order, breakdown_value: value }));
+  const groups = normalizeBreakdown({ results: [
+    group(['$$_posthog_breakdown_null_$$'], [5, 1]), group('$$_posthog_breakdown_other_$$', [7, 2]), group([''], [3, 0]), group(['Direct'], [9, 4]),
+  ] }, query, new Set(['a', 'b']));
+  assert.deepEqual(groups.map((g) => [g.value, g.steps.map((s) => s.n)]), [['Direct', [9, 4]], ['Other', [7, 2]], ['(none)', [5, 1]], ['(none)', [3, 0]]]);
+});
