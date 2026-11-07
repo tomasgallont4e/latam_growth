@@ -150,7 +150,7 @@ function dashboard(stored = {}, hash = '') {
     },
   } });
   App.testLoad = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
-  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'assistant.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
+  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'aggregate.js', 'assistant.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
   }
   App.S.from = '2026-10-01'; App.S.to = '2026-10-28';
@@ -1341,4 +1341,77 @@ test('Conversion highlights the ordered steps, not unclassified observed people 
   assert.doesNotMatch(html, /class="kpi-label">New observed people/);
   assert.doesNotMatch(html, /page_view/);
   assert.match(html, /event counts, not unique people/);
+});
+
+test('Overview shows separate acquisition totals and ordered PostHog funnel; Executive remains unchanged', async () => {
+  const A = dashboard();
+  A.S.data.metrics = [
+    { ...metric('meta', 'ad_impressions', 348000, 'latam_co_launch'), dim: 'campaign' },
+    { ...metric('meta', 'ad_link_clicks', 6468, 'latam_co_launch'), dim: 'campaign' },
+    { ...metric('meta', 'ad_spend', 900, 'latam_co_launch'), dim: 'campaign' },
+    { ...metric('ga4', 'ga_sessions', 2604, 'Paid Social'), dim: 'channel' },
+    { ...metric('ga4', 'ga_sessions', 296, 'Direct'), dim: 'channel' },
+    { ...metric('ga4', 'ga_paid_sessions', 2604, 'meta'), dim: 'platform' },
+    { ...metric('hubspot', 'contacts', 12, 'Email'), dim: 'source' },
+  ];
+  A.S.data.snapshots.push(available('ga4', 'paid_sessions'));
+  const requests = [];
+  A.api = (url) => {
+    requests.push(url);
+    if (/breakdown=channel/.test(url)) return Promise.resolve({ breakdown: 'channel', groups: [{ value: 'Paid Social', steps: [600, 50, 20, 4, 1, 1].map((n) => ({ n })) }, { value: 'Direct', steps: [76, 23, 13, 5, 2, 2].map((n) => ({ n })) }] });
+    if (url.startsWith('api/funnels/posthog?')) return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: A.S.from, to: A.S.to, window_days: 14, steps: [676, 73, 33, 9, 3, 3].map((n, i) => ({ name: `s${i}`, n })) });
+    return new Promise(() => {});
+  };
+  const box = { isConnected: true, innerHTML: '' };
+  const root = { querySelector: (selector) => (selector === '[data-agg-funnel]' ? box : null), addEventListener() {} };
+  await A.aggregateFunnel.mount(root);
+  assert.ok(requests.some((url) => /funnel=marketing_project/.test(url) && !/breakdown/.test(url)));
+  const html = A.views.overview.render();
+  assert.match(html, /Acquisition totals by source/);
+  assert.match(html, /Ordered PostHog person funnel/);
+  assert.match(html, /No cross-source conversion rates or identity joins/);
+  assert.doesNotMatch(html, /Coverage mismatch/);
+  assert.match(html, /HubSpot/);
+  assert.match(html, /Sign-up \(\$identify\)/);
+  assert.match(html, /Contacts <b>12<\/b>/);
+  assert.doesNotMatch(html, /Sign-ups per 1,000 sessions|Rows are joined by channel name/);
+  assert.doesNotMatch(A.views.executive.render(), /Acquisition totals by source|Ordered PostHog person funnel/);
+  const context = A.assistant.context();
+  assert.equal(context.executive_funnel.acquisition.sources.ads.totals.impressions, 348000);
+  assert.equal(context.executive_funnel.product_funnel.steps[3].name, 'Sign-up ($identify)');
+  assert.equal(context.executive_funnel.acquisition.coverage_mismatch, false);
+});
+
+test('assistant context carries source coverage and the independent ordered PostHog funnel', async () => {
+  const A = dashboard();
+  A.S.data.metrics = [
+    { ...metric('meta', 'ad_impressions', 348000, 'latam_co_launch'), dim: 'campaign' },
+    { ...metric('meta', 'ad_link_clicks', 6468, 'latam_co_launch'), dim: 'campaign' },
+    { ...metric('ga4', 'ga_sessions', 2900, 'Paid Social'), dim: 'channel' },
+  ];
+  A.api = (url) => {
+    if (/breakdown=campaign/.test(url)) return Promise.resolve({ breakdown: 'campaign', groups: [{ value: 'latam_co_launch', steps: [9, 1, 1, 1, 0, 0].map((n) => ({ n })) }] });
+    if (/breakdown=channel/.test(url)) return Promise.resolve({ breakdown: 'channel', groups: [{ value: 'Paid Social', steps: [600, 50, 20, 4, 1, 1].map((n) => ({ n })) }] });
+    if (url.startsWith('api/funnels/posthog?')) return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: A.S.from, to: A.S.to, window_days: 14, steps: [676, 73, 33, 9, 3, 3].map((n, i) => ({ name: `s${i}`, n })) });
+    return new Promise(() => {});
+  };
+  const before = JSON.stringify(await A.aggregateFunnel.ensure());
+  const after = JSON.stringify(A.assistant.context().executive_funnel);
+  assert.equal(JSON.parse(before).product_funnel.steps[3].name, 'Sign-up ($identify)');
+  assert.equal(JSON.parse(after).product_funnel.steps[3].name, 'Sign-up ($identify)');
+  assert.match(after, /No cross-source conversion rates/);
+  assert.equal(JSON.parse(after).acquisition.sources.ga4.channels.length, 1);
+  assert.equal(JSON.parse(after).acquisition.sources.hubspot.totals.contacts, null);
+});
+
+test('old UTM channel/campaign snapshots are not used as joins in the executive model', () => {
+  const A = dashboard();
+  A.S.data.metrics = [{ ...metric('ga4', 'ga_sessions', 100, 'Direct'), dim: 'channel' }];
+  const rows = Array.from({ length: 1000 }, (_, i) => ({ date: '2026-09-15', source: 's', medium: 'm', campaign: `c${i}`, sessions: 1 }));
+  rows[0].date = '2026-10-05';
+  A.S.data.snapshots.push({ source: 'ga4', key: 'utm_attribution', from: '2026-09-01', to: A.S.to, rows });
+  const model = A.aggregateFunnel.collect();
+  assert.equal(model.acquisition.sources.ga4.totals.sessions, 100);
+  assert.equal(model.channels, undefined);
+  assert.equal(model.campaigns, undefined);
 });

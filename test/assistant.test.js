@@ -38,7 +38,7 @@ function clientAssistant() {
 test('assistant client summarizes the selected window and uses only aggregate dashboard data', async () => {
   const App = clientAssistant();
   const context = JSON.parse(JSON.stringify(App.assistant.context()));
-  assert.deepEqual(context.period, { from: '2026-10-01', to: '2026-10-29', grouping: 'Weekly' });
+  assert.deepEqual(context.period, { from: '2026-10-01', to: '2026-10-29', grouping: 'Weekly', cutoff: null });
   assert.equal(context.internal_tests_excluded, true);
   assert.equal(context.kpis.ga4_sessions, 120);
   assert.equal(context.kpis.posthog_accounts_created, 7);
@@ -149,7 +149,7 @@ test('assistant forwards only bounded aggregate dashboard data to Anthropic', as
   assert.equal(request.options.headers['content-type'], 'application/json');
   assert.equal(payload.model, 'claude-sonnet-5-5');
   assert.match(payload.system, /first \$identify per person/i);
-  assert.match(payload.system, /do not simply list every metric/i);
+  assert.match(payload.system, /Do not simply list every metric/i);
   assert.match(payload.messages[0].content, /¿Qué canal trajo más sesiones\?/);
   assert.doesNotMatch(payload.messages[0].content, /private@example\.com|raw_events/);
 });

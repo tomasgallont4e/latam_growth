@@ -69,13 +69,7 @@ app.get('/api/data', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.get('/api/funnels/posthog', async (req, res) => {
-  try {
-    const from = String(req.query.from || ''), to = String(req.query.to || '');
-    if (from < (process.env.LAUNCH_DATE || '2026-10-01') || to > new Date().toISOString().slice(0, 10)) return res.status(400).json({ error: 'Date outside launch window' });
-    res.json(await funnels.read(String(req.query.funnel || 'website'), from, to, req.query.exclude !== '0'));
-  } catch (e) { res.status(502).json({ error: e.message }); }
-});
+app.get('/api/funnels/posthog', funnels.route());
 
 app.get('/api/assistant/status', (req, res) => res.json(assistant.status()));
 app.post('/api/assistant/ask', async (req, res) => {
