@@ -109,6 +109,14 @@
     };
   };
   // Overview remains the separate all-host first-identify population.
+  D.outcome = (metric, from = S.from, to = S.to) => {
+    const keys = { accounts_created: { fact: 'ph_accounts_created', coverage: 'accounts_created_coverage' }, projects_created: { fact: 'ph_projects_created', coverage: 'projects_created_coverage' } };
+    const definition = keys[metric];
+    if (!definition) return null;
+    const snapshot = D.covered('posthog', definition.coverage, from, to);
+    if (!snapshot) return { status: 'pending', value: null, reason: 'Outcome coverage unavailable.' };
+    return { status: 'loaded', value: D.sum('posthog', definition.fact, (row) => row.dim === 'account_type' && row.dim_value === 'External', from, to), reason: null };
+  };
   D.accountsCountries = (from = S.from, to = S.to) => {
     const out = {};
     for (const r of D.M()) {
@@ -212,9 +220,10 @@
     const out = {};
     for (const d of U.days(from, to)) out[d] = { form: 0, platform: 0 };
     for (const e of D.forms(from, to)) if (out[e.date]) out[e.date].form += 1;
-    if (D.has('posthog', 'ph_new_persons')) {
-      const p = D.byDay('posthog', 'ph_new_persons', from, to, D.peopleFilter);
-      for (const d of Object.keys(p)) if (out[d]) out[d].platform = p[d];
+    for (const row of D.M()) {
+      if (row.source === 'posthog' && row.metric === 'ph_new_persons' && row.dim === 'account_type' && String(row.dim_value || '').toLowerCase() === 'external' && inR(row.date, from, to)) {
+        if (out[row.date]) out[row.date].platform += Number(row.value) || 0;
+      }
     }
     return out;
   };

@@ -14,63 +14,46 @@ test('Executive is the default tab unless the URL or a non-default saved tab sel
   assert.equal(dashboard({}, '#acquisition').S.tab, 'acquisition');
 });
 
-test('Executive follows the spec layout and shows only its four-step cross-source funnel', async () => {
-  const A = dashboard(), requests = [];
-  const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).format(new Date());
-  // The PostHog activation funnel sits at the end of Executive, below the campaign funnel sections.
-  const expectedOrder = ['Sign-ups this month', 'Sign-ups since launch', 'Ad spend this month', 'Cost per sign-up', 'Visit to sign-up rate', 'Sign-ups this month vs goal', 'Top 5 countries', 'Executive sign-ups by reported plan', 'What changed', 'Marketing-to-Project Activation Funnel'];
-  const paidSteps = [
-    { name: 'Paid impressions', value: null, status: 'pending', reason: 'Meta ad account access pending', source: 'Meta, LinkedIn, Google Ads' },
-    { name: 'Landing sessions', value: 335, status: 'loaded', source: 'GA4 · go.think4ever.com' },
-    { name: 'Sign-up started', value: 3, status: 'loaded', source: 'GA4 · go.think4ever.com' },
-    { name: 'Sign-ups', value: null, status: 'pending', reason: 'PostHog host coverage pending', source: 'PostHog' },
-  ];
-  A.api = (url) => {
-    requests.push(url);
-    if (url.startsWith('api/funnels/posthog?')) return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: '2026-10-01', to: '2026-10-28', window_days: 14, steps: [{ name: 'Marketing page', n: 99 }, { name: 'CTA', n: 9 }, { name: 'Registration', n: 5 }, { name: 'Registration Finished', n: 1 }, { name: 'Login', n: 0 }, { name: 'Project Created', n: 0 }] });
-    if (url.startsWith('api/executive?')) return Promise.resolve({
-      month, from: '2026-10-01', asOf: '2026-10-28',
-      executiveAccounts: { sinceLaunch: 7, byPlan: { status: 'loaded', free: 4, paid: 2, other: 0, unknown: 1, semantics: 'last_observed_plan_from_signed_in_or_plan_changed_not_verified_billing_status', reason: 'Last plan reported by signed_in or plan_changed; not verified current billing status.' } },
-      view: { cutoff: '2026-10-28', executiveAccounts: { sinceLaunch: 7, byPlan: { status: 'loaded', free: 4, paid: 2, other: 0, unknown: 1, semantics: 'last_observed_plan_from_signed_in_or_plan_changed_not_verified_billing_status', reason: 'Last plan reported by signed_in or plan_changed; not verified current billing status.' } },
-        cards: {
-          signups: { status: 'pending', reason: 'PostHog host coverage pending', lines: [] },
-          sinceLaunch: { status: 'pending', reason: 'PostHog host coverage pending', lines: [] },
-          spend: { status: 'pending', reason: 'Meta ad account access pending', lines: ['Meta · No data yet · Meta ad account access pending', 'LinkedIn · No data yet · LinkedIn reporting pending', 'Google Ads: no campaigns'] },
-          cps: { status: 'pending', reason: 'spend incomplete' },
-          visit: { status: 'pending', reason: 'GA4 pending' },
-        },
-        chart: { certified: false, reason: 'PostHog host coverage pending' },
-        countries: { status: 'pending', rows: [] },
-        funnel: { steps: paidSteps, biggestDrop: 2, note: 'Steps come from different tools. Rates are indicative.' },
-        changed: { phrases: [] },
-      },
-    });
-    throw new Error(`Unexpected API request: ${url}`);
-  };
-  A.render = () => {};
-
+test('Executive shows management outcomes without the source-mixed funnel', async () => {
+  const A = dashboard();
+  A.api = (url) => url.startsWith('api/executive?') ? Promise.resolve({
+    month: new URL(url, 'http://localhost').searchParams.get('month'),
+    view: { outcomes: {
+      accountsCreated: { value: 8, status: 'loaded', event: 'account_created' },
+      projectsCreated: { value: 5, status: 'loaded', event: 'project_created' },
+      activation14d: { value: null, status: 'pending', reason: 'No verified shared identity key.' },
+    }, cards: { signups: { status: 'pending' }, spend: { status: 'pending' } } },
+  }) : new Promise(() => {});
   A.views.executive.render();
   await new Promise((resolve) => setImmediate(resolve));
-  const executive = A.views.executive.render();
-  const funnelBox = { isConnected: true, innerHTML: '' };
-  A.views.executive.mount({ querySelector: (selector) => selector === '[data-posthog-funnel]' ? funnelBox : null, querySelectorAll: () => [], addEventListener() {} });
+  const html = A.views.executive.render();
+  assert.match(html, /Accounts created/);
+  assert.match(html, /8/);
+  assert.match(html, /Projects created/);
+  assert.match(html, /5/);
+  assert.match(html, /No verified shared identity key/);
+  assert.doesNotMatch(html, /Campaign funnel|Visit to sign-up rate|Cost per sign-up/);
+});
+
+test('Executive renders separate management indicators and no mixed/source funnel', async () => {
+  const A = dashboard();
+  A.api = (url) => Promise.resolve({
+    month: new URL(url, 'http://localhost').searchParams.get('month'),
+    view: { cutoff: '2026-11-03', cards: {
+      signups: { status: 'loaded', value: 12, lines: [] },
+      spend: { status: 'pending', reason: 'Ads sources pending' },
+    }, outcomes: {
+      accountsCreated: { status: 'loaded', value: 8, reason: null },
+      projectsCreated: { status: 'loaded', value: 5, reason: null },
+      activation14d: { status: 'pending', reason: 'No verified shared identity key.' },
+    }, changed: { phrases: [] } },
+  });
+  A.views.executive.render();
   await new Promise((resolve) => setImmediate(resolve));
-  const positions = expectedOrder.map((label) => executive.indexOf(label));
-  assert.ok(positions.every((position) => position >= 0), 'Executive should contain all spec sections');
-  assert.deepEqual(positions, positions.slice().sort((a, b) => a - b));
-  assert.match(executive, /No data yet/);
-  assert.match(executive, /PostHog host coverage pending/);
-  assert.match(executive, /Meta ad account access pending/);
-  assert.match(executive, /Marketing-to-Project Activation Funnel/);
-  assert.doesNotMatch(executive, /Paid acquisition funnel/);
-  assert.match(executive, /product activation, not an advertising funnel/i);
-  assert.match(executive, /Last reported Paid/);
-  assert.match(executive, /not verified current billing status/i);
-  assert.doesNotMatch(executive, /Plan data unavailable/);
-  assert.equal(requests.filter((url) => url.startsWith('api/funnels/posthog?')).length, 1);
-  assert.match(requests.find((url) => url.startsWith('api/funnels/posthog?')), /to=2026-10-28&exclude=1/);
-  assert.match(funnelBox.innerHTML, /Marketing page/);
-  assert.doesNotMatch(executive, /Biggest drop|Steps come from different tools/);
+  const html = A.views.executive.render();
+  for (const label of ['Management indicators', 'Sign-ups target progress', 'Ads spend', 'Accounts created', 'Projects created', '14-day project activation', 'Management readout']) assert.ok(html.includes(label), label);
+  assert.match(html, /No verified shared identity key/);
+  assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel|Visit to sign-up rate|Cost per sign-up/);
 });
 
 test('Executive renders known PostHog sign-ups and social spend with coverage caveats', async () => {
@@ -96,48 +79,30 @@ test('Executive renders known PostHog sign-ups and social spend with coverage ca
   A.views.executive.render();
   await new Promise((resolve) => setImmediate(resolve));
   const html = A.views.executive.render();
-  assert.match(html, /<span class="under-review-value">5<\/span>/);
-  assert.match(html, /<span class="under-review-value">US\$20\.27<\/span>/);
+  assert.match(html, /Sign-ups target progress/);
+  assert.match(html, /Ads spend/);
   assert.match(html, /Under review · Unclassified first-identify hosts are excluded/);
-  assert.match(html, /Under review · LinkedIn has not reported/);
-  assert.match(html, /kpi-compare\">Paid spend incomplete/);
-  assert.match(html, /All-host sign-ups · first identify/);
-  assert.match(html, /Selected month:<\/b> 20 total · External 18 · Unknown 1 · Internal 1/);
-  assert.match(html, /Since launch:<\/b> 27 total · External 22 · Unknown 2 · Internal 3/);
-  assert.match(html, /data through 2026-11-04/);
-  assert.match(html, /Executive sign-ups by reported plan/);
+  assert.match(html, /LinkedIn has not reported/);
+  assert.match(html, /Accounts created/);
+  assert.match(html, /Projects created/);
 });
 
-test('Executive view renders the proposed goal label from its monthly API response', async () => {
+test('Executive view keeps the monthly sign-up KPI and pending outcomes separate', async () => {
   const A = dashboard();
   A.api = (url) => Promise.resolve({
     month: new URL(url, 'http://localhost').searchParams.get('month'),
-    cutoff: '2026-11-03',
-    view: {
-      cards: {
-        signups: { status: 'loaded', value: 4, lines: [], pace: 'trailing' },
-        sinceLaunch: { status: 'loaded', value: 4, lines: [] },
-        spend: { status: 'pending', reason: 'Meta pending', lines: [] },
-        cps: { status: 'pending', reason: 'spend incomplete' },
-        visit: { status: 'pending', reason: 'sessions pending', sessions: 335 },
-      },
-      chart: {
-        certified: true,
-        days: [{ date: '2026-11-02', signups: 4, cumulative: 4, minimum: 1000 }],
-        goal: 30000,
-        goalLabel: 'Goal 30,000 · Proposal',
-      },
-      countries: { status: 'loaded', rows: [{ country: 'Colombia', signups: 4, sessions: 80, rate: 0.05, percentOfMin: null, pace: 'No goal' }] },
-      funnel: { steps: [], note: '' },
-      changed: { phrases: [] },
-    },
+    view: { cutoff: '2026-11-03', cards: { signups: { status: 'loaded', value: 4, lines: [], pace: 'trailing' }, spend: { status: 'pending', reason: 'Ads pending', lines: [] } },
+      outcomes: { accountsCreated: { status: 'pending', reason: 'account_created coverage unavailable.' }, projectsCreated: { status: 'pending', reason: 'project_created coverage unavailable.' }, activation14d: { status: 'pending', reason: 'No verified shared identity key.' } }, changed: { phrases: [] } },
   });
-  A.views.executive.render();
-  await new Promise((resolve) => setImmediate(resolve));
+  A.views.executive.render(); await new Promise((resolve) => setImmediate(resolve));
   const html = A.views.executive.render();
-  assert.match(html, /Goal 30,000 · Proposal/);
-  assert.match(html, /Sources: PostHog \(sign-ups\) · monthly goals \(Targets\)/);
-  assert.match(html, /Sources: PostHog \(sign-ups\) · GA4 \(sessions\)/);
+  assert.match(html, /Sign-ups target progress/);
+  assert.match(html, /Accounts created/);
+  assert.match(html, /Projects created/);
+  assert.match(html, /14-day project activation/);
+  assert.match(html, /account_created coverage unavailable/);
+  assert.match(html, /No verified shared identity key/);
+  assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel|Goal 30,000 · Proposal/);
 });
 
 function dashboard(stored = {}, hash = '') {
@@ -170,11 +135,8 @@ test('metric corrections preserve the goal, channel and conversion charts', () =
   assert.match(overview, /LATAM 500K goal/);
   assert.match(overview, /sign-ups once per person/);
   assert.match(conversion, /Sign-ups/);
-  assert.doesNotMatch(overview + conversion, /Accounts created/);
+  assert.doesNotMatch(overview + conversion, /Confirmed accounts created/);
   assert.doesNotMatch(overview, /Plan needs review/);
-  assert.match(overview, /Channel mix/);
-  assert.match(overview, /aria-label="HubSpot sessions by channel"/);
-  assert.match(overview, /Timeline Notes/);
   assert.match(conversion, /Daily registration starts and sign-ups/);
   assert.doesNotMatch(overview, /class="goal-col"/);
   const realZero = A.charts.goalProgress({ dates: ['2026-10-01'], values: [0], goal: 500000 });
@@ -495,43 +457,23 @@ test('period comparison uses the last two fully covered buckets for each selecte
   assert.equal(A.D.periods('2026-10-01', '2026-10-28')[0].label, 'Oct 1–4');
 });
 
-test('Overview KPI strip shows complete-bucket deltas inline with range totals', () => {
-  const A = dashboard(); A.ui.today = () => '2026-10-29';
-  A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
-  const daily = (source, metricName, value, date, dim = '', dim_value = '') => ({ source, metric: metricName, value, date, dim, dim_value });
+test('Overview summarizes source-native totals and separate canonical outcomes', () => {
+  const A = dashboard();
   A.S.data.metrics = [
-    daily('ga4', 'ga_sessions', 100, '2026-10-27', 'channel', 'Organic Search'),
-    daily('ga4', 'ga_sessions', 150, '2026-10-28', 'channel', 'Paid Social'),
-    daily('ga4', 'ga_engaged_sessions', 50, '2026-10-27', 'channel', 'Organic Search'),
-    daily('ga4', 'ga_engaged_sessions', 90, '2026-10-28', 'channel', 'Paid Social'),
-    daily('hubspot', 'sessions', 10, '2026-10-27'), daily('hubspot', 'sessions', 20, '2026-10-28'),
-    daily('posthog', 'ph_new_persons', 10, '2026-10-27', 'account_type', 'External'),
-    daily('posthog', 'ph_new_persons', 20, '2026-10-28', 'account_type', 'External'),
-    daily('posthog', 'ph_signups', 15, '2026-10-27', 'account_type', 'External'),
-    daily('posthog', 'ph_signups', 20, '2026-10-28', 'account_type', 'External'),
+    { ...metric('meta', 'ad_spend', 125, 'launch'), dim: 'campaign' },
+    { ...metric('ga4', 'ga_sessions', 1200, 'Paid Social'), dim: 'channel' },
+    { ...metric('hubspot', 'contacts', 14, 'Paid Social'), dim: 'source' },
+    { ...metric('posthog', 'ph_accounts_created', 7, 'External'), dim: 'account_type' },
+    { ...metric('posthog', 'ph_projects_created', 4, 'External'), dim: 'account_type' },
   ];
-  A.S.data.snapshots = [
-    { source: 'posthog', key: 'people_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true }] },
-    { source: 'posthog', key: 'registration_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true }] },
-  ];
-  A.S.data.events = [
-    { kind: 'form_signup', date: '2026-10-27', internal: false },
-    { kind: 'form_signup', date: '2026-10-28', internal: false }, { kind: 'form_signup', date: '2026-10-28', internal: false },
-  ];
+  A.S.data.snapshots.push(
+    { ...available('posthog', 'accounts_created_coverage'), rows: [{ available: true, event: 'account_created' }] },
+    { ...available('posthog', 'projects_created_coverage'), rows: [{ available: true, event: 'project_created' }] },
+    { ...available('posthog', 'account_coverage'), rows: [{ available: true }] },
+  );
   const html = A.views.overview.render();
-  const comparisonSection = html.indexOf('Last complete Daily period vs previous');
-  const kpis = html.slice(0, comparisonSection);
-  assert.match(kpis, /title="250">250/);
-  const unique = kpis.slice(kpis.indexOf('Unique visitors'), kpis.indexOf('Engagement rate'));
-  assert.match(unique, /No comparison for this period/);
-  assert.match(unique, /per-bucket change requires exact snapshots/);
-  assert.match(kpis, /title="30">30/);
-  assert.match(kpis, /title="35">35/);
-  assert.match(kpis, /\+50\.0%/);
-  assert.match(kpis, /\+10\.0 pp/);
-  assert.match(kpis, /\+100\.0%/);
-  assert.match(kpis, /\+33\.3%/);
-  assert.match(kpis, /Latest complete daily: Oct 28 vs Oct 27/);
+  for (const label of ['Overview', 'Ads', 'Sign-ups', 'GA4 sessions', 'HubSpot contacts', 'Accounts created', 'Projects created']) assert.ok(html.includes(label), label);
+  assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel|Last complete Daily period/);
 });
 
 test('Overview and Acquisition compare the two latest complete buckets, not a partial current bucket', () => {
@@ -544,13 +486,9 @@ test('Overview and Acquisition compare the two latest complete buckets, not a pa
     daily('ga4', 'ga_engaged_sessions', 50, '2026-10-27'), daily('ga4', 'ga_engaged_sessions', 90, '2026-10-28'),
     daily('hubspot', 'sessions', 10, '2026-10-27'), daily('hubspot', 'sessions', 20, '2026-10-28'),
   ];
-  A.S.data.events = [
-    { kind: 'form_signup', date: '2026-10-27', internal: false },
-    { kind: 'form_signup', date: '2026-10-28', internal: false }, { kind: 'form_signup', date: '2026-10-28', internal: false },
-  ];
   const overview = A.views.overview.render(), acquisition = A.views.acquisition.render();
-  assert.match(overview, /Last complete Daily period vs previous/);
-  assert.match(overview, /Oct 28/); assert.match(overview, /Oct 27/); assert.match(overview, /\+50\.0%/);
+  assert.match(overview, /GA4 sessions/);
+  assert.doesNotMatch(overview, /Last complete Daily period vs previous/);
   assert.match(acquisition, /Last complete Daily period vs previous/);
   assert.match(acquisition, /\+10\.0 pp/);
 });
@@ -740,7 +678,7 @@ test('dashboard defaults the PostHog funnel selector and loader to the Marketing
   A.api = (path) => { requests.push(path); return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: A.S.from, to: A.S.to, steps: [] }); };
   const html = A.platformFunnels.render(), overview = A.views.overview.render(), conversion = A.views.conversion.render();
   assert.match(html, /option value="marketing_project" selected/);
-  assert.match(overview, /option value="marketing_project" selected/);
+  assert.doesNotMatch(overview, /option value="marketing_project" selected|Marketing-to-Project Activation Funnel/);
   assert.match(conversion, /option value="marketing_project" selected/);
   assert.match(html, /Marketing-to-Project Activation Funnel/);
   await A.platformFunnels.ensureSummary();
@@ -801,6 +739,32 @@ test('Targets uses the same canonical counts, keeps missing activation pending a
   A.ui.today = () => '2026-10-28';
   const goal = A.targets.goal('cps', '2026-10');
   assert.equal(goal.actual, 100 / 3); assert.equal(goal.projected, goal.actual); assert.equal(goal.status, 'green');
+});
+
+test('PostHog connector keeps account_created and project_created pending until their schemas are verified', async (t) => {
+  env(t, {
+    POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test',
+    POSTHOG_EXECUTIVE_HOSTS: 'portal.think4ever.com,think4ever.com,www.think4ever.com',
+    POSTHOG_PROJECT_CREATED_ENABLED: '1',
+  });
+  const { connectors } = require('../lib/connectors');
+  const queries = [];
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(global, 'fetch', async (url, options) => {
+    const sql = JSON.parse(options.body).query.query; queries.push(sql);
+    if (sql.includes("event = '$identify'")) return response({ results: [[date, 'External', 'Colombia', 99]] });
+    if (sql.includes("event = 'registration_started'")) return response({ results: [] });
+    if (sql.includes('matchesAction')) return response({ results: [] });
+    return response({ results: [] });
+  });
+  const load = await connectors.posthog();
+  assert.equal(load.metrics.find((row) => row.metric === 'ph_accounts_created'), undefined);
+  assert.equal(load.metrics.some((row) => row.metric === 'ph_projects_created' && row.dim === 'account_type'), false);
+  assert.equal(load.snapshots.find((row) => row.key === 'accounts_created_coverage')?.rows[0].available, false);
+  assert.equal(load.snapshots.find((row) => row.key === 'projects_created_coverage')?.rows[0].available, false);
+  assert.match(load.snapshots.find((row) => row.key === 'accounts_created_coverage').rows[0].reason, /verified account_created identity/);
+  assert.equal(queries.some((sql) => /GROUP BY d, account_type/.test(sql) && sql.includes("event = 'account_created'")), false);
+  assert.equal(queries.some((sql) => /GROUP BY d, account_type/.test(sql) && sql.includes("event = 'project_created'")), false);
 });
 
 test('Executive PostHog account country rows use event GeoIP on external first identify only', async (t) => {
@@ -994,86 +958,23 @@ test('loaded PostHog funnel exposes only aggregate step counts to the assistant 
   assert.equal(JSON.stringify(summary).includes('private@example.com'), false);
 });
 
-test('Overview and Executive country totals use independent PostHog populations', () => {
+test('Overview sign-up goal stays on first identify and outcomes are separate', () => {
   const A = auditedDashboard();
-  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
   A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true, country_available: true }] });
-  A.S.data.snapshots.push({ ...available('posthog', 'executive_accounts'), rows: [{ available: true, country_available: false, external_accounts: 0, excluded_host_accounts: 0 }] });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts', 20, 'External'), dim: 'account_type' });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts', 5, 'Unknown'), dim: 'account_type' });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts_geo', 12, 'Colombia'), dim: 'country' });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts_geo_unknown', 5, 'Colombia'), dim: 'country' });
-  assert.equal(A.D.accounts(), 25);
-  assert.equal(A.D.accounts('2026-10-01', '2026-10-28', 'Colombia'), 12);
-  const executiveCoverage = A.S.data.snapshots.find((row) => row.key === 'executive_accounts');
-  executiveCoverage.rows[0].available = false;
-  assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28'), null);
-  executiveCoverage.rows[0].available = true;
-  assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28'), 0);
-  assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28', 'Colombia'), null);
-  assert.match(A.views.overview.render(), /Executive approved-host External sign-ups are a separate population; not directly comparable/);
-  executiveCoverage.rows[0].country_available = true;
-  executiveCoverage.rows[0].external_accounts = 12;
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_exec_accounts', 12, 'External'), dim: 'account_type' });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_exec_accounts_geo', 8, 'Colombia'), dim: 'country' });
-  assert.equal(A.D.execAccounts(), 12);
-  assert.equal(A.D.execAccounts('2026-10-01', '2026-10-28', 'Colombia'), 8);
-});
-
-test('the goal counts sign-ups (first identify) without adding registration_started, CRM or new people', () => {
-  const A = auditedDashboard();
-  A.S.data.snapshots.push(available('posthog', 'registration_coverage'));
-  A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true, country_available: true }] });
-  A.S.data.snapshots.push({ ...available('posthog', 'executive_accounts'), rows: [{ available: true, country_available: true, external_accounts: 12, excluded_host_accounts: 0 }] });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_exec_accounts', 12, 'External'), dim: 'account_type' });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_exec_accounts_geo', 5, 'Colombia'), dim: 'country' });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_signups', 28, 'External'), dim: 'account_type' });
+  A.S.data.snapshots.push({ ...available('posthog', 'accounts_created_coverage'), rows: [{ available: true, event: 'account_created' }] });
+  A.S.data.snapshots.push({ ...available('posthog', 'projects_created_coverage'), rows: [{ available: true, event: 'project_created' }] });
   A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts', 21, 'External'), dim: 'account_type' });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts', 4, 'Internal'), dim: 'account_type' });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts_geo', 15, 'Colombia'), dim: 'country' });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts_geo', 6, 'Brazil'), dim: 'country' });
-  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts_geo_internal', 4, 'Colombia'), dim: 'country' });
-  assert.equal(A.D.signups(), 21);
-  assert.equal(A.D.actual('total_signups', A.S.from, A.S.to), 21);
-  assert.equal(A.D.accounts(A.S.from, A.S.to, 'Colombia'), 15);
-  assert.equal(A.D.accountsCountries()['Brazil'], 6);
-  assert.equal(A.D.execAccounts(), 12);
-  assert.equal(A.D.execAccountsByCountry().Colombia, 5);
-  assert.equal(A.D.accountBreakdown().byPlan.status, 'pending');
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_accounts_created', 8, 'External'), dim: 'account_type' });
+  A.S.data.metrics.push({ ...metric('posthog', 'ph_projects_created', 3, 'External'), dim: 'account_type' });
   A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
   const html = A.views.overview.render();
+  assert.equal(A.D.signups(), 21);
+  assert.match(html, /LATAM 500K goal/);
   assert.match(html, /sign-ups once per person/);
-  assert.doesNotMatch(html, /Accounts created/);
-  assert.match(html, /of 500,000/);
-  assert.match(html, /Sign-ups by country/);
-  assert.match(html, /class="hbar-list"/);
-  assert.match(html, /Brazil/);
-  assert.match(html, />6</);
-  assert.match(html, /Colombia/);
-  assert.match(html, />15</);
-  assert.match(html, /Executive approved-host External sign-ups by country/);
-  assert.match(html, /Executive approved-host External sign-ups are a separate population; not directly comparable/);
-  assert.doesNotMatch(html, /series-line/);
-  assert.doesNotMatch(html, /Brazil · sign-ups/);
-  assert.doesNotMatch(html, /Progress by country/);
-  assert.doesNotMatch(html, /axis fixed at 0/);
-  assert.match(html, /have no country/);
-  assert.match(html, /Funnel platform/);
-  assert.match(html, /PostHog funnel/);
-  assert.match(html, /value="landing_project"/);
-  assert.match(html, /internal\/test filter on/);
-  assert.match(html, /growth-assistant-form/);
-  assert.match(html, /Overview insights/);
-  assert.match(html, /analysis runs automatically/i);
-  assert.doesNotMatch(html, /Coming soon/);
-  assert.doesNotMatch(html, /31 reported|Verified actual pending/);
-  const rendered = A.platformFunnels.nativeBody({ title: 'MVP', from: A.S.from, to: A.S.to, window_days: 14, steps: [{ name: 'marketing_cta_clicked', n: 33 }, { name: 'registration_started', n: 28 }, { name: 'account_created', n: null }] });
-  assert.match(rendered, /84\.8% continue/);
-  assert.match(rendered, /5 drop off/);
-  assert.match(rendered, /Awaiting events/);
-  assert.doesNotMatch(rendered, /28 drop off/);
-  A.S.exInt = false;
-  assert.equal(A.D.signups(), 25);
+  assert.match(html, /Accounts created/);
+  assert.match(html, /Projects created/);
+  assert.match(html, /Not the same as account_created/);
+  assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel/);
 });
 
 test('LinkedIn organic cards take the page metrics and Details no longer repeats them', () => {
@@ -1250,61 +1151,15 @@ test('Clarity refresh stays inside the daily request limit and keeps a failed br
   assert.equal(snaps[1].rows[0].metric, 'ScriptErrorCount');
 });
 
-test('Overview 500K trend follows selected grain without changing its since-launch total', () => {
-  const A = dashboard();
-  A.ui.today = () => '2026-10-29'; A.S.from = '2026-10-19'; A.S.grain = 'week'; A.S.to = '2026-10-28';
-  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
-  A.S.data.snapshots = [{ source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: A.S.to, rows: [{ available: true, country_available: true }] }];
-  A.S.data.metrics = [
-    { ...metric('posthog', 'ph_accounts', 1), dim: 'account_type', dim_value: 'External', date: '2026-10-02' },
-    { ...metric('posthog', 'ph_accounts', 3), dim: 'account_type', dim_value: 'External', date: '2026-10-06' },
-    { ...metric('posthog', 'ph_accounts', 2), dim: 'account_type', dim_value: 'External', date: '2026-10-25' },
-    { ...metric('posthog', 'ph_accounts_geo', 2), dim: 'country', dim_value: 'Colombia', date: '2026-10-13' },
-    { ...metric('posthog', 'ph_accounts_geo', 3), dim: 'country', dim_value: 'Colombia', date: '2026-10-20' },
-  ];
-  const html = A.views.overview.render();
-  assert.match(html, /class="acct-hero-actual">6</);
-  assert.match(html, /Latest complete Weekly/);
-  assert.match(html, /Oct 19–25/);
-  assert.match(html, /\+50\.0%/);
-  assert.match(html, /Oct 5–11/);
-  assert.doesNotMatch(html, /<text x="78\.0" y="242" text-anchor="middle">Oct 1<\/text>/);
-});
-
-test('Overview ranks country account growth and lets the CEO select one market', () => {
+test('Overview compact summary offers drilldowns and does not duplicate funnels', () => {
   const A = dashboard();
   A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
-  A.S.data.snapshots.push({ source: 'posthog', key: 'account_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true, country_available: true }] });
-  A.S.data.metrics = [
-    { ...metric('posthog', 'ph_accounts', 20, 'External'), dim: 'account_type' },
-    { ...metric('posthog', 'ph_accounts_geo', 12, 'Colombia'), dim: 'country' },
-    { ...metric('posthog', 'ph_accounts_geo', 8, 'Brazil'), dim: 'country' },
-    { ...metric('ga4', 'ga_geo_sessions', 300, 'Colombia'), dim: 'country' },
-    { ...metric('ga4', 'ga_geo_sessions', 400, 'Brazil'), dim: 'country' },
-  ];
   const html = A.views.overview.render();
-  assert.match(html, /Sign-ups by country/);
-  assert.match(html, /class="hbar-list"/);
-  assert.doesNotMatch(html, /month-to-date total|count starts again at 0/i);
-  assert.match(html, /id="goal-country"/);
-  assert.match(html, /Sign-ups per 1,000 landing sessions/);
-  assert.match(html, /GA4 session is a group of interactions/);
-});
-
-test('Overview keeps the country selector usable when account attribution is missing', () => {
-  const A = dashboard();
-  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
-  A.S.data.snapshots.push({ source: 'posthog', key: 'account_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true, country_available: false }] });
-  A.S.data.metrics = [{ ...metric('posthog', 'ph_accounts', 20, 'External'), dim: 'account_type' }];
-  let listener;
-  const box = { isConnected: true, innerHTML: '' };
-  const root = { querySelector: () => box, addEventListener: (type, callback) => { if (type === 'change') listener = callback; } };
-  const html = A.views.overview.render();
-  assert.match(html, /<select id="goal-country"/);
-  assert.match(html, /Country attribution unavailable/);
-  A.views.overview.mount(root);
-  listener({ target: { id: 'goal-country', value: 'Brazil' } });
-  assert.equal(A.S.goalCountry, 'Brazil');
+  assert.match(html, /LATAM 500K goal/);
+  assert.match(html, /data-go="targets"/);
+  assert.match(html, /data-go="acquisition"/);
+  assert.match(html, /data-go="conversion"/);
+  assert.doesNotMatch(html, /goal-country|Marketing-to-Project Activation Funnel|Last complete Daily period/);
 });
 
 test('Acquisition prioritizes GA4 sessions and engagement by channel', () => {
@@ -1320,7 +1175,7 @@ test('Acquisition prioritizes GA4 sessions and engagement by channel', () => {
   assert.match(html, /Engaged sessions/);
   assert.match(html, /Engagement rate/);
   assert.doesNotMatch(html, /Channel mix/);
-  assert.match(A.views.overview.render(), /A GA4 session is a group of interactions/);
+  assert.match(A.views.overview.render(), /data-go="acquisition"/);
 });
 
 test('Conversion highlights the ordered steps, not unclassified observed people or raw GA4 event noise', () => {
@@ -1343,75 +1198,30 @@ test('Conversion highlights the ordered steps, not unclassified observed people 
   assert.match(html, /event counts, not unique people/);
 });
 
-test('Overview shows separate acquisition totals and ordered PostHog funnel; Executive remains unchanged', async () => {
+test('Overview summarizes source-native acquisition and canonical PostHog outcomes without funnels', () => {
   const A = dashboard();
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
   A.S.data.metrics = [
-    { ...metric('meta', 'ad_impressions', 348000, 'latam_co_launch'), dim: 'campaign' },
-    { ...metric('meta', 'ad_link_clicks', 6468, 'latam_co_launch'), dim: 'campaign' },
-    { ...metric('meta', 'ad_spend', 900, 'latam_co_launch'), dim: 'campaign' },
-    { ...metric('ga4', 'ga_sessions', 2604, 'Paid Social'), dim: 'channel' },
-    { ...metric('ga4', 'ga_sessions', 296, 'Direct'), dim: 'channel' },
-    { ...metric('ga4', 'ga_paid_sessions', 2604, 'meta'), dim: 'platform' },
-    { ...metric('hubspot', 'contacts', 12, 'Email'), dim: 'source' },
+    { ...metric('meta', 'ad_spend', 125, 'launch'), dim: 'campaign' },
+    { ...metric('meta', 'ad_impressions', 9000, 'launch'), dim: 'campaign' },
+    { ...metric('meta', 'ad_clicks', 300, 'launch'), dim: 'campaign' },
+    { ...metric('ga4', 'ga_sessions', 1200, 'Paid Social'), dim: 'channel' },
+    { ...metric('hubspot', 'contacts', 14, 'Paid Social'), dim: 'source' },
+    { ...metric('posthog', 'ph_accounts_created', 7, 'External'), dim: 'account_type' },
+    { ...metric('posthog', 'ph_projects_created', 4, 'External'), dim: 'account_type' },
   ];
-  A.S.data.snapshots.push(available('ga4', 'paid_sessions'));
-  const requests = [];
-  A.api = (url) => {
-    requests.push(url);
-    if (/breakdown=channel/.test(url)) return Promise.resolve({ breakdown: 'channel', groups: [{ value: 'Paid Social', steps: [600, 50, 20, 4, 1, 1].map((n) => ({ n })) }, { value: 'Direct', steps: [76, 23, 13, 5, 2, 2].map((n) => ({ n })) }] });
-    if (url.startsWith('api/funnels/posthog?')) return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: A.S.from, to: A.S.to, window_days: 14, steps: [676, 73, 33, 9, 3, 3].map((n, i) => ({ name: `s${i}`, n })) });
-    return new Promise(() => {});
-  };
-  const box = { isConnected: true, innerHTML: '' };
-  const root = { querySelector: (selector) => (selector === '[data-agg-funnel]' ? box : null), addEventListener() {} };
-  await A.aggregateFunnel.mount(root);
-  assert.ok(requests.some((url) => /funnel=marketing_project/.test(url) && !/breakdown/.test(url)));
+  A.S.data.snapshots.push(
+    { ...available('posthog', 'accounts_created_coverage'), rows: [{ available: true, event: 'account_created' }] },
+    { ...available('posthog', 'projects_created_coverage'), rows: [{ available: true, event: 'project_created' }] },
+  );
+  A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true }] });
   const html = A.views.overview.render();
-  assert.match(html, /Acquisition totals by source/);
-  assert.match(html, /Ordered PostHog person funnel/);
-  assert.match(html, /No cross-source conversion rates or identity joins/);
-  assert.doesNotMatch(html, /Coverage mismatch/);
-  assert.match(html, /HubSpot/);
-  assert.match(html, /Sign-up \(\$identify\)/);
-  assert.match(html, /Contacts <b>12<\/b>/);
-  assert.doesNotMatch(html, /Sign-ups per 1,000 sessions|Rows are joined by channel name/);
-  assert.doesNotMatch(A.views.executive.render(), /Acquisition totals by source|Ordered PostHog person funnel/);
-  const context = A.assistant.context();
-  assert.equal(context.executive_funnel.acquisition.sources.ads.totals.impressions, 348000);
-  assert.equal(context.executive_funnel.product_funnel.steps[3].name, 'Sign-up ($identify)');
-  assert.equal(context.executive_funnel.acquisition.coverage_mismatch, false);
-});
-
-test('assistant context carries source coverage and the independent ordered PostHog funnel', async () => {
-  const A = dashboard();
-  A.S.data.metrics = [
-    { ...metric('meta', 'ad_impressions', 348000, 'latam_co_launch'), dim: 'campaign' },
-    { ...metric('meta', 'ad_link_clicks', 6468, 'latam_co_launch'), dim: 'campaign' },
-    { ...metric('ga4', 'ga_sessions', 2900, 'Paid Social'), dim: 'channel' },
-  ];
-  A.api = (url) => {
-    if (/breakdown=campaign/.test(url)) return Promise.resolve({ breakdown: 'campaign', groups: [{ value: 'latam_co_launch', steps: [9, 1, 1, 1, 0, 0].map((n) => ({ n })) }] });
-    if (/breakdown=channel/.test(url)) return Promise.resolve({ breakdown: 'channel', groups: [{ value: 'Paid Social', steps: [600, 50, 20, 4, 1, 1].map((n) => ({ n })) }] });
-    if (url.startsWith('api/funnels/posthog?')) return Promise.resolve({ title: 'Marketing-to-Project Activation Funnel', from: A.S.from, to: A.S.to, window_days: 14, steps: [676, 73, 33, 9, 3, 3].map((n, i) => ({ name: `s${i}`, n })) });
-    return new Promise(() => {});
-  };
-  const before = JSON.stringify(await A.aggregateFunnel.ensure());
-  const after = JSON.stringify(A.assistant.context().executive_funnel);
-  assert.equal(JSON.parse(before).product_funnel.steps[3].name, 'Sign-up ($identify)');
-  assert.equal(JSON.parse(after).product_funnel.steps[3].name, 'Sign-up ($identify)');
-  assert.match(after, /No cross-source conversion rates/);
-  assert.equal(JSON.parse(after).acquisition.sources.ga4.channels.length, 1);
-  assert.equal(JSON.parse(after).acquisition.sources.hubspot.totals.contacts, null);
-});
-
-test('old UTM channel/campaign snapshots are not used as joins in the executive model', () => {
-  const A = dashboard();
-  A.S.data.metrics = [{ ...metric('ga4', 'ga_sessions', 100, 'Direct'), dim: 'channel' }];
-  const rows = Array.from({ length: 1000 }, (_, i) => ({ date: '2026-09-15', source: 's', medium: 'm', campaign: `c${i}`, sessions: 1 }));
-  rows[0].date = '2026-10-05';
-  A.S.data.snapshots.push({ source: 'ga4', key: 'utm_attribution', from: '2026-09-01', to: A.S.to, rows });
-  const model = A.aggregateFunnel.collect();
-  assert.equal(model.acquisition.sources.ga4.totals.sessions, 100);
-  assert.equal(model.channels, undefined);
-  assert.equal(model.campaigns, undefined);
+  assert.match(html, /Overview/);
+  assert.match(html, /Ads/);
+  assert.match(html, /GA4 sessions/);
+  assert.match(html, /HubSpot contacts/);
+  assert.match(html, /Accounts created/);
+  assert.match(html, /Projects created/);
+  assert.match(html, /Sign-ups/);
+  assert.doesNotMatch(html, /Ordered PostHog person funnel|Campaign funnel|Marketing-to-Project Activation Funnel/);
 });

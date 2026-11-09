@@ -7,16 +7,18 @@
     const countries = new Map();
     for (const row of D.gaCountries() || []) {
       const name = String(row.country || '').trim();
-      if (name) countries.set(name, { country: name, sessions: finite(row.sessions), accounts_created: null });
+      if (name) countries.set(name, { country: name, sessions: finite(row.sessions), signups: null, accounts_created: null });
     }
     for (const [country, count] of Object.entries(D.accountsCountries() || {})) {
       const name = String(country || '').trim();
       if (!name) continue;
-      const row = countries.get(name) || { country: name, sessions: null, accounts_created: null };
-      row.accounts_created = finite(count); countries.set(name, row);
+      const row = countries.get(name) || { country: name, sessions: null, signups: null, accounts_created: null };
+      row.signups = finite(count); countries.set(name, row);
     }
     const funnel = A.platformFunnels && A.platformFunnels.summary ? A.platformFunnels.summary() : null;
     const executiveSummary = A.aggregateFunnel && A.aggregateFunnel.summary ? A.aggregateFunnel.summary() : null;
+    const accountOutcome = D.outcome('accounts_created');
+    const projectOutcome = D.outcome('projects_created');
     const hubspotTotals = D.channels() || [];
     const hubspotChannels = (A.charts.CHANNELS || []).map((channel, i) => ({ channel: channel.name, sessions: finite(hubspotTotals[i]) })).filter((row) => row.sessions > 0);
     return {
@@ -28,8 +30,12 @@
         ga4_sessions: finite(ga.sessions), ga4_users: finite(ga.users),
         ga4_engaged_sessions: finite(ga.engaged), ga4_engagement_rate: finite(ga.rate),
         hubspot_sessions: finite(D.sessions()), hubspot_contacts: finite(D.crmTotal()),
-        posthog_accounts_created: finite(D.accounts()),
-        posthog_accounts_created_since_launch: finite(D.accounts(A.LAUNCH || S.from, S.to)),
+        posthog_accounts_created: accountOutcome && accountOutcome.status === 'loaded' ? finite(accountOutcome.value) : null,
+        posthog_accounts_created_since_launch: accountOutcome && accountOutcome.status === 'loaded' ? finite(D.outcome('accounts_created', A.LAUNCH || S.from, S.to)?.value) : null,
+        posthog_signups: finite(D.signups()),
+        posthog_projects_created: projectOutcome && projectOutcome.status === 'loaded' ? finite(projectOutcome.value) : null,
+        posthog_accounts_with_project: null,
+        posthog_project_activation_14d: null,
         posthog_registration_starts: finite(D.registrations()),
         posthog_project_create_clicks: finite(D.proxy()),
         posthog_new_observed_people: finite(D.platform()),
@@ -39,7 +45,7 @@
       },
       ga4_channels: (D.gaChannels() || []).slice(0, 10).map((row) => ({ channel: row.channel, sessions: finite(row.sessions), engaged_sessions: finite(row.engaged_sessions) })),
       hubspot_channels: hubspotChannels,
-      countries: [...countries.values()].sort((a, b) => ((b.sessions || 0) + (b.accounts_created || 0)) - ((a.sessions || 0) + (a.accounts_created || 0))).slice(0, 10),
+      countries: [...countries.values()].sort((a, b) => ((b.sessions || 0) + (b.signups || 0) + (b.accounts_created || 0)) - ((a.sessions || 0) + (a.signups || 0) + (a.accounts_created || 0))).slice(0, 10),
       posthog_funnel: funnel ? (funnel.steps || []).slice(0, 10).map((step) => ({ step: step.name, persons: finite(step.n), median_seconds: finite(step.median_seconds) })) : [],
       executive_funnel: executiveSummary,
     };

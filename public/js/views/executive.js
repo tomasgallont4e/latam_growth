@@ -210,56 +210,36 @@
     const view = state.data.view || {};
     const cards = view.cards || {};
     const options = monthOptions(state.month).map((item) => `<option value="${U.esc(item.id)}"${item.id === state.month ? ' selected' : ''}>${U.esc(item.label)}</option>`).join('');
+    const signups = cards.signups || {};
+    const spend = cards.spend || {};
+    const pendingReason = (item, fallback) => U.esc(item.reason || fallback);
     const loaded = view.lastLoad ? ` · last load ${stamp(view.lastLoad)}` : '';
     const cutoff = view.cutoff ? `Data through ${longDate(view.cutoff)}${loaded}` : ((cards.signups && cards.signups.reason) || 'No complete day in this month yet');
     const header = `<div class="form-row"><label class="field"><span>Month</span><select id="exec-month" aria-label="Month">${options}</select></label><span class="text-muted">${U.esc(cutoff)}</span></div>`;
-    const signups = cards.signups || {};
-    const since = cards.sinceLaunch || {};
-    const spend = cards.spend || {};
-    const cps = cards.cps || {};
-    const visit = cards.visit || {};
-    const paidFunnel = funnel(view.funnel || { steps: [] });
-    const activationFunnelHtml = A.posthogFunnel ? A.posthogFunnel.render(activationFunnelOptions()) : '<p class="card-note">PostHog funnel unavailable.</p>';
-    const pendingReason = (item, fallback) => U.esc(item.reason || fallback);
+    const outcomes = view.outcomes || {};
+    const outcomeTile = (label, outcome, event) => U.kpi({
+      label,
+      source: `PostHog · ${event}`,
+      value: outcome && outcome.status === 'loaded' && outcome.value != null ? U.fmt(outcome.value) : '<span class="kpi-awaiting">Pending</span>',
+      compare: U.esc((outcome && outcome.reason) || `${event} coverage unavailable.`),
+    });
     const tiles = [
-      card({ ...signups, label: 'Sign-ups this month' }, signups.value != null ? U.fmt(signups.value) : pending(signups)),
-      card({ ...since, label: 'Sign-ups since launch' }, since.value != null ? U.fmt(since.value) : pending(since)),
-      card({ ...spend, label: 'Ad spend this month', labelStatus: spend.underReview && spend.underReview.label }, spend.value != null ? money(spend.value) : pending(spend)),
-      card({ ...cps, label: 'Cost per sign-up' }, cps.value != null ? money(cps.value) : pending(cps)),
-      card({ ...visit, label: 'Visit to sign-up rate' }, visit.value != null ? U.pct(visit.value, 2) : pending(visit)),
+      card({ ...signups, label: 'Sign-ups target progress' }, signups.value != null ? U.fmt(signups.value) : pending(signups)),
+      card({ ...spend, label: 'Ads spend', labelStatus: spend.underReview && spend.underReview.label }, spend.value != null ? money(spend.value) : pending(spend)),
+      outcomeTile('Accounts created', outcomes.accountsCreated, 'account_created'),
+      outcomeTile('Projects created', outcomes.projectsCreated, 'project_created'),
+      outcomeTile('14-day project activation', outcomes.activation14d, 'account_created + project_created'),
     ];
-    if (signups.value == null) tiles[0] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups this month', source: 'PostHog', value: pending(signups), compare: pendingReason(signups, 'PostHog sign-up coverage is incomplete.') });
-    if (signups.status === 'loaded' && signups.underReview) tiles[0] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups this month', source: 'PostHog', value: `<span class="under-review-value">${U.fmt(signups.value)}</span>`, compare: `<span class="under-review">Under review · ${pendingReason(signups.underReview, '')}</span>` });
-    if (since.value == null) tiles[1] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups since launch', source: 'PostHog', value: pending(since), compare: pendingReason(since, 'PostHog sign-up coverage is incomplete.') });
-    if (since.status === 'loaded' && since.underReview) tiles[1] = A.ui.kpi({ cls: 'under-review', label: 'Sign-ups since launch', source: 'PostHog', value: `<span class="under-review-value">${U.fmt(since.value)}</span>`, compare: `<span class="under-review">Under review · ${pendingReason(since.underReview, '')}</span>` });
-    if (spend.value == null) tiles[2] = A.ui.kpi({ label: 'Ad spend this month', source: spend.source || 'Paid', value: pending(spend), compare: (spend.lines || []).map((line) => `<div>${U.esc(line)}</div>`).join('') });
-    else if (spend.underReview || spend.complete === false) tiles[2] = A.ui.kpi({ cls: 'under-review', label: 'Ad spend this month', source: spend.source || 'Paid', value: `<span class="under-review-value">${money(spend.value)}</span>`, compare: `<span class="under-review">Under review · ${pendingReason(spend.underReview, 'One or more paid sources are pending.')}</span>${(spend.lines || []).map((line) => `<div>${U.esc(line)}</div>`).join('')}` });
-    if (cps.status !== 'loaded') tiles[3] = A.ui.kpi({ cls: cps.underReview ? 'under-review' : '', label: 'Cost per sign-up', source: 'Paid spend / PostHog', value: cps.status === 'no_signups' ? 'No sign-ups yet' : pending(cps), compare: `${cps.underReview ? `<span class="under-review">Under review · ${pendingReason(cps.underReview, '')}</span>` : ''}${U.esc(cps.reason === 'spend incomplete' ? 'Paid spend incomplete' : (cps.reason === 'No data yet' ? '' : (cps.reason || '')) )}` });
-    if (visit.status !== 'loaded') tiles[4] = A.ui.kpi({ cls: visit.underReview ? 'under-review' : '', label: 'Visit to sign-up rate', source: 'PostHog / GA4', value: pending(visit), compare: `${visit.underReview ? `<span class="under-review">Under review · ${pendingReason(visit.underReview, '')}</span>` : ''}${U.esc(visit.reason || (signups.underReview ? signups.underReview.reason : 'Required coverage is incomplete.'))}` });
-
-    const total = view.allAccounts || state.data.allAccounts || (view.executiveAccounts || {}).allAccounts || state.data.executiveAccounts?.allAccounts || {};
-    const formatTypes = (values) => `External ${U.fmt((values || {}).External || 0)} · Unknown ${U.fmt((values || {}).Unknown || 0)} · Internal ${U.fmt((values || {}).Internal || 0)}`;
-    const formatPeriod = (label, count, types) => `<p><b>${label}:</b> ${count == null ? 'Unavailable (coverage incomplete)' : `${U.fmt(count)} total · ${formatTypes(types)}`}</p>`;
-    const totalBody = total.status === 'loaded'
-      ? `${formatPeriod('Selected month', total.month, total.monthByType)}${formatPeriod('Since launch', total.sinceLaunch, total.byType)}<p class="card-note">All hosts · Unknown is not classified as External · data through ${U.esc(total.dataThrough || 'unknown')}</p>`
-      : U.empty('All-host sign-up total unavailable', 'PostHog first-identify coverage for this population is missing or incomplete.', 'users');
-    const drawn = chart(view);
-    const chartControls = drawn && drawn.controls ? drawn.controls : '';
-    const chartBody = drawn && drawn.body ? drawn.body : drawn;
-    const chartSources = '<p class="card-note">Sources: PostHog (sign-ups) · monthly goals (Targets)</p>';
+    if (spend.underReview || spend.complete === false) tiles[1] = A.ui.kpi({
+      cls: 'under-review', label: 'Ads spend', source: spend.source || 'Ads',
+      value: spend.value != null ? `<span class="under-review-value">${money(spend.value)}</span>` : pending(spend),
+      compare: `<span class="under-review">${U.esc(pendingReason(spend.underReview, 'One or more ad sources are pending.'))}</span>${(spend.lines || []).map((line) => `<div>${U.esc(line)}</div>`).join('')}`,
+    });
     const changed = view.changed || { phrases: [] };
-    const research = view.researchNote ? `<p class="card-note">Research note, ${U.esc(longDate(view.researchNote.date))}: ${U.esc(view.researchNote.text)}</p>` : '';
-    const phrases = (changed.phrases || []).map((line) => `<p>${U.esc(line)}</p>`).join('') || '<p>No comparison yet.</p>';
-    const cf = view.campaignFunnel || {};
-    const cfSub = cf.from && cf.to ? `Window ${U.esc(longDate(cf.from))} – ${U.esc(longDate(cf.to))} · the same window for every stage` : 'Waiting for the first complete day';
-    return U.section('Executive', 'Monthly progress for the business owner. Internal and test accounts stay excluded.', `${header}`)
-      + `<section class="section">${U.kpiRow(tiles)}</section>`
-      + U.section('Campaign funnel', 'Consolidated campaign performance, from ad and page impressions to builders. Open a stage to see each channel, platform and campaign.', U.card({ cls: 'cf-card', title: 'From impressions to builders', sub: cfSub, body: campaignFunnelHtml(view.campaignFunnel) }))
-      + U.section('Sign-ups this month vs goal', state.span === 'launch' ? 'Cumulative external sign-ups since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s sign-ups. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Sign-ups vs goal', right: chartControls, body: `${chartSources}${chartBody}` }))
-      + `<section class="section"><div class="grid-2">${U.card({ title: 'Top 5 countries', sub: 'Sources: PostHog (sign-ups) · GA4 (sessions). Countries with either measure appear; zero rows are omitted.', body: countries(view.countries) })}${U.card({ title: 'All-host sign-ups · first identify', sub: 'Separate total across every host; Unknown remains unclassified and Internal is shown explicitly.', body: totalBody })}</div></section>`
-      + `<section class="section">${U.card({ title: 'Executive sign-ups by reported plan', sub: `Sign-ups · first identify · approved-host External population · ${U.fmt((view.executiveAccounts || {}).sinceLaunch)} since launch`, body: subscriptionBreakdown(view.executiveAccounts) })}</section>`
-      + U.section('What changed', 'The last 7 complete days against the 7 days before them.', U.card({ title: 'What changed', body: research + phrases }))
-      + U.section('Marketing-to-Project Activation Funnel', 'Product activation in PostHog, after sign-up.', U.card({ title: 'Marketing-to-Project Activation Funnel', sub: 'Saved PostHog ordered funnel · aggregate selected range · excludes internal and test accounts. This is product activation, not an advertising funnel.', body: activationFunnelHtml }));
+    const notes = (changed.phrases || []).map((line) => `<p>${U.esc(line)}</p>`).join('') || '<p>No evidence-backed changes for this period.</p>';
+    return U.section('Executive', 'Monthly targets, Ads coverage and confirmed product outcomes.', header)
+      + U.section('Management indicators', 'Source-native metrics stay separate. Pending outcomes need verified event coverage and identity linkage.', U.kpiRow(tiles, 3))
+      + U.section('Management readout', 'Evidence from the selected month.', U.card({ title: 'What changed', body: notes }));
   }
 
   function mount(el) {
