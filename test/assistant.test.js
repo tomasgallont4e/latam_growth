@@ -17,7 +17,7 @@ function clientAssistant() {
     D: {
       grainName: () => 'Weekly',
       ga: () => ({ sessions: 120, users: 90, engaged: 72, rate: 0.6 }),
-      accounts: () => 7, registrations: () => 9, proxy: () => 2, platform: () => 12, sessions: () => 110, crmTotal: () => 4,
+      accounts: () => 7, signups: () => 12, outcome: (metric) => metric === 'accounts_created' ? { status: 'loaded', value: 7 } : { status: 'pending', value: null }, registrations: () => 9, proxy: () => 2, platform: () => 12, sessions: () => 110, crmTotal: () => 4,
       paidTotals: () => ({ spend: 10, clicks: 4, sessions: 3, forms: 1 }),
       gaChannels: () => [{ channel: 'Organic Search', sessions: 80, engaged_sessions: 50 }],
       channels: () => [0, 0, 0, 40],
@@ -42,11 +42,13 @@ test('assistant client summarizes the selected window and uses only aggregate da
   assert.equal(context.internal_tests_excluded, true);
   assert.equal(context.kpis.ga4_sessions, 120);
   assert.equal(context.kpis.posthog_accounts_created, 7);
+  assert.equal(context.kpis.posthog_signups, 12);
+  assert.equal(context.kpis.posthog_projects_created, null);
   assert.equal(context.kpis.posthog_project_create_clicks, 2);
   assert.equal(context.ga4_channels[0].channel, 'Organic Search');
   assert.equal(context.hubspot_channels[0].channel, 'Paid Social');
   assert.equal(context.hubspot_channels[0].sessions, 40);
-  assert.equal(context.countries[0].accounts_created, 5);
+  assert.equal(context.countries[0].signups, 5);
   assert.equal(context.posthog_funnel[1].persons, 2);
   assert.equal(JSON.stringify(context).includes('email'), false);
   App.assistant.state.ready = false;

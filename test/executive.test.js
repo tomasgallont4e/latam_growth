@@ -22,6 +22,26 @@ function storeWithMetrics(metrics, snapshots = [], extra = {}) {
   };
 }
 
+test('Executive keeps account/project outcomes pending when event identity and units are unverified', async () => {
+  const snapshots = [
+    { source: 'posthog', key: 'accounts_created_coverage', from: '2026-11-01', to: '2026-11-03', rows: [{ available: true, event: 'account_created', unit: 'account' }] },
+    { source: 'posthog', key: 'projects_created_coverage', from: '2026-11-01', to: '2026-11-03', rows: [{ available: true, event: 'project_created', unit: 'project' }] },
+    { source: 'posthog', key: 'executive_accounts', from: '2026-11-01', to: '2026-11-03', rows: [{ available: true }] },
+    { source: 'ga4', key: 'executive_landing', from: '2026-11-01', to: '2026-11-03', rows: [{ available: true }] },
+  ];
+  const data = await build(storeWithMetrics([
+    { source: 'posthog', metric: 'ph_accounts_created', date: '2026-11-01', dim: 'account_type', dim_value: 'External', value: 5 },
+    { source: 'posthog', metric: 'ph_projects_created', date: '2026-11-01', dim: 'account_type', dim_value: 'External', value: 4 },
+  ], snapshots), '2026-11', new Date('2026-11-05T17:00:00.000Z'));
+  assert.equal(data.view.outcomes.accountsCreated.status, 'pending');
+  assert.equal(data.view.outcomes.accountsCreated.value, null);
+  assert.equal(data.view.outcomes.projectsCreated.status, 'pending');
+  assert.equal(data.view.outcomes.projectsCreated.value, null);
+  assert.equal(data.view.outcomes.accountsWithProject.status, 'pending');
+  assert.equal(data.view.outcomes.accountsWithProject.value, null);
+  assert.equal(data.view.outcomes.activation14d.status, 'pending');
+});
+
 test('Executive new accounts use the dedicated external first-identify country series', async () => {
   const data = await build(storeWithMetrics([
     { source: 'posthog', metric: 'ph_new_persons', date: '2026-10-02', dim: 'account_type', dim_value: 'External', value: 99 },
