@@ -29,11 +29,12 @@ test('Landing to account and project is an ordered five-step funnel and honors i
     { kind: 'ActionsNode', id: 407660, custom_name: 'Proyecto creado (clic)' },
   ]);
   assert.equal(query.filterTestAccounts, true);
-  assert.deepEqual(query.properties, [
-    { key: 'email', type: 'person', operator: 'not_icontains', value: ['@think4ever.com'] },
-    { key: 'company', type: 'person', operator: 'not_icontains', value: ['think4ever'] },
-    { key: 'company', type: 'person', operator: 'not_icontains', value: ['moadbus'] },
-  ]);
+  // One shared rule: every internal pattern is excluded on email, company and name.
+  for (const pattern of ['think4ever', 'moadbus', 't4e']) {
+    for (const key of ['email', 'company', 'name']) {
+      assert.ok(query.properties.some((p) => p.key === key && p.type === 'person' && p.operator === 'not_icontains' && p.value[0] === pattern), `${key} ${pattern}`);
+    }
+  }
   assert.equal(query.dateRange.date_from, from);
   assert.equal(query.funnelsFilter.funnelOrderType, 'ordered');
 });
@@ -46,7 +47,7 @@ test('saved PostHog query filters and any review steps are preserved with the se
   const query = buildQuery('mvp', '2026-10-10', to, true, { kind: 'InsightVizNode', source: saved });
   assert.deepEqual(query.series, saved.series);
   assert.deepEqual(query.properties[0], saved.properties[0]);
-  assert.equal(query.properties.length, 4);
+  assert.equal(query.properties.length, 10); // saved filter + 3 patterns × email/company/name
   assert.equal(query.dateRange.date_from, '2026-10-10');
   assert.equal(saved.dateRange.date_from, from);
 });
@@ -92,7 +93,7 @@ test('Landing-to-project read uses the saved ordered funnel and applies the inte
     if (body.query.kind === 'FunnelsQuery') {
       assert.deepEqual(body.query.series.map((s) => s.kind === 'ActionsNode' ? `action:${s.id}` : s.event), expected);
       assert.equal(body.query.filterTestAccounts, true);
-      assert.equal(body.query.properties.length, 3);
+      assert.equal(body.query.properties.length, 9); // 3 patterns × email/company/name
       return { ok: true, json: async () => ({ results: [599, 70, 32, 9, 2].map((count, order) => ({ count, order })) }) };
     }
     return { ok: true, json: async () => ({ results: expected.filter((s) => !s.startsWith('action:')).map((event) => [event]) }) };
@@ -201,7 +202,7 @@ test('Marketing-to-Project funnel reuses the saved six-step PostHog insight and 
   assert.deepEqual(funnelRequest.series, saved.series);
   assert.equal(funnelRequest.filterTestAccounts, true);
   assert.deepEqual(funnelRequest.properties[0], saved.properties[0]);
-  assert.equal(funnelRequest.properties.length, 4);
+  assert.equal(funnelRequest.properties.length, 10); // saved filter + 3 patterns × email/company/name
   assert.equal(funnelRequest.funnelsFilter.funnelOrderType, 'ordered');
   assert.equal(funnelRequest.funnelsFilter.funnelWindowInterval, 9);
 });

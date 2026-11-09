@@ -767,6 +767,19 @@ test('PostHog connector keeps account_created and project_created pending until 
   assert.equal(queries.some((sql) => /GROUP BY d, account_type/.test(sql) && sql.includes("event = 'project_created'")), false);
 });
 
+test('PostHog connector classifies moadbus, t4e and think4ever as Internal by email, company or name', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test' });
+  const { connectors } = require('../lib/connectors');
+  const queries = [];
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(global, 'fetch', async (url, options) => { queries.push(JSON.parse(options.body).query.query); return response({ results: [] }); });
+  await connectors.posthog();
+  const identify = queries.find((sql) => sql.includes("event = '$identify'") && sql.includes('AS account_type'));
+  assert.ok(identify, 'first-identify query runs');
+  assert.match(identify, /person\.properties\.name/);
+  for (const p of ['think4ever', 'moadbus', 't4e']) assert.ok(identify.includes(`, '${p}') > 0`), `pattern ${p}`);
+});
+
 test('Executive PostHog account country rows use event GeoIP on external first identify only', async (t) => {
   env(t, {
     POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test',
