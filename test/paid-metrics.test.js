@@ -846,6 +846,7 @@ test('PostHog product usage snapshot is per portal account, internal-aware and s
   assert.match(usageSql, /'account_created'/);
   assert.match(usageSql, /'signed_in'/);
   assert.match(usageSql, /, 'moadbus'\) > 0/);
+  assert.doesNotMatch(usageSql + projectSql, /toUInt8/, 'HogQL rejects toUInt8');
   const head = load.snapshots.find((s) => s.key === 'product_usage');
   assert.equal(head.rows[0].available, true);
   assert.equal(head.rows[0].accounts, 2);
