@@ -10,6 +10,10 @@ const ingest = require('./lib/ingest');
 const CATALOG = require('./lib/sources');
 const { connectors, configured, REQUIRED } = require('./lib/connectors');
 const auth = require('./lib/auth');
+// Sign in with Microsoft (Entra ID) is the gate when its four variables are set. Without them the
+// dashboard falls back to the password login, so nobody is locked out by a missing variable.
+const MS_VARS = ['AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET', 'AUTH_REDIRECT_URI'];
+const msauth = MS_VARS.every((k) => String(process.env[k] || '').trim()) ? require('./lib/msauth') : null;
 const ads = require('./lib/adloader');
 const executive = require('./lib/executive');
 const targets = require('./lib/targets');
@@ -26,8 +30,8 @@ app.get(['/health', '/api/health'], async (req, res) => {
   catch (e) { res.status(503).json({ status: 'error', error: e.message }); }
 });
 
-// Login: every page and API route below needs a session (DASH_USERS in the service variables).
-auth.mount(app);
+// Login: every page and API route below needs a session. Microsoft when configured, else DASH_USERS.
+if (msauth) msauth.mount(app); else auth.mount(app);
 // The public dashboard is the application's active interface. The executive
 // prototype stays available for comparison without replacing the live route.
 app.use('/data', (req, res) => res.status(404).json({ error: 'not found' }));
@@ -330,7 +334,7 @@ async function autoSync() {
   }
   const n = await seed(liveSources);
   if (n) console.log(`Seed loaded for ${n} source(s)`);
-  app.listen(PORT, () => console.log(`Growth dashboard (${store.kind}) listening on ${PORT}${auth.configured() ? '' : ' (locked: DASH_USERS not set)'}`));
+  app.listen(PORT, () => console.log(`Growth dashboard (${store.kind}) listening on ${PORT}${msauth ? ` (Sign in with Microsoft)${msauth.describe()}` : auth.configured() ? '' : ' (locked: DASH_USERS not set)'}`));
   if (process.env.AUTO_SYNC === '0') {
     console.log('Automatic connector sync disabled; use Sync now to refresh data.');
     return;
