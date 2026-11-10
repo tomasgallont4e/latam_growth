@@ -300,6 +300,30 @@ test('GA4 Executive geo sessions use only go.think4ever.com without narrowing sh
   });
 });
 
+test('GA4 landing people are deduplicated go-host users per fixed window, never summed days', async (t) => {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  env(t, { GA4_PROPERTY_ID: '123', GA4_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'test@example.test', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) }) });
+  const { connectors } = require('../lib/connectors');
+  const calls = [];
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    if (url.includes('oauth2.googleapis.com')) return response({ access_token: 'test' });
+    const body = JSON.parse(opts.body);
+    const go = body.dimensionFilter?.filter?.stringFilter?.value === 'go.think4ever.com';
+    if (go && !body.dimensions && (body.metrics || []).some((m) => m.name === 'totalUsers')) {
+      calls.push(body.dateRanges[0]);
+      return response({ rows: [{ metricValues: [{ value: '37' }, { value: '30' }] }] });
+    }
+    return response({ rows: [] });
+  });
+  const load = await connectors.ga4();
+  const snaps = load.snapshots.filter((s) => s.key === 'landing_people');
+  assert.ok(snaps.length >= 3, 'launch-to-date plus 7/28-day windows');
+  assert.ok(snaps.every((s) => s.rows[0].available === true && s.rows[0].users === 37 && s.rows[0].host === 'go.think4ever.com'));
+  assert.equal(calls.length, snaps.length, 'one deduplicated query per window');
+  assert.equal(load.metrics.some((r) => r.metric === 'ga_landing_people'), false, 'no additive daily series');
+});
+
 test('GA4 go-host report success with no rows is a measured zero with explicit coverage', async (t) => {
   const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
   env(t, { GA4_PROPERTY_ID: '123', GA4_SERVICE_ACCOUNT: JSON.stringify({ client_email: 'test@example.test', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }) }) });
@@ -457,23 +481,40 @@ test('period comparison uses the last two fully covered buckets for each selecte
   assert.equal(A.D.periods('2026-10-01', '2026-10-28')[0].label, 'Oct 1–4');
 });
 
-test('Overview summarizes source-native totals and separate canonical outcomes', () => {
+test('Overview shows the three key metrics with source, unit and coverage, and no cross-source ratio', () => {
   const A = dashboard();
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-28';
+  A.S.data.sources = [{ key: 'meta', state: 'connected', last_sync: '2026-10-28T12:00:00Z' }];
   A.S.data.metrics = [
-    { ...metric('meta', 'ad_spend', 125, 'launch'), dim: 'campaign' },
-    { ...metric('ga4', 'ga_sessions', 1200, 'Paid Social'), dim: 'channel' },
-    { ...metric('hubspot', 'contacts', 14, 'Paid Social'), dim: 'source' },
-    { ...metric('posthog', 'ph_accounts_created', 7, 'External'), dim: 'account_type' },
-    { ...metric('posthog', 'ph_projects_created', 4, 'External'), dim: 'account_type' },
+    { ...metric('meta', 'ad_impressions', 9000, 'launch'), dim: 'campaign' },
+    { ...metric('google_ads', 'ad_impressions', 1000, 'search'), dim: 'campaign' },
+    { ...metric('posthog', 'ph_accounts', 21, 'External'), dim: 'account_type' },
+    { ...metric('posthog', 'ph_accounts', 9, 'Internal'), dim: 'account_type' },
   ];
   A.S.data.snapshots.push(
-    { ...available('posthog', 'accounts_created_coverage'), rows: [{ available: true, event: 'account_created' }] },
-    { ...available('posthog', 'projects_created_coverage'), rows: [{ available: true, event: 'project_created' }] },
+    { source: 'ga4', key: 'landing_people', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true, users: 37, host: 'go.think4ever.com' }] },
     { ...available('posthog', 'account_coverage'), rows: [{ available: true }] },
   );
   const html = A.views.overview.render();
-  for (const label of ['Overview', 'Ads', 'Sign-ups', 'GA4 sessions', 'HubSpot contacts', 'Accounts created', 'Projects created']) assert.ok(html.includes(label), label);
-  assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel|Last complete Daily period/);
+  for (const label of ['Impressions', 'People on the landing', 'Sign-ups']) assert.ok(html.includes(label), label);
+  assert.match(html, /10,000/);
+  assert.match(html, /impressions, not people/);
+  assert.match(html, /LinkedIn Ads: not connected/);
+  assert.match(html, />37</);
+  assert.match(html, /go\.think4ever\.com/);
+  assert.match(html, />21</);
+  assert.match(html, /internal and test accounts excluded/i);
+  assert.match(html, /not linked/i);
+  assert.doesNotMatch(html, /Visit-to-sign-up|conversion rate|Campaign funnel/i);
+});
+
+test('Overview landing people stay pending when the exact window was not synced', () => {
+  const A = dashboard();
+  A.S.from = '2026-10-05'; A.S.to = '2026-10-20';
+  A.S.data.snapshots.push({ source: 'ga4', key: 'landing_people', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true, users: 37 }] });
+  const html = A.views.overview.render();
+  assert.doesNotMatch(html, />37</);
+  assert.match(html, /Unique people need an exact-window GA4 query/);
 });
 
 test('Overview and Acquisition compare the two latest complete buckets, not a partial current bucket', () => {
@@ -487,7 +528,7 @@ test('Overview and Acquisition compare the two latest complete buckets, not a pa
     daily('hubspot', 'sessions', 10, '2026-10-27'), daily('hubspot', 'sessions', 20, '2026-10-28'),
   ];
   const overview = A.views.overview.render(), acquisition = A.views.acquisition.render();
-  assert.match(overview, /GA4 sessions/);
+  assert.match(overview, /data-go="acquisition"/);
   assert.doesNotMatch(overview, /Last complete Daily period vs previous/);
   assert.match(acquisition, /Last complete Daily period vs previous/);
   assert.match(acquisition, /\+10\.0 pp/);
@@ -780,6 +821,60 @@ test('PostHog connector classifies moadbus, t4e and think4ever as Internal by em
   for (const p of ['think4ever', 'moadbus', 't4e']) assert.ok(identify.includes(`, '${p}') > 0`), `pattern ${p}`);
 });
 
+test('PostHog product usage snapshot is per portal account, internal-aware and stores no identifiers', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test' });
+  const { connectors } = require('../lib/connectors');
+  let usageSql = '', projectSql = '';
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(global, 'fetch', async (url, options) => {
+    const sql = JSON.parse(options.body).query.query;
+    if (sql.includes('portal_user_id') && sql.includes('signin_days')) {
+      usageSql = sql;
+      return response({ results: [
+        ['2026-11-04', '2026-11-05', ['2026-11-05', '2026-11-06'], 0],
+        ['2026-11-04', '', [], 1],
+      ] });
+    }
+    if (sql.includes('count(DISTINCT') && sql.includes('project_id')) {
+      projectSql = sql;
+      return response({ results: [['2026-11-05', 0, 2], ['2026-11-05', 1, 4]] });
+    }
+    return response({ results: [] });
+  });
+  const load = await connectors.posthog();
+  assert.match(usageSql, /GROUP BY uid/);
+  assert.match(usageSql, /'account_created'/);
+  assert.match(usageSql, /'signed_in'/);
+  assert.match(usageSql, /, 'moadbus'\) > 0/);
+  const head = load.snapshots.find((s) => s.key === 'product_usage');
+  assert.equal(head.rows[0].available, true);
+  assert.equal(head.rows[0].accounts, 2);
+  const rows = load.snapshots.filter((s) => /^product_usage_\d+$/.test(s.key)).flatMap((s) => s.rows);
+  assert.deepEqual(rows[0], { created: '2026-11-04', first_project: '2026-11-05', signin_days: ['2026-11-05', '2026-11-06'], internal: false });
+  assert.equal(rows[1].first_project, null);
+  assert.equal(rows[1].internal, true);
+  assert.ok(rows.every((r) => !('uid' in r) && !('portal_user_id' in r)), 'no identifiers stored');
+  assert.deepEqual(load.snapshots.find((s) => s.key === 'product_projects').rows, [
+    { date: '2026-11-05', internal: false, projects: 2 },
+    { date: '2026-11-05', internal: true, projects: 4 },
+  ]);
+});
+
+test('PostHog product usage failure is pending, not zero', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test' });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(global, 'fetch', async (url, options) => {
+    const sql = JSON.parse(options.body).query.query;
+    if (sql.includes('signin_days')) return { ok: false, status: 500, text: async () => 'boom' };
+    return response({ results: [] });
+  });
+  const load = await connectors.posthog();
+  const head = load.snapshots.find((s) => s.key === 'product_usage');
+  assert.equal(head.rows[0].available, false);
+  assert.match(head.rows[0].reason, /query failed/);
+});
+
 test('Executive PostHog account country rows use event GeoIP on external first identify only', async (t) => {
   env(t, {
     POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test',
@@ -984,8 +1079,7 @@ test('Overview sign-up goal stays on first identify and outcomes are separate', 
   assert.equal(A.D.signups(), 21);
   assert.match(html, /LATAM 500K goal/);
   assert.match(html, /sign-ups once per person/);
-  assert.match(html, /Accounts created/);
-  assert.match(html, /Projects created/);
+  assert.match(html, /data-go="product"/);
   assert.match(html, /Not the same as account_created/);
   assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel/);
 });
@@ -1211,30 +1305,47 @@ test('Conversion highlights the ordered steps, not unclassified observed people 
   assert.match(html, /event counts, not unique people/);
 });
 
-test('Overview summarizes source-native acquisition and canonical PostHog outcomes without funnels', () => {
+test('Product usage shows unique-account KPIs through yesterday, 7-day activation with n, and pending credits/churn', () => {
   const A = dashboard();
-  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
-  A.S.data.metrics = [
-    { ...metric('meta', 'ad_spend', 125, 'launch'), dim: 'campaign' },
-    { ...metric('meta', 'ad_impressions', 9000, 'launch'), dim: 'campaign' },
-    { ...metric('meta', 'ad_clicks', 300, 'launch'), dim: 'campaign' },
-    { ...metric('ga4', 'ga_sessions', 1200, 'Paid Social'), dim: 'channel' },
-    { ...metric('hubspot', 'contacts', 14, 'Paid Social'), dim: 'source' },
-    { ...metric('posthog', 'ph_accounts_created', 7, 'External'), dim: 'account_type' },
-    { ...metric('posthog', 'ph_projects_created', 4, 'External'), dim: 'account_type' },
-  ];
+  A.testLoad('productUsage.js');
+  A.testLoad('views/product.js');
+  A.ui.today = () => '2026-11-09';
+  const acct = (created, first_project, signin_days = [], internal = false) => ({ created, first_project, signin_days, internal });
   A.S.data.snapshots.push(
-    { ...available('posthog', 'accounts_created_coverage'), rows: [{ available: true, event: 'account_created' }] },
-    { ...available('posthog', 'projects_created_coverage'), rows: [{ available: true, event: 'project_created' }] },
+    { source: 'posthog', key: 'product_usage', from: '2026-10-01', to: '2026-11-09', pulled_at: '2026-11-09T12:00:00Z', rows: [{ available: true, accounts: 5 }] },
+    { source: 'posthog', key: 'product_usage_1', from: '2026-10-01', to: '2026-11-09', rows: [
+      acct('2026-10-30', '2026-11-01', ['2026-11-03', '2026-11-09']),
+      acct('2026-10-30', '', ['2026-11-04']),
+      acct('2026-11-06', '2026-11-07', ['2026-11-08']),
+      acct('2026-11-01', '2026-11-01', ['2026-11-08'], true),
+      acct('', '2026-11-02', ['2026-11-02']),
+    ] },
+    { source: 'posthog', key: 'product_projects', from: '2026-10-01', to: '2026-11-09', rows: [
+      { date: '2026-11-01', internal: false, projects: 2 }, { date: '2026-11-07', internal: false, projects: 1 }, { date: '2026-11-01', internal: true, projects: 9 },
+    ] },
   );
-  A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true }] });
-  const html = A.views.overview.render();
-  assert.match(html, /Overview/);
-  assert.match(html, /Ads/);
-  assert.match(html, /GA4 sessions/);
-  assert.match(html, /HubSpot contacts/);
+  const html = A.views.product.render();
+  assert.match(html, /Data through Nov 8/);
+  assert.match(html, /Active users \(7 days\)/);
+  assert.match(html, />3</, 'active Nov 2-8: three external accounts');
   assert.match(html, /Accounts created/);
   assert.match(html, /Projects created/);
-  assert.match(html, /Sign-ups/);
-  assert.doesNotMatch(html, /Ordered PostHog person funnel|Campaign funnel|Marketing-to-Project Activation Funnel/);
+  assert.doesNotMatch(html, />12</, 'internal projects excluded');
+  assert.match(html, /1 of 2 mature accounts/);
+  assert.match(html, /Open cohort/);
+  assert.match(html, /Not the 14-day campaign activation/);
+  assert.match(html, /1 internal or test account excluded/);
+  assert.match(html, /No data · Product event pending/);
+  assert.doesNotMatch(html, /Nov 9/, 'today is never part of the consolidated cut');
+  assert.doesNotMatch(html, /<td[^>]*>Oct 29</, 'days before the first product event are not shown as zero');
+});
+
+test('Product usage is pending, not zero, when the PostHog query failed', () => {
+  const A = dashboard();
+  A.testLoad('productUsage.js');
+  A.testLoad('views/product.js');
+  A.S.data.snapshots.push({ source: 'posthog', key: 'product_usage', from: '2026-10-01', to: '2026-11-09', rows: [{ available: false, reason: 'PostHog product usage query failed.' }] });
+  const html = A.views.product.render();
+  assert.match(html, /PostHog product usage query failed/);
+  assert.doesNotMatch(html, /class="overview-metric-value">0</);
 });
