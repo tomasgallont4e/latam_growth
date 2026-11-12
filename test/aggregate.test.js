@@ -294,6 +294,35 @@ test('goalDaily cumulative series ends at the goal-card number; pace is goal × 
   assert.equal(p.ahead, false);
 });
 
+test('goalAccounts uses the LATAM Sign-ups target saved for the month, else the 500K plan', () => {
+  const A = loadApp();
+  A.S.data = goalData(COVER);
+  A.targets = { signupGoal: (m) => (m === '2026-11' ? { key: 'total_signups', value: 1000 } : null) };
+  const nov = A.D.goalAccounts('2026-11');
+  assert.equal(nov.goal, 1000);
+  assert.equal(nov.goalSource, 'targets');
+  assert.equal(nov.goalKey, 'total_signups');
+  assert.equal(nov.ratio, 100 / 1000);
+  const oct = A.D.goalAccounts('2026-10');
+  assert.equal(oct.goal, 500000);
+  assert.equal(oct.goalSource, 'default');
+});
+
+test('goalAccounts compares with the same days of the previous month', () => {
+  const A = loadApp();
+  A.S.data = goalData(COVER);
+  A.S.data.metrics.push(ph('ph_accounts', '2026-10-05', 'account_type', 'External', 80));
+  A.S.data.metrics.push(ph('ph_accounts', '2026-10-06', 'account_type', 'Internal', 50));
+  const nov = A.D.goalAccounts('2026-11');
+  assert.equal(nov.prev.from, '2026-10-01');
+  assert.equal(nov.prev.to, '2026-10-08');
+  assert.equal(nov.prev.status, 'loaded');
+  assert.equal(nov.prev.value, 80);
+  assert.equal(nov.prev.delta, 20);
+  assert.equal(nov.prev.change, 0.25);
+  assert.equal(A.D.goalAccounts('2026-10').prev, null); // no month before launch
+});
+
 test('goalDaily is all empty, never zero, without coverage', () => {
   const A = loadApp();
   A.S.data = goalData([]);

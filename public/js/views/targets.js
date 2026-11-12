@@ -44,6 +44,21 @@
     T.ensure(month, true, 'LATAM'); // the month-goal strips on every screen read the LATAM level
   };
 
+  // Read-only: the LATAM Sign-ups goal saved for a month (total_signups, else platform_signups), used by
+  // the 500K goal card (D.goalAccounts). The first call fetches that month's LATAM targets in the
+  // background (re-render on arrival); returns null until loaded or when none is saved.
+  T.signupGoal = (month) => {
+    if (!month) return null;
+    const key = ck(month, 'LATAM');
+    if (!T.byMonth[key]) { if (!T.loading[key]) T.ensure(month, false, 'LATAM'); return null; }
+    for (const k of ['total_signups', 'platform_signups']) {
+      const row = T.byMonth[key].find((t) => t.metric_key === k);
+      const v = row ? Number(row.target_value) : NaN;
+      if (v > 0) return { key: k, value: v };
+    }
+    return null;
+  };
+
   // Goal for one metric in one month and level: month-to-date actual, % of target, pace to month end and status.
   T.goal = (key, month, country = 'LATAM') => {
     const row = (T.byMonth[ck(month, country)] || []).find((t) => t.metric_key === key);

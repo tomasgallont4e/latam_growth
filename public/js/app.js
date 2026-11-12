@@ -152,23 +152,45 @@
   // Internal accounts are always excluded, even when "Exclude internal tests" is off.
   // Window = month start to the last covered day (never past month end or today).
   // "Of which LATAM" = the plan's countries (the 11 markets saved in Targets).
+  // Goal per month: the LATAM Sign-ups target saved in Targets for that month (total_signups, else
+  // platform_signups); without one, the 500K plan (goalPlan.verified_users). goalSource tells which.
+  // prev = External accounts in the SAME days of the previous month (e.g. Nov 1–12 vs Oct 1–12).
+  const prevMonthId = (m) => { const [y, mo] = m.split('-').map(Number); return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`; };
+  const goalExternal = (r) => r.dim === 'account_type' && r.dim_value !== 'Internal';
+  const goalPrev = (month, to, current) => {
+    const pm = prevMonthId(month);
+    const pEnd = U.endOfMonth(pm);
+    if (pEnd < LAUNCH) return null;
+    const day = Math.min(Number(to.slice(8, 10)), Number(pEnd.slice(8, 10)));
+    const pFrom = `${pm}-01` < LAUNCH ? LAUNCH : `${pm}-01`;
+    const pTo = `${pm}-${String(day).padStart(2, '0')}`;
+    if (pTo < pFrom) return null;
+    const base = { month: pm, from: pFrom, to: pTo };
+    if (!D.covered('posthog', 'account_coverage', pFrom, pTo)) return { ...base, status: 'pending', value: null, delta: null, change: null };
+    const value = D.sum('posthog', 'ph_accounts', goalExternal, pFrom, pTo);
+    return { ...base, status: 'loaded', value, delta: current - value, change: value ? (current - value) / value : null };
+  };
   D.goalAccounts = (month = S.goalMonth) => {
     const plan = (S.data && S.data.goalPlan) || {};
-    const goal = Number(plan.verified_users) > 0 ? Number(plan.verified_users) : null;
+    const fromTargets = A.targets && typeof A.targets.signupGoal === 'function' ? A.targets.signupGoal(month) : null;
+    const planGoal = Number(plan.verified_users) > 0 ? Number(plan.verified_users) : null;
+    const goal = fromTargets ? fromTargets.value : planGoal;
+    const goalSource = fromTargets ? 'targets' : planGoal ? 'default' : null;
+    const goalKey = fromTargets ? fromTargets.key : planGoal ? 'verified_users' : null;
     const start = `${month}-01` < LAUNCH ? LAUNCH : `${month}-01`;
     const end = U.endOfMonth(month);
     const covTo = ((S.data && S.data.snapshots) || [])
       .filter((s) => s.source === 'posthog' && s.key === 'account_coverage' && s.from <= start && s.rows && s.rows[0] && s.rows[0].available === true)
       .reduce((max, s) => (s.to > max ? s.to : max), '');
     const to = covTo ? [end, U.today(), covTo].sort()[0] : null;
-    const base = { month, from: start, to: to && to >= start ? to : null, goal, value: null, latam: null, latamShare: null, ratio: null };
+    const base = { month, from: start, to: to && to >= start ? to : null, goal, goalSource, goalKey, value: null, latam: null, latamShare: null, ratio: null, prev: null };
     if (!to || to < start || !D.covered('posthog', 'account_coverage', start, to)) {
       return { ...base, status: 'pending', reason: 'Account coverage unavailable for this month; not zero.' };
     }
-    const value = D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', start, to);
+    const value = D.sum('posthog', 'ph_accounts', goalExternal, start, to);
     const markets = new Set(Object.keys(plan.countries || {}));
     const latam = D.sum('posthog', 'ph_accounts_geo', (r) => r.dim === 'country' && markets.has(r.dim_value), start, to);
-    return { ...base, status: 'loaded', reason: null, value, latam, latamShare: value ? latam / value : null, ratio: goal ? value / goal : null };
+    return { ...base, status: 'loaded', reason: null, value, latam, latamShare: value ? latam / value : null, ratio: goal ? value / goal : null, prev: goalPrev(month, to, value) };
   };
   // Daily cumulative sign-ups for the Month vs the 500K goal. Same population and window as
   // D.goalAccounts (External ph_accounts, internal always excluded, month start to last covered day),

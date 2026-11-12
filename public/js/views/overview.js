@@ -57,6 +57,18 @@
     });
   };
 
+  // Change vs the same days of the previous month (g.prev from D.goalAccounts): +/− accounts and %.
+  A.goalPrevHtml = (g) => {
+    const U = A.ui, pr = g && g.prev;
+    if (!pr) return '<span class="text-muted">–</span>';
+    if (pr.status !== 'loaded') return '<span class="text-muted">Pending</span>';
+    const up = pr.delta >= 0;
+    const pctTxt = pr.change == null ? '' : ` (${up ? '+' : '−'}${U.pct(Math.abs(pr.change), 1)})`;
+    return `<span class="gp-status gp-${up ? 'ahead' : 'behind'}">${U.icon(up ? 'arrow-trend-up' : 'arrow-trend-down')} ${up ? '+' : '−'}${U.fmt(Math.abs(pr.delta))}${U.esc(pctTxt)}</span>`;
+  };
+  A.goalPrevHint = (g) => (g && g.prev ? `Same days: ${A.ui.win(g.prev.from, g.prev.to)}` : 'No previous month since launch');
+  A.goalSourceText = (g) => (g && g.goalSource === 'targets' ? 'Goal from Targets' : g && g.goalSource === 'default' ? 'Default 500K plan' : '');
+
   // Sign-ups vs the 500K goal for one Month: daily cumulative Accounts created (D.goalDaily, same
   // number as the goal card), required pace and the 100% goal line. Shared with Executive.
   // opts.head === false hides the summary line (the Overview hero already shows those numbers).
@@ -70,8 +82,9 @@
       head = `<div class="gp-head"><span class="kpi-awaiting">Pending</span><span>${U.esc(p.reason || 'Coverage unavailable.')}</span></div>`;
     } else {
       const gap = Math.round(Math.abs(p.delta));
-      head = `<div class="gp-head"><span><b>${U.fmt(p.value)}</b> sign-ups to date</span><span><b>${U.esc(C.sharePct(p.ratio))}</b> of ${U.fmt(p.goal)}</span><span>Minimum to date <b>${U.fmt(Math.ceil(p.required))}</b></span>`
-        + `<span class="gp-status gp-${p.ahead ? 'ahead' : 'behind'}">${U.icon(p.ahead ? 'arrow-trend-up' : 'arrow-trend-down')} ${p.ahead ? 'Ahead of pace' : 'Behind pace'} · ${p.ahead ? '+' : '−'}${U.fmt(gap)}</span></div>`;
+      head = `<div class="gp-head"><span><b>${U.fmt(p.value)}</b> sign-ups to date</span><span><b>${U.esc(C.sharePct(p.ratio))}</b> of ${U.fmt(p.goal)}${p.goalSource ? ` <small>(${U.esc(A.goalSourceText(p))})</small>` : ''}</span><span>Minimum to date <b>${U.fmt(Math.ceil(p.required))}</b></span>`
+        + `<span class="gp-status gp-${p.ahead ? 'ahead' : 'behind'}">${U.icon(p.ahead ? 'arrow-trend-up' : 'arrow-trend-down')} ${p.ahead ? 'Ahead of pace' : 'Behind pace'} · ${p.ahead ? '+' : '−'}${U.fmt(gap)}</span>`
+        + (p.prev ? `<span>vs previous month (${U.esc(U.win(p.prev.from, p.prev.to))}) ${A.goalPrevHtml(p)}</span>` : '') + '</div>';
     }
     const chart = C.goalProgress({ dates: p.dates, values: p.values, goal: p.goal, pace: p.pace, goalLine: true, label: `Sign-ups vs goal · ${U.monthName(month)}`, unit: 'sign-ups' });
     const through = p.to ? `Through ${U.dshort(p.to)}. ` : '';
@@ -93,7 +106,7 @@
       ? `<span class="acct-hero-actual">${U.fmt(g.value)}</span>${g.goal ? `<span class="acct-hero-goal">of ${U.fmt(g.goal)}</span>` : ''}`
       : '<span class="acct-hero-actual"><span class="kpi-awaiting">Pending</span></span>';
     const foot = !loaded ? `<span>${U.esc(g.reason || 'Coverage unavailable.')}</span>`
-      : g.goal ? `<span><b>${U.esc(U.pct(ratio, 1))}</b> of the ${U.esc(mName)} goal</span><span>${U.esc(span)}</span>` : '<span>No monthly goal saved in Targets.</span>';
+      : g.goal ? `<span><b>${U.esc(U.pct(ratio, 1))}</b> of the ${U.esc(mName)} goal</span><span>${U.esc(span)}</span><span>${U.esc(A.goalSourceText(g))}</span>` : '<span>No monthly goal saved in Targets.</span>';
     const paceOk = p.status === 'loaded' && p.goal > 0;
     const paceVal = paceOk
       ? `<span class="gp-status gp-${p.ahead ? 'ahead' : 'behind'}">${U.icon(p.ahead ? 'arrow-trend-up' : 'arrow-trend-down')} ${p.ahead ? 'Ahead' : 'Behind'} · ${p.ahead ? '+' : '−'}${U.fmt(Math.round(Math.abs(p.delta)))}</span>`
@@ -102,6 +115,7 @@
       ['Of which LATAM', loaded ? `${U.fmt(g.latam)}<small>${U.esc(U.pct(g.latamShare || 0, 1))}</small>` : '–', 'The 11 plan countries'],
       ['Minimum to date', paceOk ? U.fmt(Math.ceil(p.required)) : '–', 'Goal × day ÷ days in month'],
       ['Pace', paceVal, 'Versus the minimum to date'],
+      ['vs previous month', loaded ? A.goalPrevHtml(g) : '–', A.goalPrevHint(g)],
     ].map(([dt, dd, hint]) => `<div><dt>${U.esc(dt)}</dt><dd>${dd}</dd><dd class="acct-hero-hint">${U.esc(hint)}</dd></div>`).join('');
     const rows = A.months().map((m) => ({ ...m, g: D.goalAccounts(m.id) }));
     const bar = (r) => {
@@ -225,7 +239,7 @@
     const U = A.ui, S = A.S;
     const from = S.from, to = S.to;
     const links = `<nav class="ov-links" aria-label="Open a detailed view">${[['acquisition', 'Acquisition', 'bullhorn'], ['conversion', 'Conversion', 'filter'], ['product', 'Product usage', 'cubes'], ['executive', 'Executive', 'chart-line']].map(([go, label, icon]) => `<button class="btn btn-ghost btn-sm" type="button" data-go="${go}">${U.icon(icon)} ${U.esc(label)}</button>`).join('')}</nav>`;
-    return U.section('Overview', `500K goal for the Month selected at the top (independent of From/To) · America/Bogota`, goalCard(), links)
+    return U.section('Overview', `Monthly sign-up goal for the Month selected at the top (goal from Targets, else the 500K plan) · America/Bogota`, goalCard(), links)
       + U.section('Funnel', `${from} to ${to} · seven steps from impression to project · pick a country to focus on one market`, funnelCard(from, to))
       + periodComparison()
       + U.section('What matters', 'Evidence-based reading of the selected period.', A.assistant.render());
