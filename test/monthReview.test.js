@@ -49,3 +49,17 @@ test('a month with only today has no comparison yet', () => {
   const r = build({ cur: report('2026-12', [day('2026-12-01', { partial: true })]), prev: report('2026-11', range('2026-11', 30)) });
   assert.equal(r.sameDays.status, 'pending');
 });
+
+test('channels add the month rows by channel, largest first, and keep an unloaded stage Pending', () => {
+  const rows = [
+    { channel: 'Meta Ads', paid: true, sessions: 30, spend: 20 },
+    { channel: 'Meta Ads', paid: true, sessions: 10, spend: 5 },
+    { channel: '(direct)', paid: false, sessions: 50, spend: null },
+    { channel: 'newsletter', paid: false, sessions: null, spend: null },
+  ];
+  const stages = [{ id: 'sessions', status: 'loaded' }, { id: 'spend', status: 'not_connected', reason: 'No ad network.' }];
+  const r = build({ cur: report('2026-11', range('2026-11', 2), { rows, stages, from: '2026-11-01', to: '2026-11-02' }), prev: null });
+  assert.deepEqual(r.channels.sessions, [{ name: '(direct)', value: 50 }, { name: 'Meta Ads', value: 40 }]);
+  assert.equal(r.channels.spend, null);
+  assert.equal(r.channels.reasons.spend, 'No ad network.');
+});

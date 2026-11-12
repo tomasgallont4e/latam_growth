@@ -308,6 +308,28 @@
     return U.section('This month vs last month · same days', sub, U.card({ title: 'This month vs last month', sub: 'Same days of each month · from the daily report', body }));
   }
 
+  const TOP_CHANNELS = 6;
+  function channelBars(list, color, label) {
+    const top = list.slice(0, TOP_CHANNELS);
+    const rest = list.slice(TOP_CHANNELS).reduce((n, x) => n + x.value, 0);
+    const rows = [...top, ...(rest ? [{ name: `Other ${list.length - TOP_CHANNELS}`, value: rest }] : [])];
+    const total = rows.reduce((n, x) => n + x.value, 0);
+    return A.charts.hbars(rows.map((x) => ({ name: x.name, value: x.value, color, label: label(x.value) })), total);
+  }
+  function channelsSection() {
+    const c = (state.review.data && state.review.data.channels) || {};
+    const block = (list, reason, color, label, emptyText) => (list == null
+      ? U.empty('Pending', U.esc(reason || 'This stage has no data yet.'), 'hourglass-half')
+      : list.length ? channelBars(list, color, label) : U.empty(emptyText, '', 'chart-bar'));
+    const loaded = !reviewState() && c.status === 'loaded';
+    const body = (list, key, color, label, emptyText) => reviewState() || (c.status !== 'loaded' ? U.empty('No data yet', U.esc(c.reason || ''), 'calendar-day') : block(list, c.reasons && c.reasons[key], color, label, emptyText));
+    const win = loaded ? U.win(c.from, c.to) : U.monthName(state.month);
+    return U.section('Where traffic and spend come from', `${win} · month to date, today included · the same rows as the daily report`, `<div class="grid-2">`
+      + U.card({ title: 'Landing sessions by channel', sub: 'GA4 · go.think4ever.com · ad network when the campaign matches, otherwise utm_source', body: body(c.sessions, 'sessions', 'var(--series-a)', (v) => U.fmt(v), 'No landing sessions this month') })
+      + U.card({ title: 'Ads spend by platform', sub: 'Meta Ads · Google Ads · LinkedIn Ads is not connected', body: body(c.spend, 'spend', 'var(--series-b)', (v) => money(v), 'No ads spend this month') })
+      + '</div>');
+  }
+
   function dailySection() {
     const body = state.daily.open ? dailyBody() : '';
     return U.section('Daily Landing Funnel Report', `Ad → landing → form → account → project, per day × channel × campaign · ${U.esc(U.monthName(state.month))} · America/Bogota · read-only`,
@@ -382,6 +404,7 @@
       + ceoBrief(view)
       + '<div class="exec-detail">'
       + momSection()
+      + channelsSection()
       + U.section('Management indicators', 'Source-native metrics stay separate. Pending outcomes need verified event coverage and identity linkage.', U.kpiRow(tiles, 3))
       + U.section('Campaign funnel', 'Seven stages from ad and page impressions to projects created. % is versus the previous stage; open a stage to see each channel, platform and campaign.', U.card({ cls: 'cf-card', title: 'Executive funnel · 7 stages', sub: cfSub, body: campaignFunnelHtml(view.campaignFunnel) }))
       + dailySection()

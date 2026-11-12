@@ -1474,3 +1474,15 @@ test('Executive compares this month with the same days of last month and keeps g
   assert.match(html, /Ads spend[\s\S]*?Pending/);
   assert.match(html, /Cost per account[\s\S]*?delta-up[^>]*>[\s\S]*?−50\.0%/, 'a lower cost per account reads as good');
 });
+
+test('Executive draws sessions by channel with the long tail folded and spend Pending when not loaded', async () => {
+  const sessions = ['Meta Ads', '(direct)', 'google', 'linkedin', 'newsletter', 'bing', 'tiktok', 'x'].map((name, i) => ({ name, value: 80 - i * 10 }));
+  const html = await renderExecutive(executiveWithReview({ channels: {
+    status: 'loaded', from: '2026-11-01', to: '2026-11-12', sessions, spend: null, reasons: { sessions: null, spend: 'No ad network has reported.' },
+  } }));
+  assert.match(html, /Where traffic and spend come from/);
+  assert.match(html, /Meta Ads<\/span>[\s\S]*?>80</);
+  assert.match(html, /Other 2<\/span>[\s\S]*?>30</, 'tiktok 20 + x 10');
+  assert.doesNotMatch(html, /tiktok/);
+  assert.match(html, /Ads spend by platform[\s\S]*?No ad network has reported/);
+});
