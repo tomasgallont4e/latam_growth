@@ -159,23 +159,36 @@ test('logins count PostHog signed_in events only and are flagged as events, not 
   assert.match(stage.underReview.reason, /not people/);
 });
 
-test('projects created counts project_created events; the step % is versus logins', () => {
+test('projects created counts project_created events; the step % is versus accounts created, not logins', () => {
   const funnel = buildCampaignFunnel(input({
-    metrics: [m('posthog', 'ph_event', 7, { dim: 'event', dim_value: 'project_created' }), m('posthog', 'ph_event', 40, { dim: 'event', dim_value: 'signed_in' })],
+    metrics: [
+      m('posthog', 'ph_accounts', 20, { dim: 'account_type', dim_value: 'External' }),
+      m('posthog', 'ph_event', 7, { dim: 'event', dim_value: 'project_created' }), m('posthog', 'ph_event', 40, { dim: 'event', dim_value: 'signed_in' }),
+    ],
+    snapshots: [snap('posthog', 'account_coverage', [{ available: true }])],
   }));
   const stage = stageOf(funnel, 'projects');
+  assert.equal(stageOf(funnel, 'accounts').value, 20);
   assert.equal(stage.status, 'loaded');
   assert.equal(stage.value, 7);
-  assert.equal(stage.conversion.value, 7 / 40);
+  assert.equal(stage.conversion.value, 7 / 20);
+  assert.equal(stage.extras.find((x) => /login/.test(x.label)).value, 7 / 40);
 });
 
-test('projects step % waits for logins when signed_in is not synced', () => {
-  const stage = stageOf(buildCampaignFunnel(input({
+test('projects step % does not wait for logins when signed_in is not synced', () => {
+  const funnel = buildCampaignFunnel(input({
     metrics: [m('posthog', 'ph_event', 7, { dim: 'event', dim_value: 'project_created' })],
-  })), 'projects');
+  }));
+  const stage = stageOf(funnel, 'projects');
   assert.equal(stage.value, 7);
-  assert.equal(stage.conversion.value, null);
-  assert.match(stage.conversion.reason, /Logins/);
+  assert.doesNotMatch(String(stage.conversion.reason || ''), /Logins/);
+});
+
+test('logins never become the weakest step, even when their % is the lowest', () => {
+  const funnel = buildCampaignFunnel(input({
+    metrics: [m('posthog', 'ph_event', 1, { dim: 'event', dim_value: 'signed_in' })],
+  }));
+  assert.notEqual(funnel.weakest && funnel.weakest.id, 'logins');
 });
 
 test('builder cohort tracks day 0 and the first 14 days, with mature cohorts only for the rate', () => {

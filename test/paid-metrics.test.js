@@ -529,6 +529,8 @@ test('Overview 7-step funnel shows % between steps, the weakest step and the cou
   assert.doesNotMatch(html, /Credits loaded/);
   assert.match(html, /Weakest step/);
   assert.match(html, /continue</);
+  assert.match(html, /Logins are events, not people · not part of the step %/);
+  assert.match(html, /continue vs Accounts created</, 'projects compare with accounts, skipping logins');
   assert.match(html, /id="goal-country"/);
   A.S.overviewCountry = 'Colombia';
   const country = A.views.overview.render();

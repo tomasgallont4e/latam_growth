@@ -198,9 +198,12 @@
     steps.push({ name: 'Accounts created', src: 'PostHog · first $identify · External', n: accounts, note: 'Account coverage unavailable; not zero' });
     // 6. Logins (PostHog signed_in events; entries to the platform; events, not people)
     const loginsSynced = metricsList().some((r) => r.source === 'posthog' && r.metric === 'ph_event' && r.dim_value === 'signed_in');
-    if (!loginsSynced) steps.push({ name: 'Logins', src: 'PostHog · signed_in', n: null, note: 'No signed_in event is synced yet' });
-    else if (!all) steps.push(split('Logins', 'PostHog · signed_in'));
-    else steps.push({ name: 'Logins', src: 'PostHog · signed_in (events)', n: D.sum('posthog', 'ph_event', (r) => r.dim_value === 'signed_in', from, to) });
+    // Shown in place but `aside`: login events include returning accounts, so they are not a subset of
+    // accounts created and never enter a step % or the weakest step. Projects compare with accounts.
+    const loginsAside = { aside: true, bridge: 'Logins are events, not people · not part of the step %' };
+    if (!loginsSynced) steps.push({ name: 'Logins', src: 'PostHog · signed_in', n: null, note: 'No signed_in event is synced yet', ...loginsAside });
+    else if (!all) steps.push({ ...split('Logins', 'PostHog · signed_in'), ...loginsAside });
+    else steps.push({ name: 'Logins', src: 'PostHog · signed_in (events)', n: D.sum('posthog', 'ph_event', (r) => r.dim_value === 'signed_in', from, to), ...loginsAside });
     // 7. Projects created (PostHog project_created)
     if (!all) steps.push(split('Projects created', 'PostHog · project_created'));
     else steps.push({ name: 'Projects created', src: 'PostHog · project_created', n: D.has('posthog', 'ph_event') ? D.sum('posthog', 'ph_event', (r) => r.dim_value === 'project_created', from, to) : null, note: 'PostHog events not synced' });
@@ -213,10 +216,10 @@
     const steps = funnelSteps(from, to, country);
     const weak = C.weakest(steps);
     const weakLine = weak > 0
-      ? `Weakest step: ${steps[weak - 1].name} → ${steps[weak].name}, ${U.pct(steps[weak].n / steps[weak - 1].n, 1)} continue.`
+      ? `Weakest step: ${steps[C.prevStep(steps, weak)].name} → ${steps[weak].name}, ${U.pct(steps[weak].n / steps[C.prevStep(steps, weak)].n, 1)} continue.`
       : 'The weakest step appears once two consecutive steps have data.';
     const picker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country"><option value="all"${country === 'all' ? ' selected' : ''}>All countries</option>${options.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
-    const note = `<p class="card-note">Each step comes from its own source and is not linked person by person, so the % between steps is indicative. Accounts created is the same number as the 500K goal (External, internal excluded). Logins count signed_in events, not people, and include returning accounts, so Logins ÷ accounts can exceed 100%. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
+    const note = `<p class="card-note">Each step comes from its own source and is not linked person by person, so the % between steps is indicative. Accounts created is the same number as the 500K goal (External, internal excluded). Logins count signed_in events, not people, and include returning accounts, so they are shown for reference and Projects created is compared with Accounts created. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
     return U.card({
       cls: 'chart-card', title: 'Funnel · 7 steps',
       sub: `${U.win(from, to)} · ${country === 'all' ? 'All countries' : U.esc(country)} · % versus the previous step`,

@@ -235,11 +235,16 @@
     return `<div class="hbar-list">${rows.map((r) => `<div class="hbar"><span class="hbar-name"><span class="ch-dot" style="--ch:${r.color}"></span>${U.esc(r.name)}</span><span class="hbar-track"><span class="hbar-fill" style="width:${(((r.value || 0) / top) * 100).toFixed(1)}%;--ch:${r.color}"></span></span><span class="hbar-val">${r.label != null ? r.label : U.fmt(r.value)}${total ? `<small>${U.pct((r.value || 0) / total)}</small>` : ''}${r.extra || ''}</span></div>`).join('')}</div>`;
   };
 
+  // An `aside` step (e.g. Logins: events, not people) is drawn in place but never takes part in a
+  // step %: the next step compares with the last step before it.
+  const prevOf = (steps, k) => { let j = k - 1; while (j >= 0 && steps[j].aside) j--; return j; };
+  C.prevStep = prevOf;
   C.weakest = (steps) => {
     let worst = -1, wv = Infinity;
     for (let k = 1; k < steps.length; k++) {
-      if (steps[k].kind === 'rate' || steps[k].separate || steps[k - 1].kind === 'rate') continue;
-      const a = steps[k - 1].n, b = steps[k].n;
+      const p = prevOf(steps, k);
+      if (p < 0 || steps[k].aside || steps[k].kind === 'rate' || steps[k].separate || steps[p].kind === 'rate') continue;
+      const a = steps[p].n, b = steps[k].n;
       if (a == null || b == null || !a) continue;
       if (b / a < wv) { wv = b / a; worst = k; }
     }
@@ -255,13 +260,15 @@
       if (s.separate && s.n != null) pathBase = s.n;
       const denom = pathBase != null ? pathBase : base;
       if (k > 0) {
-        if (s.kind === 'rate' || s.separate) h += `<div class="funnel-conn"><span class="conn-note">${U.icon('arrow-down')} ${U.esc(s.bridge || (s.kind === 'rate' ? 'Rate for the step above' : 'Separate path'))}</span></div>`;
+        if (s.kind === 'rate' || s.separate || s.aside) h += `<div class="funnel-conn"><span class="conn-note">${U.icon('arrow-down')} ${U.esc(s.bridge || (s.kind === 'rate' ? 'Rate for the step above' : s.aside ? 'Not part of the step %' : 'Separate path'))}</span></div>`;
         else {
-          const a = steps[k - 1].n, b = s.n;
-          if (a == null || b == null) h += `<div class="funnel-conn pending"><span class="keep">${U.icon('arrow-down')} –</span><span class="conn-note">Step-to-step % appears once ${U.esc(b == null ? s.src : steps[k - 1].src)} sends data</span></div>`;
+          const p = prevOf(steps, k);
+          const a = steps[p].n, b = s.n;
+          const vs = p === k - 1 ? '' : ` vs ${steps[p].name}`;
+          if (a == null || b == null) h += `<div class="funnel-conn pending"><span class="keep">${U.icon('arrow-down')} –</span><span class="conn-note">Step-to-step % appears once ${U.esc(b == null ? s.src : steps[p].src)} sends data</span></div>`;
           else {
             const kp = a ? b / a : 0;
-            h += `<div class="funnel-conn${k === weak ? ' weakest' : ''}"><span class="keep">${U.icon('arrow-down')} ${U.pct(kp)} continue</span><span class="drop">${U.pct(Math.max(0, 1 - kp))} drop-off</span>${k === weak ? `<span class="weak-badge">${U.icon('triangle-exclamation')} Weakest step</span>` : ''}</div>`;
+            h += `<div class="funnel-conn${k === weak ? ' weakest' : ''}"><span class="keep">${U.icon('arrow-down')} ${U.pct(kp)} continue${U.esc(vs)}</span><span class="drop">${U.pct(Math.max(0, 1 - kp))} drop-off</span>${k === weak ? `<span class="weak-badge">${U.icon('triangle-exclamation')} Weakest step</span>` : ''}</div>`;
           }
         }
       }
@@ -273,8 +280,8 @@
         ? `<span class="awaiting-chip">${U.esc(s.note || `Awaiting ${s.src}`)}</span>`
         : rate
           ? `${U.pct(s.n)}${s.em ? `<em>${U.esc(s.em)}</em>` : ''}`
-          : `${U.fmt(s.n)}${!restarted && denom ? `<em>${U.pct(s.n / denom)}</em>` : ''}`;
-      h += `<div class="funnel-step" role="listitem"><span class="funnel-idx">${k + 1}</span><span class="funnel-name">${U.esc(s.name)}<small>${U.esc(s.src)}</small></span><div class="funnel-track${pend ? ' pending' : ''}">${pend ? '' : `<div class="funnel-fill" style="width:${w.toFixed(2)}%"></div>`}</div><span class="funnel-count">${count}</span></div>`;
+          : `${U.fmt(s.n)}${s.aside ? `<em>${U.esc(s.em || 'events')}</em>` : !restarted && denom ? `<em>${U.pct(s.n / denom)}</em>` : ''}`;
+      h += `<div class="funnel-step${s.aside ? ' is-aside' : ''}" role="listitem"><span class="funnel-idx">${k + 1}</span><span class="funnel-name">${U.esc(s.name)}<small>${U.esc(s.src)}</small></span><div class="funnel-track${pend ? ' pending' : ''}">${pend ? '' : `<div class="funnel-fill" style="width:${w.toFixed(2)}%"></div>`}</div><span class="funnel-count">${count}</span></div>`;
     });
     return `<div class="funnel" role="list" aria-label="${U.esc(label)}">${h}</div>`;
   };
