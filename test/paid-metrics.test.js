@@ -120,7 +120,7 @@ function dashboard(stored = {}, hash = '') {
     },
   } });
   App.testLoad = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
-  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'aggregate.js', 'assistant.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/acquisition.js', 'app.js']) {
+  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'aggregate.js', 'assistant.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/form.js', 'views/acquisition.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
   }
   App.S.from = '2026-10-01'; App.S.to = '2026-10-28';
@@ -1405,4 +1405,38 @@ test('Product usage is pending, not zero, when the PostHog query failed', () => 
   const html = A.views.product.render();
   assert.match(html, /PostHog product usage query failed/);
   assert.doesNotMatch(html, /class="overview-metric-value">0</);
+});
+
+function formDashboard({ formStarts = true } = {}) {
+  const A = dashboard();
+  const cover = { from: '2026-10-01', to: '2026-11-05' };
+  A.S.data.snapshots.push(
+    { source: 'ga4', key: 'executive_landing', ...cover, rows: [{ available: true, form_start_available: formStarts }] },
+    { source: 'hubspot', key: 'utm_capture', ...cover, rows: [{ available: true }] },
+  );
+  const days = (from, to) => A.ui.days(from, to);
+  for (const d of days('2026-10-21', '2026-10-27')) A.S.data.metrics.push({ source: 'ga4', metric: 'ga_exec_geo_sessions', date: d, dim: 'country', dim_value: 'Colombia', value: 100 });
+  for (const d of days('2026-10-29', '2026-11-05')) A.S.data.metrics.push({ source: 'ga4', metric: 'ga_exec_geo_sessions', date: d, dim: 'country', dim_value: 'Colombia', value: 200 }, { source: 'ga4', metric: 'ga_exec_form_starts', date: d, value: 2 });
+  A.S.data.metrics.push({ source: 'ga4', metric: 'ga_exec_form_starts', date: '2026-10-24', value: 1 });
+  A.S.data.events.push(
+    { kind: 'form_signup', date: '2026-10-30', internal: false, site_host: 'go.think4ever.com', form: 'Registro LATAM' },
+    { kind: 'form_signup', date: '2026-10-30', internal: false, site_host: 'think4ever.com', form: 'Early Builders' },
+    { kind: 'form_signup', date: '2026-10-31', internal: true, site_host: 'go.think4ever.com', form: 'Registro LATAM' },
+  );
+  return A;
+}
+
+test('Sign-up form compares daily averages before and after the short form', () => {
+  const html = formDashboard().views.form.render();
+  assert.match(html, /Before is Oct 21 – Oct 27 and after is Oct 29 – Nov 5/);
+  assert.match(html, /Form starts per day[\s\S]*?0\.1<\/td>[\s\S]*?>2<\/td>/, 'starts per day: 1 in 7 days before, 16 in 8 days after');
+  assert.match(html, /Form starts per landing session[\s\S]*?0\.14%[\s\S]*?1\.00%/);
+  assert.match(html, /Form submissions per day[\s\S]*?>0<\/td>[\s\S]*?0\.1<\/td>/, 'only the external landing submission counts');
+});
+
+test('Sign-up form shows Pending, not zero, when GA4 form starts are not reported', () => {
+  const html = formDashboard({ formStarts: false }).views.form.render();
+  assert.match(html, /Form starts per day[\s\S]*?Pending[\s\S]*?Pending/);
+  assert.match(html, /Form starts<small>[^<]*<\/small><\/span><div class="funnel-track pending"><\/div><span class="funnel-count"><span class="awaiting-chip">Awaiting GA4</);
+  assert.doesNotMatch(html, /class="kpi-value hero"[^>]*>0</);
 });
