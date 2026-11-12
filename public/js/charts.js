@@ -81,11 +81,16 @@
 
   // Cumulative month-to-date sign-ups (bars, left) and the same series as a share of the scale goal (line, right).
   // The two axes share a scale, so a bar top and its line point are the same value.
-  C.goalProgress = ({ dates, values, goal, planned, label = 'LATAM 500K goal', unit = 'sign-ups' }) => {
+  // Optional `pace` (required cumulative sign-ups per day) draws a dashed pace line and `goalLine`
+  // draws the 100% goal as a horizontal line. With either, the scale reaches them so the gap is honest.
+  C.goalProgress = ({ dates, values, goal, planned, pace, goalLine = false, label = 'LATAM 500K goal', unit = 'sign-ups' }) => {
     if (!dates.length || !(goal > 0)) return U.empty('No goal to chart yet', 'The 500K plan sets the line this chart measures against.', 'chart-column');
     const W = 1000, H = 292, L = 54, R = 68, T = 18, B = 256;
     const pending = !values.some((v) => v != null);
-    const maxLeft = pending ? goal : niceMax(Math.max(1, ...values));
+    const reach = pace ? Math.max(0, ...pace.map((v) => Number(v) || 0)) : 0;
+    const maxLeft = pace || goalLine
+      ? niceMax(Math.max(1, goalLine ? goal : 0, reach, ...values.map((v) => Number(v) || 0)))
+      : pending ? goal : niceMax(Math.max(1, ...values));
     const maxRight = planned ? goal : maxLeft / goal;
     const y = (v) => B - (v / maxLeft) * (B - T);
     const step = (W - L - R) / dates.length;
@@ -109,7 +114,7 @@
       const x = L + j * step + (step - bw) / 2;
       const cx = (L + j * step + step / 2).toFixed(2);
       const yy = y(v).toFixed(2);
-      const tip = `${U.dshort(d)} · ${U.fmt(v)} ${unit} · ${pctAxis(v / goal)} of goal`;
+      const tip = `${U.dshort(d)} · ${U.fmt(v)} ${unit} · ${pctAxis(v / goal)} of goal${pace && pace[j] != null ? ` · required pace ${U.fmt(Math.ceil(pace[j]))}` : ''}`;
       g += `<rect class="day-hit" x="${(L + j * step).toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"><title>${U.esc(tip)}</title></rect>`;
       if (v > 0) g += `<rect class="goal-col" x="${x.toFixed(2)}" y="${yy}" width="${bw.toFixed(2)}" height="${Math.max(0.6, (B - y(v)).toFixed(2))}"><title>${U.esc(tip)}</title></rect>`;
       pts.push(`${cx},${yy}`);
@@ -119,6 +124,15 @@
       g += `<polyline class="goal-line" points="${planPoints.join(' ')}"><title>Planned sign-ups · right axis</title></polyline>`;
       dates.forEach((d, j) => { g += `<circle class="goal-dot" cx="${(L + j * step + step / 2).toFixed(2)}" cy="${(B - (planned[j] / goal) * (B - T)).toFixed(2)}" r="3.2"><title>${U.esc(`${U.dshort(d)} · ${U.fmt(planned[j])} planned sign-ups`)}</title></circle>`; });
     } else if (pts.length) g += `<polyline class="goal-line" points="${pts.join(' ')}"/>`;
+    if (pace) {
+      const pp = dates.map((d, j) => `${(L + j * step + step / 2).toFixed(2)},${y(Number(pace[j]) || 0).toFixed(2)}`);
+      g += `<polyline class="goal-pace" points="${pp.join(' ')}"><title>Required pace: goal × day ÷ days in month</title></polyline>`;
+    }
+    if (goalLine && goal <= maxLeft) {
+      const gy = y(goal).toFixed(1);
+      g += `<line class="goal-target-line" x1="${L}" x2="${W - R}" y1="${gy}" y2="${gy}"><title>Goal ${U.esc(U.fmt(goal))} (100%)</title></line>`;
+      g += `<text class="goal-target-label" x="${L + 6}" y="${(y(goal) - 6).toFixed(1)}">Goal ${U.esc(U.fmt(goal))}</text>`;
+    }
     dates.forEach((d, j) => {
       if (planned || values[j] == null) return;
       const v = Number(values[j]) || 0;
@@ -130,7 +144,7 @@
       if (j % every === 0) g += `<text x="${(L + j * step + step / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${U.esc(U.dshort(d))}</text>`;
     });
     if (pending) g += `<text x="${W / 2}" y="${(T + B) / 2}" text-anchor="middle">Actual pending</text>`;
-    const legend = `<div class="goal-legend"><span class="swatch-bar">Month-to-date ${U.esc(unit)} (left axis)</span><span class="swatch-line">${planned ? 'Planned cumulative sign-ups' : `% of ${U.esc(U.fmt(goal))} goal`} (right axis)</span></div>`;
+    const legend = `<div class="goal-legend"><span class="swatch-bar">Month-to-date ${U.esc(unit)} (left axis)</span><span class="swatch-line">${planned ? 'Planned cumulative sign-ups' : `% of ${U.esc(U.fmt(goal))} goal`} (right axis)</span>${pace ? '<span class="swatch-pace">Required pace</span>' : ''}${goalLine ? `<span class="swatch-goal">Goal ${U.esc(U.fmt(goal))}</span>` : ''}</div>`;
     return `<div class="chart-scroll"><svg class="chart-svg goal-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(label)}">${g}</svg></div>${legend}`;
   };
 

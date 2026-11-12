@@ -170,6 +170,26 @@
     const latam = D.sum('posthog', 'ph_accounts_geo', (r) => r.dim === 'country' && markets.has(r.dim_value), start, to);
     return { ...base, status: 'loaded', reason: null, value, latam, latamShare: value ? latam / value : null, ratio: goal ? value / goal : null };
   };
+  // Daily cumulative sign-ups for the Month vs the 500K goal. Same population and window as
+  // D.goalAccounts (External ph_accounts, internal always excluded, month start to last covered day),
+  // so the last value equals the goal-card number. Days without data yet stay null (drawn empty).
+  // Required pace = goal × day of month ÷ days in month.
+  D.goalDaily = (month = S.goalMonth) => {
+    const g = D.goalAccounts(month);
+    const n = Number(U.endOfMonth(month).slice(8, 10));
+    const dates = Array.from({ length: n }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`);
+    const pace = dates.map((d, i) => (g.goal ? (g.goal * (i + 1)) / n : null));
+    const base = { ...g, dates, days: n, pace, values: dates.map(() => null), required: null, delta: null, ahead: null };
+    if (g.status !== 'loaded') return base;
+    const byDay = {};
+    for (const r of D.M()) {
+      if (r.source === 'posthog' && r.metric === 'ph_accounts' && r.dim === 'account_type' && r.dim_value !== 'Internal' && inR(r.date, g.from, g.to)) byDay[r.date] = (byDay[r.date] || 0) + (Number(r.value) || 0);
+    }
+    let run = 0;
+    const values = dates.map((d) => (d < g.from || d > g.to ? null : (run += byDay[d] || 0)));
+    const required = g.goal ? (g.goal * Number(g.to.slice(8, 10))) / n : null;
+    return { ...base, values, required, delta: required == null ? null : g.value - required, ahead: required == null ? null : g.value >= required };
+  };
   const GRAIN_META = {
     day: { name: 'Daily', bar: 'day' },
     week: { name: 'Weekly', bar: 'week' },

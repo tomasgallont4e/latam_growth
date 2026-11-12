@@ -81,6 +81,25 @@
     });
   };
 
+  // Sign-ups vs the 500K goal for one Month: daily cumulative Accounts created (D.goalDaily, same
+  // number as the goal card), required pace and the 100% goal line. Shared with Executive.
+  A.goalPaceChart = (month = A.S.goalMonth) => {
+    const U = A.ui, C = A.charts;
+    const p = A.D.goalDaily(month);
+    if (!(p.goal > 0)) return U.empty('No monthly goal saved', 'Set the 500K goal in Targets to chart sign-ups against it.', 'bullseye');
+    let head;
+    if (p.status !== 'loaded') {
+      head = `<div class="gp-head"><span class="kpi-awaiting">Pending</span><span>${U.esc(p.reason || 'Coverage unavailable.')}</span></div>`;
+    } else {
+      const gap = Math.round(Math.abs(p.delta));
+      head = `<div class="gp-head"><span><b>${U.fmt(p.value)}</b> sign-ups to date</span><span><b>${U.esc(C.sharePct(p.ratio))}</b> of ${U.fmt(p.goal)}</span><span>Minimum to date <b>${U.fmt(Math.ceil(p.required))}</b></span>`
+        + `<span class="gp-status gp-${p.ahead ? 'ahead' : 'behind'}">${U.icon(p.ahead ? 'arrow-trend-up' : 'arrow-trend-down')} ${p.ahead ? 'Ahead of pace' : 'Behind pace'} · ${p.ahead ? '+' : '−'}${U.fmt(gap)}</span></div>`;
+    }
+    const chart = C.goalProgress({ dates: p.dates, values: p.values, goal: p.goal, pace: p.pace, goalLine: true, label: `Sign-ups vs goal · ${U.monthName(month)}`, unit: 'sign-ups' });
+    const through = p.to ? `Through ${U.dshort(p.to)}. ` : '';
+    return `${head}${chart}<p class="card-note">${U.esc(through)}Bars: cumulative External accounts created this month (first $identify, internal always excluded). Dashed line: required pace = goal × day ÷ days in month. Days without data yet are empty.</p>`;
+  };
+
   // Monthly 500K goal for the global Month, the monthly chart, and one row per month since launch.
   function goalCard() {
     const U = A.ui, D = A.D, S = A.S;
@@ -105,7 +124,7 @@
     return U.card({
       cls: 'acct-hero-card', title: `LATAM 500K goal · ${U.monthName(month)}`,
       sub: `Monthly · ${span} · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota`,
-      body: `<div class="overview-metric-value">${value}</div><p class="card-note">${U.esc(pctLine)}</p>${latam ? `<p class="card-note">${U.esc(latam)}</p>` : ''}<h4 class="cf-sub">% of the monthly goal by month</h4>${A.goalMonthChart(month)}<h4 class="cf-sub">Accounts created by month</h4>${history}<button class="btn btn-secondary btn-sm" type="button" data-go="targets">View targets</button>`,
+      body: `<div class="overview-metric-value">${value}</div><p class="card-note">${U.esc(pctLine)}</p>${latam ? `<p class="card-note">${U.esc(latam)}</p>` : ''}<h4 class="cf-sub">Sign-ups vs goal · ${U.esc(U.monthName(month))}</h4>${A.goalPaceChart(month)}<h4 class="cf-sub">% of the monthly goal by month</h4>${A.goalMonthChart(month)}<h4 class="cf-sub">Accounts created by month</h4>${history}<button class="btn btn-secondary btn-sm" type="button" data-go="targets">View targets</button>`,
     });
   }
 

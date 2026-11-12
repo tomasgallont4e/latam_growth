@@ -273,6 +273,37 @@ test('goalAccounts is Pending, never zero, without coverage', () => {
   assert.equal(future.to, null);
 });
 
+test('goalDaily cumulative series ends at the goal-card number; pace is goal × day ÷ days in month', () => {
+  const A = loadApp();
+  A.S.data = goalData(COVER);
+  A.S.exInt = false;
+  const p = A.D.goalDaily('2026-11');
+  const g = A.D.goalAccounts('2026-11');
+  assert.equal(p.dates.length, 30);
+  assert.equal(p.dates[0], '2026-11-01');
+  assert.equal(p.dates[29], '2026-11-30');
+  assert.equal(p.values[0], 0);
+  assert.equal(p.values[1], 100); // Nov 2
+  assert.equal(p.values[2], 100); // Nov 3 internal excluded
+  assert.equal(p.values[7], g.value); // last covered day = goal-card number
+  assert.equal(p.values[8], null); // Nov 9 after coverage: empty, not zero
+  assert.equal(p.pace[0], 500000 / 30);
+  assert.equal(p.pace[29], 500000);
+  assert.equal(p.required, (500000 * 8) / 30);
+  assert.equal(p.delta, 100 - (500000 * 8) / 30);
+  assert.equal(p.ahead, false);
+});
+
+test('goalDaily is all empty, never zero, without coverage', () => {
+  const A = loadApp();
+  A.S.data = goalData([]);
+  const p = A.D.goalDaily('2026-11');
+  assert.equal(p.status, 'pending');
+  assert.ok(p.values.every((v) => v === null));
+  assert.equal(p.required, null);
+  assert.equal(p.pace[29], 500000);
+});
+
 test('the ordered PostHog identify is called sign-up and assistant never equates it to cross-source totals', async () => {
   const model = agg.build(sample());
   assert.equal(model.product_funnel.steps[3].name, 'Sign-up ($identify)');

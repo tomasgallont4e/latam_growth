@@ -196,6 +196,16 @@ html:not([data-theme="light"]) .goal-now { color: var(--color-accent); }
 .goal-legend .swatch-line::before { content: ''; width: 16px; height: 3px; border-radius: 2px; background: var(--series-b); }
 .chart-svg .goal-line { fill: none; stroke: var(--series-b); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart-svg .goal-dot { fill: var(--color-surface); stroke: var(--series-b); stroke-width: 1.7; }
+.chart-svg .goal-pace { fill: none; stroke: var(--color-warning); stroke-width: 2; stroke-dasharray: 7 5; stroke-linecap: round; }
+.chart-svg .goal-target-line { stroke: var(--color-success); stroke-width: 1.5; stroke-dasharray: 2 4; }
+.chart-svg text.goal-target-label { fill: var(--color-success); font-weight: 600; }
+.goal-legend .swatch-pace::before { content: ''; width: 18px; border-top: 2px dashed var(--color-warning); }
+.goal-legend .swatch-goal::before { content: ''; width: 18px; border-top: 2px dotted var(--color-success); }
+.gp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; margin: 4px 0 10px; font: 500 12.5px var(--font-body); color: var(--color-text-secondary); }
+.gp-head b { font: 700 14px var(--font-mono); letter-spacing: -.01em; }
+.gp-status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-weight: 600; }
+.gp-ahead { color: var(--color-success); background: var(--soft-success); }
+.gp-behind { color: var(--color-warning); background: var(--soft-warning); }
 .chart-svg text.axis-pct { fill: var(--color-accent); }
 html[data-theme="light"] .chart-svg text.axis-pct { fill: #0891b2; }
 .goal-summary { color: var(--color-primary-text); font: 600 12px var(--font-body); white-space: nowrap; }
