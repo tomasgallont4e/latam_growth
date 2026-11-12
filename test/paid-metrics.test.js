@@ -1440,3 +1440,37 @@ test('Sign-up form shows Pending, not zero, when GA4 form starts are not reporte
   assert.match(html, /Form starts<small>[^<]*<\/small><\/span><div class="funnel-track pending"><\/div><span class="funnel-count"><span class="awaiting-chip">Awaiting GA4</);
   assert.doesNotMatch(html, /class="kpi-value hero"[^>]*>0</);
 });
+
+function executiveWithReview(review) {
+  const A = dashboard();
+  A.api = (url) => {
+    const month = new URL(url, 'http://localhost').searchParams.get('month');
+    if (url.startsWith('api/month-review?')) return Promise.resolve({ month, ...review });
+    if (url.startsWith('api/executive?')) return Promise.resolve({ month, view: { cards: {}, outcomes: {}, changed: { phrases: [] } } });
+    return new Promise(() => {});
+  };
+  return A;
+}
+async function renderExecutive(A) {
+  A.views.executive.render();
+  await new Promise((resolve) => setImmediate(resolve));
+  A.views.executive.render();
+  await new Promise((resolve) => setImmediate(resolve));
+  return A.views.executive.render();
+}
+
+test('Executive compares this month with the same days of last month and keeps gaps Pending', async () => {
+  const html = await renderExecutive(executiveWithReview({ sameDays: {
+    status: 'loaded', through: '2026-11-11', current: { from: '2026-11-01', to: '2026-11-11' }, previous: { from: '2026-10-01', to: '2026-10-11', complete: true }, reason: null,
+    rows: [
+      { id: 'accounts', name: 'Accounts created', source: 'PostHog', kind: 'count', current: 24, previous: 20, change: 0.2 },
+      { id: 'spend', name: 'Ads spend', source: 'Meta Ads · Google Ads', kind: 'money', current: null, previous: 30, change: null },
+      { id: 'cpa', name: 'Cost per account', source: 'Spend ÷ accounts', kind: 'money', lowerIsBetter: true, current: 2, previous: 4, change: -0.5 },
+    ],
+  } }));
+  assert.match(html, /This month vs last month · same days/);
+  assert.match(html, /Nov 1 – Nov 11 against Oct 1 – Oct 11/);
+  assert.match(html, /Accounts created[\s\S]*?>24<[\s\S]*?>20<[\s\S]*?\+20\.0%/);
+  assert.match(html, /Ads spend[\s\S]*?Pending/);
+  assert.match(html, /Cost per account[\s\S]*?delta-up[^>]*>[\s\S]*?−50\.0%/, 'a lower cost per account reads as good');
+});

@@ -22,6 +22,7 @@ const funnels = require('./lib/funnels');
 const productMetrics = require('./lib/productMetrics');
 const ga4Range = require('./lib/ga4Range');
 const dailyFunnel = require('./lib/dailyFunnel');
+const monthReview = require('./lib/monthReview');
 const assistant = require('./lib/assistant');
 const allowAssistantQuestion = assistant.createLimiter({ max: 10, windowMs: 60 * 1000 });
 
@@ -126,6 +127,20 @@ app.get('/api/daily-funnel', async (req, res, next) => {
       metricRows: await store.list('metric'), eventRows: await store.list('event'),
       snapshots: await store.list('snapshot'), sources: await sourcesView(),
     }));
+  } catch (e) { next(e); }
+});
+
+// Executive month review: this month against the previous one, from the same daily reports.
+app.get('/api/month-review', async (req, res, next) => {
+  try {
+    const month = String(req.query.month || '');
+    if (!dailyFunnel.monthOk(month)) return res.status(400).json({ error: 'month must be a valid calendar month in YYYY-MM format' });
+    const input = {
+      now: new Date(), launch: process.env.LAUNCH_DATE,
+      metricRows: await store.list('metric'), eventRows: await store.list('event'),
+      snapshots: await store.list('snapshot'), sources: await sourcesView(),
+    };
+    res.json(monthReview.build({ cur: dailyFunnel.build({ ...input, month }), prev: dailyFunnel.build({ ...input, month: monthReview.prevMonth(month) }) }));
   } catch (e) { next(e); }
 });
 

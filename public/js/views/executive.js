@@ -5,6 +5,7 @@
     month: '', zoom: false, span: 'month', data: null, error: '', loading: false,
     product: { key: null, status: 'loading' },
     daily: { open: false, month: '', status: 'idle', data: null, error: '', channel: '', campaign: '' },
+    review: { month: '', status: 'idle', data: null, error: '' },
   };
   function activationFunnelOptions() {
     const view = state.data && state.data.view || {};
@@ -276,6 +277,37 @@
     const notes = (r.notes || []).map((n) => `<li>${U.esc(n)}</li>`).join('');
     return `<ul class="cf-notes">${stages}</ul><h4 class="cf-sub">Daily totals</h4>${totals}<h4 class="cf-sub">By day, channel and campaign</h4>${filters}${detail}${filtered.length > 200 ? `<p class="card-note">Showing the first 200 of ${U.fmt(filtered.length)} rows.</p>` : ''}${notes ? `<ul class="cf-notes">${notes}</ul>` : ''}`;
   }
+  // ---------- Month review (lib/monthReview.js): same-days comparison, channels and campaigns.
+  function ensureReview(month) {
+    if (state.review.month === month) return;
+    state.review = { month, status: 'loading', data: null, error: '' };
+    const done = (patch) => { if (state.review.month !== month) return; state.review = { ...state.review, ...patch }; A.render(); };
+    A.api(`api/month-review?month=${encodeURIComponent(month)}`)
+      .then((d) => done({ status: 'loaded', data: d || {} }))
+      .catch((e) => done({ status: 'error', error: (e && e.message) || 'request failed' }));
+  }
+  const reviewPending = '<span class="kpi-awaiting">Pending</span>';
+  function reviewState() {
+    const r = state.review;
+    if (r.status === 'error') return U.empty('Could not load the month review', U.esc(r.error), 'triangle-exclamation');
+    if (r.status !== 'loaded') return '<p class="card-note">Loading…</p>';
+    return null;
+  }
+  function momSection() {
+    const s = (state.review.data && state.review.data.sameDays) || {};
+    const sub = s.status === 'loaded'
+      ? `${U.win(s.current.from, s.through)} against ${U.win(s.previous.from, s.previous.to)} · today is left out until it closes`
+      : 'Closed days of this month against the same days of the previous month';
+    const val = (r, v) => (v == null ? reviewPending : r.kind === 'money' ? money(v) : U.fmt(v));
+    const body = reviewState() || (s.status !== 'loaded' ? U.empty('No comparison yet', U.esc(s.reason || ''), 'calendar-day') : U.table([
+      { t: 'Metric', f: (r) => `${U.esc(r.name)}<br><small class="text-muted">${U.esc(r.source)}</small>` },
+      { t: 'This month', num: 1, f: (r) => val(r, r.current) },
+      { t: 'Last month, same days', num: 1, f: (r) => val(r, r.previous) },
+      { t: 'Change', num: 1, f: (r) => U.delta(r.current, r.previous, { invert: r.lowerIsBetter }) },
+    ], s.rows) + (s.reason ? `<p class="card-note">${U.esc(s.reason)} Pending is not zero.</p>` : '<p class="card-note">Pending means a day in the window has no data from that source. Only one month is closed, so full months are not compared yet.</p>'));
+    return U.section('This month vs last month · same days', sub, U.card({ title: 'This month vs last month', sub: 'Same days of each month · from the daily report', body }));
+  }
+
   function dailySection() {
     const body = state.daily.open ? dailyBody() : '';
     return U.section('Daily Landing Funnel Report', `Ad → landing → form → account → project, per day × channel × campaign · ${U.esc(U.monthName(state.month))} · America/Bogota · read-only`,
@@ -311,6 +343,7 @@
     const view = state.data.view || {};
     ensureProduct(state.month);
     if (state.daily.open) ensureDaily(state.month);
+    ensureReview(state.month);
     const cards = view.cards || {};
 
     const signups = cards.signups || {};
@@ -348,6 +381,7 @@
     return U.section('Executive', 'Monthly targets, Ads coverage and confirmed product outcomes.', header)
       + ceoBrief(view)
       + '<div class="exec-detail">'
+      + momSection()
       + U.section('Management indicators', 'Source-native metrics stay separate. Pending outcomes need verified event coverage and identity linkage.', U.kpiRow(tiles, 3))
       + U.section('Campaign funnel', 'Seven stages from ad and page impressions to projects created. % is versus the previous stage; open a stage to see each channel, platform and campaign.', U.card({ cls: 'cf-card', title: 'Executive funnel · 7 stages', sub: cfSub, body: campaignFunnelHtml(view.campaignFunnel) }))
       + dailySection()
