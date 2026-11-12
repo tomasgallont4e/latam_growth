@@ -520,7 +520,7 @@ body[data-role="ads"] :is(#note-form, #csv-form, #source-form, [data-sync], [dat
 .top-actions { flex-wrap: wrap; }
 .topbar { height: auto; min-height: 72px; flex-wrap: wrap; }
 .range-field { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--color-text-muted); }
-.range-field input { width: 110px; min-width: 0; font-size: 11px; padding: 6px; }
+.range-field input { width: 132px; min-width: 0; font-size: 12px; padding: 6px; }
 .top-actions .period-filter { width: 112px; min-width: 100px; }
 .funnel-controls { display: flex; flex-wrap: wrap; gap: 16px; padding: 0 20px 16px; }
 .funnel-controls label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
@@ -586,7 +586,8 @@ body[data-role="ads"] :is(#note-form, #csv-form, #source-form, [data-sync], [dat
 .kpi-tile.under-review .kpi-value { color: var(--color-text-muted); }
 .pace-leading, .pace-met { color: var(--color-success); }
 .pace-trailing, .pace-missed { color: var(--color-error); }
-body[data-page="executive"] .range-field,
+body[data-page="executive"] .range-field:not(.month-field),
+body[data-page="overview"] #period,
 body[data-page="executive"] #period,
 body[data-page="executive"] .check-chip { display: none; }
 @media (max-width: 1024px) {
