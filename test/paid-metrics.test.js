@@ -14,7 +14,7 @@ test('Executive is the default tab unless the URL or a non-default saved tab sel
   assert.equal(dashboard({}, '#acquisition').S.tab, 'acquisition');
 });
 
-test('Executive shows management outcomes without the source-mixed funnel', async () => {
+test('Executive shows management outcomes and the campaign funnel', async () => {
   const A = dashboard();
   A.api = (url) => url.startsWith('api/executive?') ? Promise.resolve({
     month: new URL(url, 'http://localhost').searchParams.get('month'),
@@ -32,7 +32,8 @@ test('Executive shows management outcomes without the source-mixed funnel', asyn
   assert.match(html, /Projects created/);
   assert.match(html, /5/);
   assert.match(html, /No verified shared identity key/);
-  assert.doesNotMatch(html, /Campaign funnel|Visit to sign-up rate|Cost per sign-up/);
+  assert.match(html, /Campaign funnel/);
+  assert.doesNotMatch(html, /Visit to sign-up rate|Cost per sign-up/);
 });
 
 test('Executive renders separate management indicators and no mixed/source funnel', async () => {
@@ -51,9 +52,11 @@ test('Executive renders separate management indicators and no mixed/source funne
   A.views.executive.render();
   await new Promise((resolve) => setImmediate(resolve));
   const html = A.views.executive.render();
-  for (const label of ['Management indicators', 'Sign-ups target progress', 'Ads spend', 'Accounts created', 'Projects created', '14-day project activation', 'Management readout']) assert.ok(html.includes(label), label);
+  for (const label of ['Management indicators', 'Sign-ups target progress', 'Ads spend', 'Accounts created', 'Projects created', '14-day project activation', 'What changed']) assert.ok(html.includes(label), label);
   assert.match(html, /No verified shared identity key/);
-  assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel|Visit to sign-up rate|Cost per sign-up/);
+  assert.match(html, /Campaign funnel/);
+  assert.match(html, /Marketing-to-Project Activation Funnel/);
+  assert.doesNotMatch(html, /Visit to sign-up rate|Cost per sign-up/);
 });
 
 test('Executive renders known PostHog sign-ups and social spend with coverage caveats', async () => {
@@ -102,7 +105,9 @@ test('Executive view keeps the monthly sign-up KPI and pending outcomes separate
   assert.match(html, /14-day project activation/);
   assert.match(html, /account_created coverage unavailable/);
   assert.match(html, /No verified shared identity key/);
-  assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel|Goal 30,000 · Proposal/);
+  assert.match(html, /Campaign funnel/);
+  assert.match(html, /Marketing-to-Project Activation Funnel/);
+  assert.doesNotMatch(html, /Goal 30,000 · Proposal/);
 });
 
 function dashboard(stored = {}, hash = '') {
@@ -406,7 +411,8 @@ test('audited 4 CRM + 34 PostHog case never claims 38 verified accounts or 850% 
   const conversion = A.views.conversion.render(), overview = A.views.overview.render();
   assert.match(conversion, /29\.0%/);
   assert.match(overview, /LATAM 500K goal · .*Monthly · .*sign-ups once per person \(first \$identify/);
-  assert.doesNotMatch(conversion + overview, /850|72\.1%|35\.6%|38 sign-ups|Weakest step|drop-off<|continue<|Direct Platform Sign-ups/);
+  assert.doesNotMatch(conversion + overview, /850|72\.1%|35\.6%|38 sign-ups|Direct Platform Sign-ups/);
+  assert.doesNotMatch(conversion, /Weakest step|drop-off<|continue</);
   A.S.exInt = false;
   assert.equal(A.D.platform(), 34);
 });
@@ -517,6 +523,35 @@ test('Overview landing people stay pending when the exact window was not synced'
   assert.match(html, /Unique people need an exact-window GA4 query/);
 });
 
+test('Overview 7-step funnel shows % between steps, the weakest step and the country split', () => {
+  const A = dashboard();
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-28';
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  A.S.data.metrics = [
+    { ...metric('meta', 'ad_impressions', 9000, 'launch'), dim: 'campaign' },
+    { ...metric('google_ads', 'ad_impressions', 1000, 'search'), dim: 'campaign' },
+    { ...metric('meta', 'ad_outbound_clicks', 150, 'launch'), dim: 'campaign' },
+    { ...metric('google_ads', 'ad_clicks', 50, 'search'), dim: 'campaign' },
+    { ...metric('ga4', 'ga_exec_geo_sessions', 120, 'Colombia'), dim: 'country' },
+    { ...metric('posthog', 'ph_accounts', 21, 'External'), dim: 'account_type' },
+    { ...metric('posthog', 'ph_accounts', 9, 'Internal'), dim: 'account_type' },
+    { ...metric('posthog', 'ph_accounts_geo', 12, 'Colombia'), dim: 'country' },
+    { ...metric('posthog', 'ph_event', 7, 'project_created'), dim: 'event' },
+  ];
+  A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true }] });
+  const html = A.views.overview.render();
+  assert.match(html, /Funnel · 7 steps/);
+  assert.match(html, /Credits loaded/);
+  assert.match(html, /No credits event is synced yet/);
+  assert.match(html, /Weakest step/);
+  assert.match(html, /continue</);
+  assert.match(html, /id="goal-country"/);
+  A.S.overviewCountry = 'Colombia';
+  const country = A.views.overview.render();
+  assert.match(country, /Not split by country/);
+  assert.match(country, /option value="Colombia" selected/);
+});
+
 test('Overview and Acquisition compare the two latest complete buckets, not a partial current bucket', () => {
   const A = dashboard(); A.ui.today = () => '2026-10-29';
   A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
@@ -529,7 +564,7 @@ test('Overview and Acquisition compare the two latest complete buckets, not a pa
   ];
   const overview = A.views.overview.render(), acquisition = A.views.acquisition.render();
   assert.match(overview, /data-go="acquisition"/);
-  assert.doesNotMatch(overview, /Last complete Daily period vs previous/);
+  assert.match(overview, /Last complete Daily period vs previous/);
   assert.match(acquisition, /Last complete Daily period vs previous/);
   assert.match(acquisition, /\+10\.0 pp/);
 });
@@ -1259,7 +1294,7 @@ test('Clarity refresh stays inside the daily request limit and keeps a failed br
   assert.equal(snaps[1].rows[0].metric, 'ScriptErrorCount');
 });
 
-test('Overview compact summary offers drilldowns and does not duplicate funnels', () => {
+test('Overview offers drilldowns, the 7-step funnel with a country selector, and no activation funnel', () => {
   const A = dashboard();
   A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
   const html = A.views.overview.render();
@@ -1267,7 +1302,9 @@ test('Overview compact summary offers drilldowns and does not duplicate funnels'
   assert.match(html, /data-go="targets"/);
   assert.match(html, /data-go="acquisition"/);
   assert.match(html, /data-go="conversion"/);
-  assert.doesNotMatch(html, /goal-country|Marketing-to-Project Activation Funnel|Last complete Daily period/);
+  assert.match(html, /id="goal-country"/);
+  assert.match(html, /Funnel · 7 steps/);
+  assert.doesNotMatch(html, /Marketing-to-Project Activation Funnel/);
 });
 
 test('Acquisition prioritizes GA4 sessions and engagement by channel', () => {

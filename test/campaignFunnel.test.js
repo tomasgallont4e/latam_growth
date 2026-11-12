@@ -35,6 +35,11 @@ function input({ metrics = [], snapshots = [], events = [], dropSnapshots = [] }
   };
 }
 
+test('the funnel has seven stages in the agreed order', () => {
+  const funnel = buildCampaignFunnel(input());
+  assert.deepEqual(funnel.stages.map((s) => s.id), ['impressions', 'clicks', 'sessions', 'forms', 'accounts', 'credits', 'projects']);
+});
+
 test('impressions add paid and organic with the breakdown visible', () => {
   const stage = stageOf(buildCampaignFunnel(input()), 'impressions');
   assert.equal(stage.status, 'loaded');
@@ -94,16 +99,36 @@ test('cost per result uses Meta Ads + Google Ads spend and is complete when both
   assert.equal(clicks.cost.partial, false);
 });
 
+test('accounts created = External first $identify on all hosts; internal is excluded and verified is not shown', () => {
+  const funnel = buildCampaignFunnel(input({
+    metrics: [
+      m('posthog', 'ph_accounts', 3, { dim: 'account_type', dim_value: 'External' }),
+      m('posthog', 'ph_accounts', 4, { dim: 'account_type', dim_value: 'Internal' }),
+    ],
+    snapshots: [snap('posthog', 'account_coverage', [{ available: true }])],
+  }));
+  const accounts = stageOf(funnel, 'accounts');
+  assert.equal(accounts.value, 3);
+  assert.equal(accounts.name, 'Accounts created');
+  assert.equal(accounts.extras.some((x) => /Verified/i.test(x.label)), false);
+});
+
+test('accounts stay pending without account coverage instead of showing zero', () => {
+  const accounts = stageOf(buildCampaignFunnel(input()), 'accounts');
+  assert.equal(accounts.status, 'pending');
+  assert.equal(accounts.value, null);
+});
+
 test('HubSpot and PostHog cross only through the email HMAC', () => {
   const funnel = buildCampaignFunnel(input({
-    metrics: [m('posthog', 'ph_exec_accounts', 3, { dim: 'account_type', dim_value: 'External' })],
+    metrics: [m('posthog', 'ph_accounts', 3, { dim: 'account_type', dim_value: 'External' })],
     events: [
       { source: 'hubspot', kind: 'form_signup', date: '2026-11-03', email_hmac: 'h1', internal: false },
       { source: 'hubspot', kind: 'form_signup', date: '2026-11-03', email_hmac: 'h2', internal: false },
       { source: 'hubspot', kind: 'form_signup', date: '2026-11-03', email_hmac: 'h3', internal: true },
     ],
     snapshots: [
-      snap('posthog', 'executive_accounts', [{ available: true, excluded_host_accounts: 0 }]),
+      snap('posthog', 'account_coverage', [{ available: true }]),
       snap('posthog', 'identity_cohort', [{ available: true }]),
       snap('posthog', 'identity_cohort_1', [
         { created: '2026-11-04', verified: '2026-11-04', project: null, id_hash: 'h1' },
@@ -116,10 +141,34 @@ test('HubSpot and PostHog cross only through the email HMAC', () => {
   const accounts = stageOf(funnel, 'accounts');
   assert.equal(accounts.value, 3);
   assert.equal(accounts.extras.find((x) => /HMAC/.test(x.label)).value, 1);
-  assert.equal(accounts.extras.find((x) => /Verified/.test(x.label)).value, 2);
 });
 
-test('builders track day 0 and the first 14 days, with mature cohorts only for the rate', () => {
+test('credits loaded stays No data yet until a credits event is synced', () => {
+  const stage = stageOf(buildCampaignFunnel(input()), 'credits');
+  assert.equal(stage.status, 'pending');
+  assert.equal(stage.value, null);
+  assert.match(stage.reason, /credits event/i);
+});
+
+test('credits loaded counts PostHog events whose name contains "credit"', () => {
+  const stage = stageOf(buildCampaignFunnel(input({
+    metrics: [m('posthog', 'ph_event', 6, { dim: 'event', dim_value: 'credits_purchased' }), m('posthog', 'ph_event', 9, { dim: 'event', dim_value: 'signed_in' })],
+  })), 'credits');
+  assert.equal(stage.value, 6);
+});
+
+test('projects created counts project_created events; the step % needs credits data', () => {
+  const funnel = buildCampaignFunnel(input({
+    metrics: [m('posthog', 'ph_event', 7, { dim: 'event', dim_value: 'project_created' }), m('posthog', 'ph_event', 40, { dim: 'event', dim_value: 'signed_in' })],
+  }));
+  const stage = stageOf(funnel, 'projects');
+  assert.equal(stage.status, 'loaded');
+  assert.equal(stage.value, 7);
+  assert.equal(stage.conversion.value, null);
+  assert.match(stage.conversion.reason, /Credits loaded/);
+});
+
+test('builder cohort tracks day 0 and the first 14 days, with mature cohorts only for the rate', () => {
   const funnel = buildCampaignFunnel(input({
     snapshots: [
       snap('posthog', 'identity_cohort', [{ available: true }]),
@@ -131,20 +180,25 @@ test('builders track day 0 and the first 14 days, with mature cohorts only for t
       ]),
     ],
   }));
-  const stage = stageOf(funnel, 'builders');
-  assert.equal(stage.value, 3);
+  const stage = stageOf(funnel, 'projects');
   assert.equal(stage.builders.day0, 1);
   assert.equal(stage.builders.within14, 2);
   assert.equal(stage.builders.mature, 3);
   assert.equal(stage.builders.rate14, 2 / 3);
 });
 
-test('published content stays No data yet and keeps builders Under review', () => {
-  const stage = stageOf(buildCampaignFunnel(input()), 'builders');
+test('published content stays No data yet and projects stay pending without PostHog events', () => {
+  const stage = stageOf(buildCampaignFunnel(input()), 'projects');
   assert.equal(stage.published.status, 'pending');
   assert.equal(stage.published.label, 'No data yet');
-  assert.match(stage.underReview.reason, /published/i);
   assert.equal(stage.status, 'pending');
+  assert.equal(stage.builders, null);
+});
+
+test('weakest step is the lowest % versus the previous stage among stages with data', () => {
+  const funnel = buildCampaignFunnel(input());
+  assert.equal(funnel.weakest.id, 'clicks');
+  assert.equal(funnel.weakest.value, 50 / 1500);
 });
 
 test('no complete day returns a pending funnel without stages', () => {
@@ -153,15 +207,17 @@ test('no complete day returns a pending funnel without stages', () => {
   assert.deepEqual(funnel.stages, []);
 });
 
-test('Executive month response includes view.campaignFunnel with six stages', async () => {
+test('Executive month response includes view.campaignFunnel with seven stages', async () => {
   const rows = {
     metric: [
       { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-11-02', dim: 'account_type', dim_value: 'External', value: 5 },
+      { source: 'posthog', metric: 'ph_accounts', date: '2026-11-02', dim: 'account_type', dim_value: 'External', value: 5 },
       { source: 'ga4', metric: 'ga_exec_geo_sessions', date: '2026-11-02', dim: 'country', dim_value: 'Colombia', value: 335 },
     ],
     event: [],
     snapshot: [
       { source: 'posthog', key: 'executive_accounts', from: '2026-10-01', to: '2026-11-30', rows: [{ available: true, country_available: false, external_accounts: 5, country_assigned: 0, country_missing: 5, excluded_host_accounts: 0 }] },
+      { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-30', rows: [{ available: true }] },
       { source: 'ga4', key: 'executive_landing', from: '2026-10-01', to: '2026-11-30', rows: [{ available: true, country_available: true }] },
     ],
     goal_plan: [{ _k: 'latam', countries: {} }],
@@ -170,7 +226,7 @@ test('Executive month response includes view.campaignFunnel with six stages', as
   const data = await build(store, '2026-11', new Date('2026-11-04T17:00:00.000Z'));
   const funnel = data.view.campaignFunnel;
   assert.equal(funnel.status, 'loaded');
-  assert.deepEqual(funnel.stages.map((s) => s.id), ['impressions', 'clicks', 'sessions', 'forms', 'accounts', 'builders']);
+  assert.deepEqual(funnel.stages.map((s) => s.id), ['impressions', 'clicks', 'sessions', 'forms', 'accounts', 'credits', 'projects']);
   assert.equal(funnel.stages.find((s) => s.id === 'accounts').value, 5);
   assert.equal(funnel.stages.find((s) => s.id === 'sessions').value, 335);
 });

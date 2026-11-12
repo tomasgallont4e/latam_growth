@@ -89,13 +89,14 @@
       f: (row) => cfFormat(c.kind || 'text', row[c.k]),
     })), table.rows);
   }
-  function cfStage(stage, index) {
+  function cfStage(stage, index, weakest) {
     const loaded = stage.status === 'loaded' && stage.value != null;
     const volume = loaded ? `<span class="cf-volume">${U.fmt(stage.value)}</span>` : '<span class="awaiting-chip">No data yet</span>';
     const c = stage.conversion;
     const conv = !c ? '<span class="text-muted">–</span><small>First stage</small>'
       : c.value != null ? `<b>${U.pct(c.value, 2)}</b><small>${U.esc(c.basis || '')}</small>`
         : `<span class="text-muted">n/a</span><small>${U.esc(c.reason || c.basis || '')}</small>`;
+    const weakBadge = weakest && weakest === stage.id ? `<span class="weak-badge">${U.icon('triangle-exclamation')} Weakest step</span>` : '';
     const t = stage.target;
     const target = !t ? '<span class="text-muted">No target</span>'
       : t.progress == null ? `<span class="text-muted">n/a</span><small>Target ${U.fmt(t.value)}</small>`
@@ -108,14 +109,15 @@
     const notes = (!loaded && stage.reason ? `<div class="cf-review">${U.icon('circle-info')} ${U.esc(stage.reason)}</div>` : '')
       + (stage.underReview ? `<div class="cf-review">${U.icon('triangle-exclamation')} Under review · ${U.esc(stage.underReview.reason)}</div>` : '');
     const detail = (stage.breakdowns || []).map(cfTable).join('') + (stage.definition ? `<p class="card-note">${U.esc(stage.definition)}</p>` : '');
-    return `<div class="cf-stage" role="listitem"><div class="cf-row"><span class="funnel-idx">${index + 1}</span><span class="cf-cell"><b>${U.esc(stage.name)}</b><small>${U.esc(stage.source || '')}</small></span><span class="cf-cell">${volume}</span><span class="cf-cell">${conv}</span><span class="cf-cell">${target}</span><span class="cf-cell">${costHtml}</span></div>${extras ? `<div class="cf-meta">${extras}</div>` : ''}${notes}${detail ? U.details('Detail by channel, platform and campaign', null, detail) : ''}</div>`;
+    return `<div class="cf-stage" role="listitem"><div class="cf-row"><span class="funnel-idx">${index + 1}</span><span class="cf-cell"><b>${U.esc(stage.name)}</b><small>${U.esc(stage.source || '')}</small></span><span class="cf-cell">${volume}</span><span class="cf-cell">${conv}${weakBadge}</span><span class="cf-cell">${target}</span><span class="cf-cell">${costHtml}</span></div>${extras ? `<div class="cf-meta">${extras}</div>` : ''}${notes}${detail ? U.details('Detail by channel, platform and campaign', null, detail) : ''}</div>`;
   }
   function campaignFunnelHtml(block) {
     if (!block) return U.empty('Campaign funnel unavailable', 'The Executive response has no campaign funnel yet.', 'filter');
     if (block.status !== 'loaded') return U.empty('No data yet', U.esc(block.reason || ''), 'filter');
     const head = '<div class="cf-head cf-row" aria-hidden="true"><span></span><span>Stage</span><span>Volume</span><span>vs previous stage</span><span>vs target (pace)</span><span>Cost per result</span></div>';
     const notes = (block.notes || []).map((n) => `<li>${U.esc(n)}</li>`).join('');
-    return `${head}<div class="cf-list" role="list" aria-label="Campaign funnel">${(block.stages || []).map(cfStage).join('')}</div>${notes ? `<ul class="cf-notes">${notes}</ul>` : ''}`;
+    const weakestId = block.weakest && block.weakest.id;
+    return `${head}<div class="cf-list" role="list" aria-label="Campaign funnel">${(block.stages || []).map((s, i) => cfStage(s, i, weakestId)).join('')}</div>${notes ? `<ul class="cf-notes">${notes}</ul>` : ''}`;
   }
 
   function countries(block) {
@@ -166,11 +168,11 @@
   function chart(view) {
     const block = view.chart || {};
     const controls = chartControls();
-    if (!block.certified) return { controls, body: U.empty('No data yet', block.reason || 'Sign-ups are not available for this month.', 'chart-column') };
+    if (!block.certified) return { controls, body: U.empty('No data yet', block.reason || 'Accounts created are not available for this month.', 'chart-column') };
     const points = state.span === 'launch' ? (block.sinceLaunch || []) : (block.days || []);
     const goal = state.span === 'launch' ? null : block.goal;
     const note = state.span === 'month' && block.note ? `<p class="card-note">${U.esc(block.note)}</p>` : state.span === 'launch' && block.underReview ? `<p class="card-note">Under review: ${U.esc(block.underReview.reason)}</p>` : '';
-    const drawn = A.charts.executiveSignups({ points, goal, goalLabel: state.span === 'launch' ? null : block.goalLabel, zoom: state.zoom || state.span === 'launch', label: 'Sign-ups this month vs goal' });
+    const drawn = A.charts.executiveSignups({ points, goal, goalLabel: state.span === 'launch' ? null : block.goalLabel, zoom: state.zoom || state.span === 'launch', label: 'Accounts created this month vs goal' });
     return { controls, body: drawn + note };
   }
 
@@ -336,12 +338,20 @@
     });
     const changed = view.changed || { phrases: [] };
     const notes = (changed.phrases || []).map((line) => `<p>${U.esc(line)}</p>`).join('') || '<p>No evidence-backed changes for this period.</p>';
+    const research = view.researchNote ? `<p class="card-note">Research note, ${U.esc(longDate(view.researchNote.date))}: ${U.esc(view.researchNote.text)}</p>` : '';
+    const cf = view.campaignFunnel || {};
+    const cfSub = cf.from && cf.to ? `Window ${U.esc(longDate(cf.from))} – ${U.esc(longDate(cf.to))} · the same window for every stage` : 'Waiting for the first complete day';
+    const drawn = chart(view);
+    const activationFunnelHtml = A.posthogFunnel ? A.posthogFunnel.render(activationFunnelOptions()) : '<p class="card-note">PostHog funnel unavailable.</p>';
     return U.section('Executive', 'Monthly targets, Ads coverage and confirmed product outcomes.', header)
       + ceoBrief(view)
       + '<div class="exec-detail">'
       + U.section('Management indicators', 'Source-native metrics stay separate. Pending outcomes need verified event coverage and identity linkage.', U.kpiRow(tiles, 3))
+      + U.section('Campaign funnel', 'Seven stages from ad and page impressions to projects created. % is versus the previous stage; open a stage to see each channel, platform and campaign.', U.card({ cls: 'cf-card', title: 'Executive funnel · 7 stages', sub: cfSub, body: campaignFunnelHtml(view.campaignFunnel) }))
       + dailySection()
-      + U.section('Management readout', 'Evidence from the selected month.', U.card({ title: 'What changed', body: notes }))
+      + U.section('Accounts created this month vs goal', state.span === 'launch' ? 'Cumulative External accounts created since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s accounts created. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Accounts created vs goal', right: drawn.controls, body: `<p class="card-note">Sources: PostHog (accounts created) · monthly goals (Targets)</p>${drawn.body}` }))
+      + U.section('What changed', 'Evidence from the selected month.', U.card({ title: 'What changed', body: research + notes }))
+      + U.section('Marketing-to-Project Activation Funnel', 'Product activation in PostHog, after sign-up.', U.card({ title: 'Marketing-to-Project Activation Funnel', sub: 'Saved PostHog ordered funnel · excludes internal and test accounts. This is product activation, not an advertising funnel.', body: activationFunnelHtml }))
       + '</div>';
   }
 
