@@ -547,6 +547,28 @@ test('Overview shows the monthly 500K chart: one clickable bar per month, select
   assert.match(A.goalMonthChart(first), new RegExp(`gm-bar is-sel" data-goal-month="${first}"`));
 });
 
+test('global Month sets From/To to the whole calendar month so every view and funnel filters by it', () => {
+  const A = dashboard();
+  A.ui.today = () => '2026-11-15';
+  const oct = A.monthRange('2026-10'), nov = A.monthRange('2026-11');
+  assert.equal(oct.from, '2026-10-01'); assert.equal(oct.to, '2026-10-31');
+  assert.equal(nov.from, '2026-11-01'); assert.equal(nov.to, '2026-11-15', 'current month is capped at today');
+  A.S.data.metrics = [metric('meta', 'ad_impressions', 1000), { ...metric('meta', 'ad_impressions', 500), date: '2026-10-30' }];
+  assert.equal(A.D.paidTotals().impressions, 1000, 'harness range Oct 1-28 leaves Oct 30 out');
+  A.setGoalMonth('2026-10');
+  assert.equal(A.S.goalMonth, '2026-10');
+  assert.equal(A.S.from, '2026-10-01'); assert.equal(A.S.to, '2026-10-31');
+  assert.equal(A.D.paidTotals().impressions, 1500, 'the Month now drives every From/To-based number');
+  A.S.grain = 'day';
+  assert.equal(A.D.periods()[0].from, '2026-10-01');
+  assert.equal(A.isMonthRange(), true);
+  A.setRange('2026-10-10', '2026-10-21');
+  assert.equal(A.isMonthRange(), false, 'hand-edited days are a custom range');
+  assert.equal(A.D.paidTotals().impressions, 1000);
+  A.setGoalMonth('2026-10');
+  assert.equal(A.S.from, '2026-10-01'); assert.equal(A.S.to, '2026-10-31');
+});
+
 test('Overview and Acquisition compare the two latest complete buckets, not a partial current bucket', () => {
   const A = dashboard(); A.ui.today = () => '2026-10-29';
   A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';

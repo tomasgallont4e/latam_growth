@@ -484,7 +484,10 @@
   };
   A.footer = () => {
     const last = ((S.data && S.data.sources) || []).filter((s) => s.last_sync).map((s) => s.last_sync).sort().pop();
-    document.getElementById('foot').textContent = `Month ${S.goalMonth} · Range ${S.from} to ${S.to} · grouped ${D.grainName().toLowerCase()} · CRM/product tests ${S.exInt ? 'excluded where classified' : 'included'}; GA4 traffic can include tests · last data load ${last ? U.stamp(last) : 'none'} · Research, Think4Ever LATAM`;
+    const day = (d) => `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}`;
+    const mon = (A.months().find((m) => m.id === S.goalMonth) || {}).label || S.goalMonth;
+    const range = A.isMonthRange() ? `${day(S.from)} to ${day(S.to)}` : `Custom range ${S.from} to ${S.to}`;
+    document.getElementById('foot').textContent = `Month ${mon} · ${range} · grouped ${D.grainName().toLowerCase()} · CRM/product tests ${S.exInt ? 'excluded where classified' : 'included'}; GA4 traffic can include tests · last data load ${last ? U.stamp(last) : 'none'} · Research, Think4Ever LATAM`;
     const ss = (S.data && S.data.sources) || [];
     document.getElementById('sources-foot').textContent = `${ss.filter((s) => s.state === 'connected').length} of ${ss.length} sources connected`;
   };
@@ -497,7 +500,8 @@
     if (A.targets) A.targets.ensure(S.goalMonth);
     if (S.data) A.render();
   };
-  A.setRange = (from, to, persist = true) => {
+  // rerender=false lets the global Month set the range and render only once (from setGoalMonth).
+  A.setRange = (from, to, persist = true, rerender = true) => {
     const valid = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '') && !Number.isNaN(Date.parse(s));
     if (!valid(from) || !valid(to)) return;
     S.from = from < LAUNCH ? LAUNCH : from;
@@ -506,11 +510,14 @@
     document.getElementById('range-from').value = S.from;
     document.getElementById('range-to').value = S.to;
     if (persist) { A.store('t4e-growth-range-from', S.from); A.store('t4e-growth-range-to', S.to === U.today() ? 'today' : S.to); }
+    if (!rerender) return;
     if (A.targets) A.targets.ensure(S.goalMonth);
     if (S.data) A.render();
   };
 
-  // ---------- global Month (memory #141): one top-bar selector for the 500K goal, Executive, goal strips and Targets
+  // ---------- global Month (memory #141): one top-bar selector for the 500K goal, Executive, goal strips, Targets
+  // AND the From/To range of every view: choosing a Month sets From/To to that calendar month (capped at
+  // launch and today). From/To can still be narrowed by hand; the footer then says "Custom range".
   A.bogotaMonth = () => {
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).formatToParts(new Date()).map((p) => [p.type, p.value]));
     const month = `${parts.year}-${parts.month}`;
@@ -528,6 +535,21 @@
     }
     return out;
   };
+  // Calendar range of a month 'YYYY-MM': day 1 to the last day, never before launch nor after today.
+  A.monthRange = (month) => {
+    const [y, m] = String(month).split('-').map(Number);
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    let from = `${month}-01`, to = `${month}-${String(last).padStart(2, '0')}`;
+    if (from < LAUNCH) from = LAUNCH;
+    if (to > U.today()) to = U.today();
+    if (from > to) from = to;
+    return { from, to };
+  };
+  A.isMonthRange = () => {
+    if (!/^\d{4}-\d{2}$/.test(S.goalMonth || '')) return false;
+    const r = A.monthRange(S.goalMonth);
+    return S.from === r.from && S.to === r.to;
+  };
   A.setGoalMonth = (month, persist = true) => {
     const list = A.months();
     if (!list.some((m) => m.id === month)) month = A.bogotaMonth();
@@ -536,6 +558,8 @@
     sel.innerHTML = list.map((m) => `<option value="${U.esc(m.id)}"${m.id === month ? ' selected' : ''}>${U.esc(m.label)}</option>`).join('');
     sel.value = month;
     if (persist) A.store('t4e-growth-month', month);
+    const r = A.monthRange(month);
+    A.setRange(r.from, r.to, persist, false);
     if (A.targets) A.targets.ensure(month, false, 'LATAM');
     if (S.data) A.render();
   };
@@ -562,10 +586,9 @@
     const hash = location.hash.slice(1);
     const storedTab = A.store('t4e-growth-tab');
     S.tab = A.resolve(hash || (storedTab && storedTab !== 'overview' ? storedTab : 'executive'));
-    A.setGoalMonth(A.store('t4e-growth-month') || A.bogotaMonth(), false);
     for (const id of ['range-from', 'range-to']) { document.getElementById(id).min = LAUNCH; document.getElementById(id).max = U.today(); }
-    const savedTo = A.store('t4e-growth-range-to');
-    A.setRange(A.store('t4e-growth-range-from') || LAUNCH, !savedTo || savedTo === 'today' ? U.today() : savedTo, false);
+    // The saved Month decides the From/To range on boot (whole calendar month, capped at today).
+    A.setGoalMonth(A.store('t4e-growth-month') || A.bogotaMonth(), false);
     A.setGrain(A.store('t4e-growth-grain') || 'day');
     A.render();
     A.load();
