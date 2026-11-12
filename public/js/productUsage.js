@@ -70,7 +70,69 @@ function summarize({ accounts = [], projectDays = [], from, cutoff }) {
   return { daily, cohorts, internalAccounts, externalAccounts: ext.length };
 }
 
-  const api = { summarize, bogotaYesterday, addDays, ACTIVE_WINDOW, ACTIVATION_DAYS };
+function nextMonth(m) {
+  const [y, mo] = m.split('-').map(Number);
+  return mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`;
+}
+function endOfMonth(m) {
+  const [y, mo] = m.split('-').map(Number);
+  return `${m}-${String(new Date(Date.UTC(y, mo, 0)).getUTCDate()).padStart(2, '0')}`;
+}
+
+// Monthly churn (provisional formula, docs/product-metrics.md): cancellations in the month among
+// subscriptions active at the start of the month ÷ subscriptions active at the start.
+// subscriptions: [{ starts: [iso], cancels: [iso], internal }]. Same-day start and cancel = start first.
+function monthlyChurn({ subscriptions = [], from, cutoff }) {
+  const ext = subscriptions.filter((s) => !s.internal).map((s) => {
+    const ok = (d) => DAY.test(String(d || '')) && d <= cutoff;
+    return [...(s.starts || []).filter(ok).map((d) => [d, 0]), ...(s.cancels || []).filter(ok).map((d) => [d, 1])]
+      .sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1]);
+  });
+  const months = [];
+  if (!DAY.test(String(from || '')) || !DAY.test(String(cutoff || '')) || from > cutoff) return { months };
+  for (let m = from.slice(0, 7); m <= cutoff.slice(0, 7); m = nextMonth(m)) {
+    const start = `${m}-01`;
+    const monthEnd = endOfMonth(m);
+    const end = monthEnd < cutoff ? monthEnd : cutoff;
+    let activeStart = 0, cancelled = 0, cancelledAll = 0, started = 0;
+    for (const events of ext) {
+      let active = false;
+      for (const [d, kind] of events) if (d < start) active = kind === 0;
+      const inMonth = events.filter(([d]) => d >= start && d <= end);
+      const cancelledHere = inMonth.some(([, kind]) => kind === 1);
+      if (inMonth.some(([, kind]) => kind === 0)) started += 1;
+      if (cancelledHere) cancelledAll += 1;
+      if (active) {
+        activeStart += 1;
+        if (cancelledHere) cancelled += 1;
+      }
+    }
+    months.push({ month: m, active_start: activeStart, cancelled, cancelled_all: cancelledAll, started, churn: activeStart ? cancelled / activeStart : null, partial: end < monthEnd });
+  }
+  return { months };
+}
+
+// Credits consumed per day (external accounts) and time from account creation to first use.
+// days: [{ date, internal, credits }]  people: [{ created, first_credit, internal }]
+function creditUsage({ days = [], people = [], from, cutoff }) {
+  const valid = (d) => DAY.test(String(d || '')) && d >= from && d <= cutoff;
+  const byDay = new Map();
+  for (const r of days) {
+    if (r.internal || !valid(r.date)) continue;
+    byDay.set(r.date, (byDay.get(r.date) || 0) + (Number(r.credits) || 0));
+  }
+  const daily = [];
+  for (let d = from; d <= cutoff; d = addDays(d, 1)) daily.push({ date: d, credits: byDay.get(d) || 0 });
+  const total = daily.reduce((n, r) => n + r.credits, 0);
+  const last7 = daily.slice(-ACTIVE_WINDOW).reduce((n, r) => n + r.credits, 0);
+  const users = people.filter((p) => !p.internal && valid(p.first_credit));
+  const waits = users.filter((p) => valid(p.created) && p.first_credit >= p.created).map((p) => diffDays(p.created, p.first_credit)).sort((a, b) => a - b);
+  const mid = Math.floor(waits.length / 2);
+  const median = !waits.length ? null : waits.length % 2 ? waits[mid] : (waits[mid - 1] + waits[mid]) / 2;
+  return { daily, total, last_7d: last7, accounts_using: users.length, median_days_to_first: median };
+}
+
+  const api = { summarize, monthlyChurn, creditUsage, bogotaYesterday, addDays, ACTIVE_WINDOW, ACTIVATION_DAYS };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root && root.App) root.App.productUsage = api;
 })(typeof window !== 'undefined' ? window : this);

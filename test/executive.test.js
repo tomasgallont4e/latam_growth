@@ -314,11 +314,9 @@ test('Executive shows allowlisted sign-ups and known spend with honest review st
   assert.match(data.view.cards.sinceLaunch.lines.join(' '), /Under review: Unclassified first-identify hosts are excluded/);
   assert.equal(data.view.cards.spend.status, 'loaded');
   assert.equal(data.view.cards.spend.value, 20.27);
-  assert.equal(data.view.cards.spend.complete, false);
-  assert.equal(data.view.cards.spend.underReview.label, 'Under review');
-  assert.match(data.view.cards.spend.underReview.reason, /LinkedIn paid reporting is not connected/);
-  assert.equal(data.view.cards.cps.status, 'pending');
-  assert.match(data.view.cards.cps.reason, /spend incomplete/);
+  assert.equal(data.view.cards.spend.complete, true, 'paid spend = Meta Ads + Google Ads; LinkedIn Ads is not used');
+  assert.ok(!data.view.cards.spend.underReview || !/LinkedIn/.test(data.view.cards.spend.underReview.reason));
+  assert.equal(data.view.cards.cps.status, 'pending', 'sign-ups are still under review');
   assert.equal(data.view.cards.visit.status, 'pending');
   assert.equal(data.view.cards.visit.underReview.label, 'Under review');
   assert.match(data.view.cards.visit.reason, /Unclassified first-identify hosts are excluded/);
@@ -381,7 +379,7 @@ test('Executive cost per sign-up stays pending until every paid channel has repo
     { source: 'ga4', metric: 'ga_exec_geo_sessions', date: '2026-11-02', dim: 'country', dim_value: 'Colombia', value: 335 },
     { source: 'ga4', metric: 'ga_exec_form_starts', date: '2026-11-02', value: 3 },
     { source: 'meta', metric: 'ad_spend', date: '2026-11-02', dim: 'campaign', dim_value: 'Boost', value: 20.27 },
-  ], { source: [{ _k: 'google_ads', state: 'connected', window: '2026-10-01 to 2026-11-30' }] }), '2026-11', new Date('2026-11-04T17:00:00.000Z'));
+  ]), '2026-11', new Date('2026-11-04T17:00:00.000Z'));
   assert.equal(partialWithSignups.view.cards.spend.value, 20.27);
   assert.equal(partialWithSignups.view.cards.spend.complete, false);
   assert.equal(partialWithSignups.view.cards.cps.status, 'pending');
@@ -390,7 +388,7 @@ test('Executive cost per sign-up stays pending until every paid channel has repo
   const partialWithZeroSignups = await build(coveredMonth([
     { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-10-04', dim: 'account_type', dim_value: 'External', value: 0 },
     { source: 'meta', metric: 'ad_spend', date: '2026-10-04', dim: 'campaign', dim_value: 'Boost', value: 12.5 },
-  ], { source: [{ _k: 'google_ads', state: 'connected', window: '2026-10-01 to 2026-10-30' }] }), '2026-10', new Date('2026-10-30T17:00:00.000Z'));
+  ]), '2026-10', new Date('2026-10-30T17:00:00.000Z'));
   assert.equal(partialWithZeroSignups.view.cards.cps.status, 'pending');
   assert.equal(partialWithZeroSignups.view.cards.cps.value, null);
 });
@@ -446,12 +444,11 @@ test('Executive spend stays unavailable while Meta is pending and Google with no
   assert.equal(data.view.channels.meta.status, 'loaded');
   assert.equal(data.view.channels.meta.spend, 0);
   assert.equal(data.view.channels.google_ads.status, 'no_campaigns');
-  assert.equal(data.view.channels.linkedin.status, 'pending');
-  assert.equal(data.view.cards.spend.value, null);
-  assert.equal(data.view.cards.spend.status, 'pending');
-  assert.equal(data.view.cards.cps.status, 'pending');
-  assert.match(data.view.cards.cps.reason, /spend incomplete/);
-  assert.equal(data.view.funnel.steps[0].status, 'pending');
+  assert.equal(data.view.channels.linkedin.status, 'not_used');
+  // Paid spend = Meta Ads + Google Ads: Meta reported US$0 and Google has no campaigns, so spend is a real, complete 0.
+  assert.equal(data.view.cards.spend.value, 0);
+  assert.equal(data.view.cards.spend.status, 'loaded');
+  assert.equal(data.view.cards.spend.complete, true);
 });
 
 test('Executive November goal is read from stored targets and projects only from day 7', async () => {

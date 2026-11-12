@@ -51,28 +51,24 @@ test('country sums are complete when the source covers every day', () => {
   assert.equal(view.countries.partial, false);
 });
 
-test('LinkedIn reads synced ad rows: spend, impressions, clicks and completeness', () => {
+test('LinkedIn Ads is not used: its rows never enter paid spend', () => {
   const byMetric = new Map([
     ['ad_spend', rows('ad_spend', [['linkedin', '2026-11-02', 12.5]])],
     ['ad_impressions', rows('ad_impressions', [['linkedin', '2026-11-02', 300]])],
-    ['ad_clicks', rows('ad_clicks', [['linkedin', '2026-11-02', 4]])],
   ]);
-  const li = buildView(input({ byMetric })).channels.linkedin;
-  assert.equal(li.status, 'loaded');
-  assert.equal(li.spend, 12.5);
-  assert.equal(li.impressions, 300);
-  assert.equal(li.clicks, 4);
-  assert.equal(li.lastDate, '2026-11-02');
-  assert.equal(li.complete, false);
-  assert.match(li.line, /LinkedIn US\$12\.50/);
+  const view = buildView(input({ byMetric }));
+  const li = view.channels.linkedin;
+  assert.equal(li.status, 'not_used');
+  assert.equal(li.spend, null);
+  assert.equal(view.cards.spend.source, 'Meta Ads, Google Ads');
+  assert.doesNotMatch(view.cards.spend.lines.join(' '), /LinkedIn US\$/);
+  assert.notEqual(view.cards.spend.value, 12.5);
 });
 
-test('LinkedIn without rows is No data and keeps spend partial', () => {
+test('spend completeness depends only on Meta Ads and Google Ads', () => {
   const view = buildView(input());
-  const li = view.channels.linkedin;
-  assert.equal(li.status, 'pending');
-  assert.equal(li.reason, 'No LinkedIn Ads rows synced');
-  assert.equal(li.clicks, null);
-  assert.equal(li.complete, false);
-  assert.equal(view.cards.spend.complete, false);
+  assert.equal(view.channels.linkedin.status, 'not_used');
+  assert.equal(view.cards.spend.complete, false, 'Meta and Google have not reported');
+  assert.ok(view.cards.spend.underReview);
+  assert.doesNotMatch(view.cards.spend.underReview.reason, /LinkedIn/);
 });

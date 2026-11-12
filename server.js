@@ -18,6 +18,10 @@ const ads = require('./lib/adloader');
 const executive = require('./lib/executive');
 const targets = require('./lib/targets');
 const funnels = require('./lib/funnels');
+// Read-only readers (approved exceptions #143 / #149) and the Daily Landing Funnel (stored rows only).
+const productMetrics = require('./lib/productMetrics');
+const ga4Range = require('./lib/ga4Range');
+const dailyFunnel = require('./lib/dailyFunnel');
 const assistant = require('./lib/assistant');
 const allowAssistantQuestion = assistant.createLimiter({ max: 10, windowMs: 60 * 1000 });
 
@@ -94,6 +98,31 @@ app.get('/api/executive', async (req, res, next) => {
       ...r, rows: r.rows != null ? r.rows : (Number(r.metrics) || 0) + (Number(r.events) || 0) + (Number(r.snapshots) || 0),
     }));
     res.json(data);
+  } catch (e) { next(e); }
+});
+
+// Product usage (read-only PostHog, no writes, no identifiers). cutoff defaults to yesterday in Bogota.
+app.get('/api/product/metrics', async (req, res) => {
+  try { res.json(await productMetrics.metrics(req.query.cutoff == null ? null : String(req.query.cutoff))); }
+  catch (e) { res.status(Number(e.status) || 500).json({ error: e.status ? e.message : 'Product metrics failed.' }); if (!e.status) console.error('product metrics', e.message); }
+});
+
+// GA4 totals for an exact From/To range (read-only, cached 30 minutes).
+app.get('/api/ga4/range-totals', async (req, res) => {
+  try { res.json(await ga4Range.rangeTotals(String(req.query.from || ''), String(req.query.to || ''))); }
+  catch (e) { res.status(Number(e.status) || 500).json({ error: e.status ? e.message : 'GA4 range request failed.' }); if (!e.status) console.error('ga4 range', e.message); }
+});
+
+// Daily Landing Funnel Report: built only from rows the connectors already stored.
+app.get('/api/daily-funnel', async (req, res, next) => {
+  try {
+    const month = req.query.month == null ? null : String(req.query.month);
+    if (month != null && !dailyFunnel.monthOk(month)) return res.status(400).json({ error: 'month must be a valid calendar month in YYYY-MM format' });
+    res.json(dailyFunnel.build({
+      month, now: new Date(), launch: process.env.LAUNCH_DATE,
+      metricRows: await store.list('metric'), eventRows: await store.list('event'),
+      snapshots: await store.list('snapshot'), sources: await sourcesView(),
+    }));
   } catch (e) { next(e); }
 });
 

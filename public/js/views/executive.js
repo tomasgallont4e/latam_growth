@@ -1,7 +1,11 @@
 'use strict';
 (function (A) {
   const U = A.ui;
-  const state = { month: '', zoom: false, span: 'month', data: null, error: '', loading: false };
+  const state = {
+    month: '', zoom: false, span: 'month', data: null, error: '', loading: false,
+    product: { key: null, status: 'loading' },
+    daily: { open: false, month: '', status: 'idle', data: null, error: '', channel: '', campaign: '' },
+  };
   function activationFunnelOptions() {
     const view = state.data && state.data.view || {};
     return { path: 'marketing_project', from: A.LAUNCH, to: state.data && (state.data.cutoff || view.cutoff || state.data.asOf) || state.month + '-01', exclude: true };
@@ -188,6 +192,111 @@
     return { controls, body: drawn + note };
   }
 
+  // ---------- CEO brief (docs/ceo-brief.md). Logic lives in public/js/ceoBrief.js; this only draws it.
+  function productCutoff(month) {
+    const yesterday = U.addDays(U.today(), -1);
+    const end = U.endOfMonth(month);
+    const cut = end < yesterday ? end : yesterday;
+    return cut < A.LAUNCH || cut < `${month}-01` ? null : cut;
+  }
+  function ensureProduct(month) {
+    const cutoff = productCutoff(month);
+    const key = cutoff || `none:${month}`;
+    if (state.product.key === key) return;
+    if (!cutoff) { state.product = { key, status: 'unavailable', reason: 'This month has no complete day yet.' }; return; }
+    state.product = { key, status: 'loading' };
+    A.api(`api/product/metrics?cutoff=${encodeURIComponent(cutoff)}`).then((d) => {
+      if (state.product.key !== key) return;
+      state.product = { key, status: 'loaded', data: { ...(d || {}), projectDays: (d && d.projectDays) || [] } };
+      A.render();
+    }).catch((e) => {
+      if (state.product.key !== key) return;
+      state.product = { key, status: 'error', error: (e && e.message) || 'request failed' };
+      A.render();
+    });
+  }
+  const BRIEF_EMPTY = { loading: 'Loading…', nodata: 'No data' };
+  function briefValue(t) {
+    if (t.value != null) return U.esc(t.value);
+    const text = t.state === 'waiting' ? `Waiting for event${t.event ? ` · ${t.event}` : ''}` : BRIEF_EMPTY[t.state] || 'No data';
+    return `<span class="kpi-awaiting">${U.esc(text)}</span>`;
+  }
+  function ceoBrief(view) {
+    const B = A.ceoBrief;
+    if (!B) return '';
+    const cards = view.cards || {};
+    const s = cards.signups || {};
+    const start = `${state.month}-01` < A.LAUNCH ? A.LAUNCH : `${state.month}-01`;
+    const goal = state.data.goalAccounts || { month: state.month, from: start, to: view.cutoff || null, value: s.value, goal: s.goal, latam: null, reason: s.reason };
+    const countries = ((view.countries && view.countries.rows) || []).filter((r) => !r.noCountry).map((r) => ({ country: r.country, signups: r.signups, pace: r.pace }));
+    const m = B.build({ month: state.month, goal, product: state.product, spend: cards.spend || {}, cps: cards.cps || {}, countries, changed: (view.changed && view.changed.phrases) || [], dataThrough: view.cutoff });
+    const tile = (t) => `<div class="ceo-tile ceo-tile-${t.tone || 'neutral'}"><div class="ceo-tile-label">${U.esc(t.label)}${t.badge ? ` <span class="ceo-badge ceo-badge-${t.tone || 'neutral'}">${U.esc(t.badge)}</span>` : ''}</div><div class="ceo-tile-value">${briefValue(t)}${t.delta ? ` <span class="ceo-delta ceo-delta-${t.delta.tone}">${U.esc(t.delta.text)}</span>` : ''}</div><div class="ceo-tile-sub">${U.esc(t.sub || '')}</div></div>`;
+    const chip = (c) => `<div class="ceo-chip"><span>${U.esc(c.label)}</span><b>${briefValue(c)}</b><small>${U.esc(c.sub || '')}</small></div>`;
+    const list = (cls, title, icon, items) => `<div class="ceo-list ceo-list-${cls}"><h4>${U.icon(icon)} ${U.esc(title)}</h4><ul>${items.map((i) => `<li>${U.esc(i)}</li>`).join('')}</ul></div>`;
+    return `<section class="card ceo-brief ceo-${m.headline.tone}"><div class="ceo-top"><div><div class="ceo-eyebrow">${U.icon('briefcase')} CEO brief · ${U.esc(m.monthLabel)} · ${U.esc(m.through)}</div><h2 class="ceo-headline">${U.esc(m.headline.text)}</h2>${m.subline ? `<p class="ceo-subline">${U.esc(m.subline)}</p>` : ''}</div><button type="button" class="btn btn-secondary btn-sm ceo-print" data-ceo-print>${U.icon('file-pdf')} Export PDF</button></div>`
+      + `<div class="ceo-kpis">${m.tiles.map(tile).join('')}</div><div class="ceo-strip">${m.strip.map(chip).join('')}</div>`
+      + `<div class="ceo-lists">${list('changed', 'What changed', 'arrow-trend-up', m.changed)}${list('risks', 'Risks & blockers', 'triangle-exclamation', m.risks)}${list('actions', 'Next actions', 'list-check', m.actions)}</div>`
+      + `<p class="ceo-foot">${U.esc(m.foot)}</p></section><div class="ceo-detail-sep"><span>Detail</span></div>`;
+  }
+
+  // ---------- Daily Landing Funnel Report (docs/daily-landing-funnel.md). Folded by default, loaded on open.
+  function ensureDaily(month) {
+    if (state.daily.month === month && state.daily.status !== 'idle') return;
+    state.daily = { ...state.daily, month, status: 'loading', data: null, error: '' };
+    A.api(`api/daily-funnel?month=${encodeURIComponent(month)}`).then((d) => {
+      if (state.daily.month !== month) return;
+      state.daily = { ...state.daily, status: 'loaded', data: d || {} };
+      A.render();
+    }).catch((e) => {
+      if (state.daily.month !== month) return;
+      state.daily = { ...state.daily, status: 'error', error: (e && e.message) || 'request failed' };
+      A.render();
+    });
+  }
+  const dfVal = (v, kind) => (v == null ? '<span class="text-muted">–</span>' : kind === 'money' ? money(v) : U.fmt(v));
+  const DF_STATUS = { loaded: ['success', 'Loaded'], no_data: ['warning', 'No data'], not_connected: ['neutral', 'Not connected'], pending: ['warning', 'Pending'] };
+  function dailyBody() {
+    const d = state.daily;
+    if (d.status === 'loading' || d.status === 'idle') return '<p class="card-note">Loading…</p>';
+    if (d.status === 'error') return U.empty('Could not load the daily report', U.esc(d.error), 'triangle-exclamation');
+    const r = d.data || {};
+    if (r.status !== 'loaded') return U.empty('No data yet', U.esc(r.reason || 'No day in this month yet.'), 'calendar-day');
+    const stages = (r.stages || []).map((s) => {
+      const [kind, text] = DF_STATUS[s.status] || ['neutral', s.status || 'Unknown'];
+      return `<li><b>${U.esc(s.name)}</b> ${U.pill(kind, text, true)} <small class="text-muted">${U.esc(s.source || '')}${s.reason ? ` · ${U.esc(s.reason)}` : ''}</small></li>`;
+    }).join('');
+    const rows = r.rows || [];
+    const channels = [...new Set(rows.map((x) => x.channel))].sort();
+    const campaigns = [...new Set(rows.filter((x) => !d.channel || x.channel === d.channel).map((x) => x.campaign))].sort();
+    const opt = (list, cur, all) => `<option value="">${all}</option>${list.map((v) => `<option value="${U.esc(v)}"${v === cur ? ' selected' : ''}>${U.esc(v)}</option>`).join('')}`;
+    const filters = `<div class="form-row"><label class="field"><span>Channel</span><select data-df-channel aria-label="Channel">${opt(channels, d.channel, 'All channels')}</select></label><label class="field"><span>Campaign</span><select data-df-campaign aria-label="Campaign">${opt(campaigns, d.campaign, 'All campaigns')}</select></label></div>`;
+    const cols = [
+      { t: 'Spend', num: 1, f: (x) => dfVal(x.spend, 'money') },
+      { t: 'Impressions', num: 1, f: (x) => dfVal(x.impressions) },
+      { t: 'Clicks', num: 1, f: (x) => dfVal(x.clicks) },
+      { t: 'Sessions', num: 1, f: (x) => dfVal(x.sessions) },
+      { t: 'Forms', num: 1, f: (x) => dfVal(x.forms) },
+      { t: 'Accounts', num: 1, f: (x) => dfVal(x.accounts) },
+      { t: 'Projects', num: 1, f: (x) => dfVal(x.projects) },
+    ];
+    const totals = U.table([
+      { t: 'Day', f: (x) => `${U.esc(U.dshort(x.date))}${x.partial ? ' <span class="pill pill-neutral">Today · partial</span>' : ''}` },
+      ...cols,
+      { t: 'Cost per account', num: 1, f: (x) => dfVal(x.metrics && x.metrics.costPerAccountBlended, 'money') },
+    ], (r.days || []).slice().reverse());
+    const filtered = rows.filter((x) => (!d.channel || x.channel === d.channel) && (!d.campaign || x.campaign === d.campaign));
+    const detail = filtered.length
+      ? U.table([{ t: 'Day', f: (x) => U.esc(U.dshort(x.date)) }, { t: 'Channel', f: (x) => U.esc(x.channel) }, { t: 'Campaign', f: (x) => U.esc(x.campaign) }, ...cols], filtered.slice(0, 200))
+      : U.empty('No rows', 'No row matches this channel and campaign.', 'filter');
+    const notes = (r.notes || []).map((n) => `<li>${U.esc(n)}</li>`).join('');
+    return `<ul class="cf-notes">${stages}</ul><h4 class="cf-sub">Daily totals</h4>${totals}<h4 class="cf-sub">By day, channel and campaign</h4>${filters}${detail}${filtered.length > 200 ? `<p class="card-note">Showing the first 200 of ${U.fmt(filtered.length)} rows.</p>` : ''}${notes ? `<ul class="cf-notes">${notes}</ul>` : ''}`;
+  }
+  function dailySection() {
+    const body = state.daily.open ? dailyBody() : '';
+    return U.section('Daily Landing Funnel Report', `Ad → landing → form → account → project, per day × channel × campaign · ${U.esc(U.monthName(state.month))} · America/Bogota · read-only`,
+      U.card({ title: 'Daily Landing Funnel Report', body: `<details class="collapsible" data-df-toggle${state.daily.open ? ' open' : ''}><summary>${U.icon('chevron-right', 'fa-solid', 'chev')}Open the daily report by date, channel and campaign</summary><div class="collapsible-body">${body}</div></details>` }));
+  }
+
   function render() {
     if (!state.month) state.month = bogotaMonth();
     if (state.error) return U.section('Executive', '', U.card({ title: 'Executive', body: U.empty('Could not load Executive', state.error, 'triangle-exclamation') }));
@@ -208,6 +317,8 @@
       return U.section('Executive', 'Loading the selected month…', U.card({ title: 'Executive', body: '<p class="card-note">Loading…</p>' }));
     }
     const view = state.data.view || {};
+    ensureProduct(state.month);
+    if (state.daily.open) ensureDaily(state.month);
     const cards = view.cards || {};
     const options = monthOptions(state.month).map((item) => `<option value="${U.esc(item.id)}"${item.id === state.month ? ' selected' : ''}>${U.esc(item.label)}</option>`).join('');
     const signups = cards.signups || {};
@@ -238,8 +349,12 @@
     const changed = view.changed || { phrases: [] };
     const notes = (changed.phrases || []).map((line) => `<p>${U.esc(line)}</p>`).join('') || '<p>No evidence-backed changes for this period.</p>';
     return U.section('Executive', 'Monthly targets, Ads coverage and confirmed product outcomes.', header)
+      + ceoBrief(view)
+      + '<div class="exec-detail">'
       + U.section('Management indicators', 'Source-native metrics stay separate. Pending outcomes need verified event coverage and identity linkage.', U.kpiRow(tiles, 3))
-      + U.section('Management readout', 'Evidence from the selected month.', U.card({ title: 'What changed', body: notes }));
+      + dailySection()
+      + U.section('Management readout', 'Evidence from the selected month.', U.card({ title: 'What changed', body: notes }))
+      + '</div>';
   }
 
   function mount(el) {
@@ -247,6 +362,7 @@
     if (month) month.addEventListener('change', () => {
       state.month = month.value;
       state.data = null;
+      state.daily = { ...state.daily, month: '', status: 'idle', data: null, error: '', channel: '', campaign: '' };
       state.error = '';
       A.render();
     });
@@ -257,6 +373,19 @@
     const zoom = el.querySelector('[data-exec-zoom]');
     if (zoom) zoom.addEventListener('click', () => { state.zoom = !state.zoom; A.render(); });
     if (A.posthogFunnel) A.posthogFunnel.mount(el, activationFunnelOptions());
+    const print = el.querySelector('[data-ceo-print]');
+    if (print) print.addEventListener('click', () => window.print());
+    const df = el.querySelector('[data-df-toggle]');
+    if (df) df.addEventListener('toggle', () => {
+      if (df.open === state.daily.open) return;
+      state.daily.open = df.open;
+      if (df.open) ensureDaily(state.month);
+      A.render();
+    });
+    const ch = el.querySelector('[data-df-channel]');
+    if (ch) ch.addEventListener('change', () => { state.daily.channel = ch.value; state.daily.campaign = ''; A.render(); });
+    const ca = el.querySelector('[data-df-campaign]');
+    if (ca) ca.addEventListener('change', () => { state.daily.campaign = ca.value; A.render(); });
   }
 
   A.views.executive = { title: 'Executive', render, mount };

@@ -46,11 +46,10 @@ test('impressions add paid and organic with the breakdown visible', () => {
   assert.equal(rows.find((r) => r.network === 'LinkedIn page').value, 200);
 });
 
-test('a network that has not reported is pending and makes the stage Under review', () => {
+test('LinkedIn Ads is not used, so it never appears as a pending paid network', () => {
   const stage = stageOf(buildCampaignFunnel(input()), 'impressions');
-  assert.equal(stage.underReview.label, 'Under review');
-  assert.match(stage.underReview.reason, /LinkedIn Ads/);
-  assert.equal(stage.breakdowns[0].rows.find((r) => r.network === 'LinkedIn Ads').status, 'pending');
+  assert.equal(stage.breakdowns[0].rows.some((r) => r.network === 'LinkedIn Ads'), false);
+  assert.ok(!stage.underReview || !/LinkedIn Ads/.test(stage.underReview.reason));
 });
 
 test('clicks use Meta outbound clicks, never all-clicks, and convert against paid impressions', () => {
@@ -85,13 +84,14 @@ test('click-to-session conversion uses only campaigns matched by utm_campaign', 
   assert.equal(stage.cost.value, 1.5);
 });
 
-test('cost per result uses known spend and flags it as partial while a network is pending', () => {
+test('cost per result uses Meta Ads + Google Ads spend and is complete when both reported', () => {
   const funnel = buildCampaignFunnel(input());
   assert.equal(funnel.spend.known, 50);
-  assert.equal(funnel.spend.complete, false);
+  assert.equal(funnel.spend.complete, true);
+  assert.deepEqual(funnel.spend.pending, []);
   const clicks = stageOf(funnel, 'clicks');
   assert.equal(clicks.cost.value, 1);
-  assert.equal(clicks.cost.partial, true);
+  assert.equal(clicks.cost.partial, false);
 });
 
 test('HubSpot and PostHog cross only through the email HMAC', () => {
