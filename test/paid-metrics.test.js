@@ -541,8 +541,9 @@ test('Overview 7-step funnel shows % between steps, the weakest step and the cou
   A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true }] });
   const html = A.views.overview.render();
   assert.match(html, /Funnel · 7 steps/);
-  assert.match(html, /Credits loaded/);
-  assert.match(html, /No credits event is synced yet/);
+  assert.match(html, /Logins/);
+  assert.match(html, /No signed_in event is synced yet/);
+  assert.doesNotMatch(html, /Credits loaded/);
   assert.match(html, /Weakest step/);
   assert.match(html, /continue</);
   assert.match(html, /id="goal-country"/);
@@ -550,6 +551,17 @@ test('Overview 7-step funnel shows % between steps, the weakest step and the cou
   const country = A.views.overview.render();
   assert.match(country, /Not split by country/);
   assert.match(country, /option value="Colombia" selected/);
+});
+
+test('Overview shows the monthly 500K chart: one clickable bar per month, selected month highlighted', () => {
+  const A = dashboard();
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  const html = A.views.overview.render();
+  assert.match(html, /goal-month-svg/);
+  const bars = html.match(/data-goal-month="\d{4}-\d{2}"/g) || [];
+  assert.equal(bars.length, A.months().length);
+  const first = A.months()[0].id;
+  assert.match(A.goalMonthChart(first), new RegExp(`gm-bar is-sel" data-goal-month="${first}"`));
 });
 
 test('Overview and Acquisition compare the two latest complete buckets, not a partial current bucket', () => {

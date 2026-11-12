@@ -16,7 +16,7 @@ A daily report in the Executive view, placed right below "Executive funnel · 7 
 | Landing sessions | GA4 `executive_landing_utm_N`: session source / medium / campaign on go.think4ever.com | GA4 property time zone | Loaded |
 | Forms / sign-ups | HubSpot `form_signup` events, external contacts, UTM properties | **UTC** day of `createdate` | Loaded |
 | Accounts created | PostHog first `$identify`, External, all hosts (`ph_accounts`). Campaign split from `identity_cohort` | PostHog project time zone | Loaded |
-| Credits loaded | PostHog `ph_event` whose name contains "credit" | PostHog project time zone | **Not connected**: no credits event is synced |
+| Logins | PostHog `ph_event` = `signed_in` (entries to the platform). Event count, not people; returning accounts included; internal not separated; no campaign split. Shown as a column in Daily totals | PostHog project time zone | Loaded (replaces "Credits loaded") |
 | Projects created | PostHog first `project_created` per person (`identity_cohort`) | PostHog project time zone | Loaded |
 
 ## Calculations (only when numerator and denominator exist)
@@ -58,7 +58,7 @@ Each source stores its own calendar day, and the report doesn't re-bucket it, si
 
 | Gap | What is needed |
 |-----|----------------|
-| Credits loaded | The exact PostHog event name (for example `credits_purchased`) added to the PostHog sync, approved as a connector change. Until then the stage shows Not connected. |
+| Logins per person | `signed_in` arrives as a daily event count. Unique people logging in, or External-only logins, would need a person-level query (a connector change that needs approval). |
 | LinkedIn Ads | A LinkedIn Marketing API connection (ad account + `r_ads_reporting`). Only page analytics are synced today, so spend is "known spend only". |
 | Days strictly in Bogota | HubSpot: store the Bogota day of `createdate`. PostHog: set the project time zone to America/Bogota, or use `toDate(timestamp, 'America/Bogota')`. GA4, Meta and Google Ads: set the property and account time zones to America/Bogota. All of these are connector or account changes that need approval. |
 | More campaign joins | Use the exact ad campaign name as `utm_campaign` in every ad URL. |

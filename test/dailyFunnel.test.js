@@ -131,14 +131,17 @@ test('Meta without outbound coverage leaves clicks and CPC unavailable', () => {
   assert.equal(day(r, '2026-11-04').spend, null, 'without a synced window an empty day is No data');
 });
 
-test('credits stay Not connected until a credits event is synced', () => {
+test('logins stay Not connected until signed_in is synced, then count signed_in events per day', () => {
   const r = build(input());
-  assert.equal(stage(r, 'credits').status, 'not_connected');
-  assert.equal(day(r, '2026-11-03').credits, null);
-  const withCredits = build(input({ metrics: [m('posthog', 'ph_event', '2026-11-03', 7, { dim: 'event', dim_value: 'credits_loaded' })] }));
-  assert.equal(stage(withCredits, 'credits').status, 'loaded');
-  assert.equal(day(withCredits, '2026-11-03').credits, 7);
-  assert.equal(day(withCredits, '2026-11-04').credits, 0);
+  assert.equal(stage(r, 'logins').status, 'not_connected');
+  assert.equal(day(r, '2026-11-03').logins, null);
+  const withLogins = build(input({ metrics: [
+    m('posthog', 'ph_event', '2026-11-03', 7, { dim: 'event', dim_value: 'signed_in' }),
+    m('posthog', 'ph_event', '2026-11-03', 3, { dim: 'event', dim_value: 'project_created' }),
+  ] }));
+  assert.equal(stage(withLogins, 'logins').status, 'loaded');
+  assert.equal(day(withLogins, '2026-11-03').logins, 7);
+  assert.equal(day(withLogins, '2026-11-04').logins, 0);
 });
 
 test('LinkedIn Ads is not connected for impressions but never makes spend partial', () => {

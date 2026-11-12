@@ -8,12 +8,17 @@ The source views (Data Sources, Paid, Social, etc.) are for auditing. This view 
 
 | # | Stage | Source | Volume | vs previous stage | Target key (Targets) | Cost per result |
 |---|-------|--------|--------|-------------------|----------------------|-----------------|
-| 1 | Ad and page impressions | Meta Ads, Google Ads, LinkedIn Ads (pending); Facebook page, Instagram, LinkedIn page | Paid + organic, reported impressions | — | `total_impressions` (paid only) | CPM (paid) |
+| 1 | Ad and page impressions | Meta Ads, Google Ads (LinkedIn Ads not used); Facebook page, Instagram, LinkedIn page | Paid + organic, reported impressions (not people) | — | `total_impressions` (paid only) | CPM (paid) |
 | 2 | Clicks to the landing | Meta `outbound_clicks`, Google Ads clicks | Outbound clicks only | Clicks ÷ paid impressions of the same networks | `clicks` | Spend of the same networks ÷ clicks |
 | 3 | Landing sessions | GA4, `go.think4ever.com` only | All go-host sessions | Campaign-matched: sessions ÷ ad clicks for campaigns whose name equals `utm_campaign` | `landing_sessions` | Spend of matched campaigns ÷ their sessions |
-| 4 | Form submissions | HubSpot external contacts (+ GA4 `sign_up` as a secondary figure) | Forms | Forms ÷ go-host sessions | `crm_contacts` | Blended |
-| 5 | Accounts created · verified | PostHog first `$identify`, approved hosts, external; `account_verified`; HMAC match with HubSpot | Created accounts (verified and form-matched shown beside it) | Accounts ÷ forms (blended) | `platform_signups` | Blended |
-| 6 | Active builders | PostHog `project_created` (from the identity cohort) | Accounts with a real project | Builders ÷ accounts created in the window | — | Blended |
+| 4 | Form submissions | HubSpot external contacts | Forms | Forms ÷ go-host sessions | `crm_contacts` | Blended |
+| 5 | Accounts created (sign-up) | PostHog first `$identify`, all hosts, External (internal excluded); HMAC match with HubSpot | Created accounts (form-matched shown beside it). Same number as the 500K goal | Accounts ÷ forms (blended) | `platform_signups` | Blended |
+| 6 | Logins | PostHog `signed_in` (entry to the platform) | Login events | Logins ÷ accounts created | — | Blended: spend ÷ logins |
+| 7 | Projects created | PostHog `project_created`; day-0 and 14-day builders from the identity cohort | Projects | Projects ÷ logins | — | Blended |
+
+"Credits loaded" was removed from the funnel (Nov 2026): no credits event reaches the dashboard, and the product decision is sign-up → login → project.
+
+**Limits of the Logins stage.** It counts `signed_in` events, not people. One person can log in many times, accounts created before the window are included, and the event count does not separate internal accounts. Logins ÷ accounts can therefore exceed 100%, and the stage is always marked **Under review** when it has data. Projects ÷ logins is also events ÷ events, not a tracked cohort.
 
 Pace follows the Targets rule: the month target is prorated to the days elapsed. Green means at least 100%, yellow 90% to under 100%, and red under 90%.
 

@@ -264,7 +264,9 @@
     ];
     const totals = U.table([
       { t: 'Day', f: (x) => `${U.esc(U.dshort(x.date))}${x.partial ? ' <span class="pill pill-neutral">Today · partial</span>' : ''}` },
-      ...cols,
+      ...cols.slice(0, 6),
+      { t: 'Logins', num: 1, f: (x) => dfVal(x.logins) },
+      ...cols.slice(6),
       { t: 'Cost per account', num: 1, f: (x) => dfVal(x.metrics && x.metrics.costPerAccountBlended, 'money') },
     ], (r.days || []).slice().reverse());
     const filtered = rows.filter((x) => (!d.channel || x.channel === d.channel) && (!d.campaign || x.campaign === d.campaign));
@@ -350,6 +352,7 @@
       + U.section('Campaign funnel', 'Seven stages from ad and page impressions to projects created. % is versus the previous stage; open a stage to see each channel, platform and campaign.', U.card({ cls: 'cf-card', title: 'Executive funnel · 7 stages', sub: cfSub, body: campaignFunnelHtml(view.campaignFunnel) }))
       + dailySection()
       + U.section('Accounts created this month vs goal', state.span === 'launch' ? 'Cumulative External accounts created since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s accounts created. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Accounts created vs goal', right: drawn.controls, body: `<p class="card-note">Sources: PostHog (accounts created) · monthly goals (Targets)</p>${drawn.body}` }))
+      + (A.goalMonthChart ? U.section('LATAM 500K goal by month', 'External accounts created per month as % of the monthly goal · internal always excluded · the same number as Overview · click a month to select it.', U.card({ cls: 'chart-card', title: 'LATAM 500K goal by month', sub: `Selected: ${U.esc(U.monthName(state.month))}`, body: A.goalMonthChart(state.month) })) : '')
       + U.section('What changed', 'Evidence from the selected month.', U.card({ title: 'What changed', body: research + notes }))
       + U.section('Marketing-to-Project Activation Funnel', 'Product activation in PostHog, after sign-up.', U.card({ title: 'Marketing-to-Project Activation Funnel', sub: 'Saved PostHog ordered funnel · excludes internal and test accounts. This is product activation, not an advertising funnel.', body: activationFunnelHtml }))
       + '</div>';
@@ -363,6 +366,7 @@
     const zoom = el.querySelector('[data-exec-zoom]');
     if (zoom) zoom.addEventListener('click', () => { state.zoom = !state.zoom; A.render(); });
     if (A.posthogFunnel) A.posthogFunnel.mount(el, activationFunnelOptions());
+    if (A.bindGoalMonthChart) A.bindGoalMonthChart(el);
     const print = el.querySelector('[data-ceo-print]');
     if (print) print.addEventListener('click', () => window.print());
     const df = el.querySelector('[data-df-toggle]');

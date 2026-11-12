@@ -37,7 +37,7 @@ function input({ metrics = [], snapshots = [], events = [], dropSnapshots = [] }
 
 test('the funnel has seven stages in the agreed order', () => {
   const funnel = buildCampaignFunnel(input());
-  assert.deepEqual(funnel.stages.map((s) => s.id), ['impressions', 'clicks', 'sessions', 'forms', 'accounts', 'credits', 'projects']);
+  assert.deepEqual(funnel.stages.map((s) => s.id), ['impressions', 'clicks', 'sessions', 'forms', 'accounts', 'logins', 'projects']);
 });
 
 test('impressions add paid and organic with the breakdown visible', () => {
@@ -143,29 +143,39 @@ test('HubSpot and PostHog cross only through the email HMAC', () => {
   assert.equal(accounts.extras.find((x) => /HMAC/.test(x.label)).value, 1);
 });
 
-test('credits loaded stays No data yet until a credits event is synced', () => {
-  const stage = stageOf(buildCampaignFunnel(input()), 'credits');
+test('logins stay No data yet until a signed_in event is synced', () => {
+  const stage = stageOf(buildCampaignFunnel(input()), 'logins');
   assert.equal(stage.status, 'pending');
   assert.equal(stage.value, null);
-  assert.match(stage.reason, /credits event/i);
+  assert.match(stage.reason, /signed_in/);
 });
 
-test('credits loaded counts PostHog events whose name contains "credit"', () => {
+test('logins count PostHog signed_in events only and are flagged as events, not people', () => {
   const stage = stageOf(buildCampaignFunnel(input({
     metrics: [m('posthog', 'ph_event', 6, { dim: 'event', dim_value: 'credits_purchased' }), m('posthog', 'ph_event', 9, { dim: 'event', dim_value: 'signed_in' })],
-  })), 'credits');
-  assert.equal(stage.value, 6);
+  })), 'logins');
+  assert.equal(stage.status, 'loaded');
+  assert.equal(stage.value, 9);
+  assert.match(stage.underReview.reason, /not people/);
 });
 
-test('projects created counts project_created events; the step % needs credits data', () => {
+test('projects created counts project_created events; the step % is versus logins', () => {
   const funnel = buildCampaignFunnel(input({
     metrics: [m('posthog', 'ph_event', 7, { dim: 'event', dim_value: 'project_created' }), m('posthog', 'ph_event', 40, { dim: 'event', dim_value: 'signed_in' })],
   }));
   const stage = stageOf(funnel, 'projects');
   assert.equal(stage.status, 'loaded');
   assert.equal(stage.value, 7);
+  assert.equal(stage.conversion.value, 7 / 40);
+});
+
+test('projects step % waits for logins when signed_in is not synced', () => {
+  const stage = stageOf(buildCampaignFunnel(input({
+    metrics: [m('posthog', 'ph_event', 7, { dim: 'event', dim_value: 'project_created' })],
+  })), 'projects');
+  assert.equal(stage.value, 7);
   assert.equal(stage.conversion.value, null);
-  assert.match(stage.conversion.reason, /Credits loaded/);
+  assert.match(stage.conversion.reason, /Logins/);
 });
 
 test('builder cohort tracks day 0 and the first 14 days, with mature cohorts only for the rate', () => {
@@ -226,7 +236,7 @@ test('Executive month response includes view.campaignFunnel with seven stages', 
   const data = await build(store, '2026-11', new Date('2026-11-04T17:00:00.000Z'));
   const funnel = data.view.campaignFunnel;
   assert.equal(funnel.status, 'loaded');
-  assert.deepEqual(funnel.stages.map((s) => s.id), ['impressions', 'clicks', 'sessions', 'forms', 'accounts', 'credits', 'projects']);
+  assert.deepEqual(funnel.stages.map((s) => s.id), ['impressions', 'clicks', 'sessions', 'forms', 'accounts', 'logins', 'projects']);
   assert.equal(funnel.stages.find((s) => s.id === 'accounts').value, 5);
   assert.equal(funnel.stages.find((s) => s.id === 'sessions').value, 335);
 });

@@ -30,7 +30,58 @@
     }
     return { value: Number(row.users) || 0, lines: [`GA4 users on go.think4ever.com, deduplicated for ${A.ui.win(from, to)}.`, row.subject_to_thresholding ? 'GA4 applied thresholding; the value may be rounded.' : null, 'GA4 traffic can include internal visits.'] };
   }
-  // Monthly 500K goal for the global Month, plus one bar per month since launch.
+  // Monthly 500K chart (memory #141): one bar per month since launch, height = % of that month's goal.
+  // Same numbers as D.goalAccounts, so Overview and Executive always agree. A click (or Enter/Space)
+  // on a bar sets the global Month; call A.bindGoalMonthChart(el) after render.
+  function nice(v) {
+    if (!(v > 0)) return 0.01;
+    const e = Math.pow(10, Math.floor(Math.log10(v))), m = v / e;
+    return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * e;
+  }
+  A.goalMonthChart = (selected = A.S.goalMonth) => {
+    const U = A.ui, D = A.D;
+    const pct = (r) => (A.charts && A.charts.sharePct ? A.charts.sharePct(r) : U.pct(r, 1));
+    const months = A.months().map((m) => ({ ...m, g: D.goalAccounts(m.id) }));
+    if (!months.some((m) => m.g.goal > 0)) return U.empty('No monthly goal saved', 'Set the 500K goal in Targets to chart progress by month.', 'bullseye');
+    const ratio = (m) => (m.g.status === 'loaded' && m.g.goal > 0 ? m.g.value / m.g.goal : null);
+    const peak = Math.max(0, ...months.map(ratio).filter((v) => v != null));
+    const max = nice(peak * 1.15);
+    const W = 1000, H = 250, L = 60, R = 16, T = 24, B = 212;
+    const y = (v) => B - (v / max) * (B - T);
+    const step = (W - L - R) / months.length;
+    const bw = Math.min(step * 0.56, 88);
+    let g = '';
+    for (let k = 0; k <= 4; k++) {
+      const v = (max * k) / 4, yy = y(v).toFixed(1);
+      g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text x="${L - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${U.esc(pct(v))}</text>`;
+    }
+    if (max >= 1) g += `<line class="gm-target" x1="${L}" x2="${W - R}" y1="${y(1).toFixed(1)}" y2="${y(1).toFixed(1)}"><title>100% of the monthly goal</title></line>`;
+    months.forEach((m, j) => {
+      const r = ratio(m), sel = m.id === selected;
+      const x0 = L + j * step, cx = (x0 + step / 2).toFixed(1);
+      const tip = m.g.status === 'loaded'
+        ? `${m.label} · ${U.fmt(m.g.value)} accounts created${m.g.goal ? ` · ${pct(r)} of ${U.fmt(m.g.goal)}` : ''}`
+        : `${m.label} · Pending: ${m.g.reason || 'coverage unavailable'}`;
+      let inner = `<rect class="day-hit" x="${x0.toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"/>`;
+      if (r != null) {
+        const top = y(Math.min(r, max));
+        inner += `<rect class="goal-col" x="${(x0 + (step - bw) / 2).toFixed(2)}" y="${top.toFixed(2)}" width="${bw.toFixed(2)}" height="${Math.max(0.8, B - top).toFixed(2)}"/>`;
+        inner += `<text class="gm-val" x="${cx}" y="${(top - 6).toFixed(1)}" text-anchor="middle">${U.esc(pct(r))}</text>`;
+      } else inner += `<text class="gm-val" x="${cx}" y="${B - 6}" text-anchor="middle">Pending</text>`;
+      inner += `<text x="${cx}" y="${H - 14}" text-anchor="middle">${U.esc(m.label)}</text>`;
+      g += `<g class="gm-bar${sel ? ' is-sel' : ''}" data-goal-month="${U.esc(m.id)}" tabindex="0" role="button" aria-pressed="${sel}" aria-label="${U.esc(tip)}"><title>${U.esc(tip)}</title>${inner}</g>`;
+    });
+    return `<div class="chart-scroll"><svg class="chart-svg goal-month-svg" viewBox="0 0 ${W} ${H}" role="group" aria-label="Accounts created by month as a percent of the monthly goal">${g}</svg></div><p class="card-note">Bars: External accounts created in each month ÷ that month's goal (internal accounts always excluded). The highlighted bar is the selected Month; click a bar to switch the Month for every view.</p>`;
+  };
+  A.bindGoalMonthChart = (el) => {
+    el.querySelectorAll('[data-goal-month]').forEach((node) => {
+      const pick = () => { const id = node.getAttribute('data-goal-month'); if (id && id !== A.S.goalMonth) A.setGoalMonth(id); };
+      node.addEventListener('click', pick);
+      node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+    });
+  };
+
+  // Monthly 500K goal for the global Month, the monthly chart, and one row per month since launch.
   function goalCard() {
     const U = A.ui, D = A.D, S = A.S;
     const month = S.goalMonth;
@@ -54,7 +105,7 @@
     return U.card({
       cls: 'acct-hero-card', title: `LATAM 500K goal · ${U.monthName(month)}`,
       sub: `Monthly · ${span} · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota`,
-      body: `<div class="overview-metric-value">${value}</div><p class="card-note">${U.esc(pctLine)}</p>${latam ? `<p class="card-note">${U.esc(latam)}</p>` : ''}<h4 class="cf-sub">Accounts created by month</h4>${history}<button class="btn btn-secondary btn-sm" type="button" data-go="targets">View targets</button>`,
+      body: `<div class="overview-metric-value">${value}</div><p class="card-note">${U.esc(pctLine)}</p>${latam ? `<p class="card-note">${U.esc(latam)}</p>` : ''}<h4 class="cf-sub">% of the monthly goal by month</h4>${A.goalMonthChart(month)}<h4 class="cf-sub">Accounts created by month</h4>${history}<button class="btn btn-secondary btn-sm" type="button" data-go="targets">View targets</button>`,
     });
   }
 
@@ -106,11 +157,11 @@
       ? D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', from, to)
       : D.sum('posthog', 'ph_accounts_geo', inCountry, from, to);
     steps.push({ name: 'Accounts created', src: 'PostHog · first $identify · External', n: accounts, note: 'Account coverage unavailable; not zero' });
-    // 6. Credits loaded (PostHog events whose name contains "credit")
-    const creditNames = [...new Set(metricsList().filter((r) => r.source === 'posthog' && r.metric === 'ph_event' && /credit/i.test(String(r.dim_value || ''))).map((r) => r.dim_value))];
-    if (!creditNames.length) steps.push({ name: 'Credits loaded', src: 'PostHog · credits event', n: null, note: 'No credits event is synced yet' });
-    else if (!all) steps.push(split('Credits loaded', `PostHog · ${creditNames.join(', ')}`));
-    else steps.push({ name: 'Credits loaded', src: `PostHog · ${creditNames.join(', ')}`, n: D.sum('posthog', 'ph_event', (r) => creditNames.includes(r.dim_value), from, to) });
+    // 6. Logins (PostHog signed_in events; entries to the platform; events, not people)
+    const loginsSynced = metricsList().some((r) => r.source === 'posthog' && r.metric === 'ph_event' && r.dim_value === 'signed_in');
+    if (!loginsSynced) steps.push({ name: 'Logins', src: 'PostHog · signed_in', n: null, note: 'No signed_in event is synced yet' });
+    else if (!all) steps.push(split('Logins', 'PostHog · signed_in'));
+    else steps.push({ name: 'Logins', src: 'PostHog · signed_in (events)', n: D.sum('posthog', 'ph_event', (r) => r.dim_value === 'signed_in', from, to) });
     // 7. Projects created (PostHog project_created)
     if (!all) steps.push(split('Projects created', 'PostHog · project_created'));
     else steps.push({ name: 'Projects created', src: 'PostHog · project_created', n: D.has('posthog', 'ph_event') ? D.sum('posthog', 'ph_event', (r) => r.dim_value === 'project_created', from, to) : null, note: 'PostHog events not synced' });
@@ -126,7 +177,7 @@
       ? `Weakest step: ${steps[weak - 1].name} → ${steps[weak].name}, ${U.pct(steps[weak].n / steps[weak - 1].n, 1)} continue.`
       : 'The weakest step appears once two consecutive steps have data.';
     const picker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country"><option value="all"${country === 'all' ? ' selected' : ''}>All countries</option>${options.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
-    const note = `<p class="card-note">Each step comes from its own source and is not linked person by person, so the % between steps is indicative. Accounts created is the same number as the 500K goal (External, internal excluded). ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, credits and projects; impressions only when the ad platforms store a country split.`}</p>`;
+    const note = `<p class="card-note">Each step comes from its own source and is not linked person by person, so the % between steps is indicative. Accounts created is the same number as the 500K goal (External, internal excluded). Logins count signed_in events, not people, and include returning accounts, so Logins ÷ accounts can exceed 100%. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
     return U.card({
       cls: 'chart-card', title: 'Funnel · 7 steps',
       sub: `${U.win(from, to)} · ${country === 'all' ? 'All countries' : U.esc(country)} · % versus the previous step`,
@@ -178,6 +229,7 @@
   }
   function mount(el) {
     A.assistant.mount(el);
+    A.bindGoalMonthChart(el);
     const pick = el.querySelector('#goal-country');
     if (pick) pick.addEventListener('change', () => { A.S.overviewCountry = pick.value; A.render(); });
   }
