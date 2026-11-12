@@ -11,24 +11,6 @@
     return { path: 'marketing_project', from: A.LAUNCH, to: state.data && (state.data.cutoff || view.cutoff || state.data.asOf) || state.month + '-01', exclude: true };
   }
 
-  function bogotaMonth() {
-    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).formatToParts(new Date()).map((part) => [part.type, part.value]));
-    const month = `${parts.year}-${parts.month}`;
-    return month < A.LAUNCH.slice(0, 7) ? A.LAUNCH.slice(0, 7) : month;
-  }
-  function monthOptions(selected) {
-    const end = bogotaMonth();
-    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const out = [];
-    let ym = A.LAUNCH.slice(0, 7);
-    while (ym <= end) {
-      out.push({ id: ym, label: `${MON[Number(ym.slice(5)) - 1]} ${ym.slice(0, 4)}` });
-      const [year, month] = ym.split('-').map(Number);
-      ym = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
-    }
-    if (selected && !out.some((item) => item.id === selected)) out.push({ id: selected, label: selected });
-    return out;
-  }
   function stamp(value) {
     if (!value) return '';
     const date = new Date(value);
@@ -225,9 +207,8 @@
     const B = A.ceoBrief;
     if (!B) return '';
     const cards = view.cards || {};
-    const s = cards.signups || {};
-    const start = `${state.month}-01` < A.LAUNCH ? A.LAUNCH : `${state.month}-01`;
-    const goal = state.data.goalAccounts || { month: state.month, from: start, to: view.cutoff || null, value: s.value, goal: s.goal, latam: null, reason: s.reason };
+    // Same Accounts created number as the Overview 500K card (External, all hosts, internal always excluded).
+    const goal = A.D.goalAccounts(state.month);
     const countries = ((view.countries && view.countries.rows) || []).filter((r) => !r.noCountry).map((r) => ({ country: r.country, signups: r.signups, pace: r.pace }));
     const m = B.build({ month: state.month, goal, product: state.product, spend: cards.spend || {}, cps: cards.cps || {}, countries, changed: (view.changed && view.changed.phrases) || [], dataThrough: view.cutoff });
     const tile = (t) => `<div class="ceo-tile ceo-tile-${t.tone || 'neutral'}"><div class="ceo-tile-label">${U.esc(t.label)}${t.badge ? ` <span class="ceo-badge ceo-badge-${t.tone || 'neutral'}">${U.esc(t.badge)}</span>` : ''}</div><div class="ceo-tile-value">${briefValue(t)}${t.delta ? ` <span class="ceo-delta ceo-delta-${t.delta.tone}">${U.esc(t.delta.text)}</span>` : ''}</div><div class="ceo-tile-sub">${U.esc(t.sub || '')}</div></div>`;
@@ -298,13 +279,20 @@
   }
 
   function render() {
-    if (!state.month) state.month = bogotaMonth();
+    // The page follows the global top-bar Month (memory #141).
+    const month = A.S.goalMonth || A.bogotaMonth();
+    if (state.month !== month) {
+      state.month = month;
+      state.data = null;
+      state.error = '';
+      state.daily = { ...state.daily, month: '', status: 'idle', data: null, error: '', channel: '', campaign: '' };
+    }
     if (state.error) return U.section('Executive', '', U.card({ title: 'Executive', body: U.empty('Could not load Executive', state.error, 'triangle-exclamation') }));
     if (!state.data || state.data.month !== state.month) {
       if (!state.loading) {
         state.loading = true;
         const requested = state.month;
-        A.api(`api/executive?month=${encodeURIComponent(requested)}`).then((data) => {
+        A.api(`api/executive?month=${encodeURIComponent(requested)}&goalMonth=${encodeURIComponent(requested)}`).then((data) => {
           if (state.month === requested) { state.data = data; state.error = ''; }
           state.loading = false;
           A.render();
@@ -320,13 +308,13 @@
     ensureProduct(state.month);
     if (state.daily.open) ensureDaily(state.month);
     const cards = view.cards || {};
-    const options = monthOptions(state.month).map((item) => `<option value="${U.esc(item.id)}"${item.id === state.month ? ' selected' : ''}>${U.esc(item.label)}</option>`).join('');
+
     const signups = cards.signups || {};
     const spend = cards.spend || {};
     const pendingReason = (item, fallback) => U.esc(item.reason || fallback);
     const loaded = view.lastLoad ? ` · last load ${stamp(view.lastLoad)}` : '';
     const cutoff = view.cutoff ? `Data through ${longDate(view.cutoff)}${loaded}` : ((cards.signups && cards.signups.reason) || 'No complete day in this month yet');
-    const header = `<div class="form-row"><label class="field"><span>Month</span><select id="exec-month" aria-label="Month">${options}</select></label><span class="text-muted">${U.esc(cutoff)}</span></div>`;
+    const header = `<div class="form-row"><span class="text-muted">${U.esc(U.monthName(state.month))} · ${U.esc(cutoff)} · change the month with the Month selector at the top</span></div>`;
     const outcomes = view.outcomes || {};
     const outcomeTile = (label, outcome, event) => U.kpi({
       label,
@@ -358,14 +346,6 @@
   }
 
   function mount(el) {
-    const month = el.querySelector('#exec-month');
-    if (month) month.addEventListener('change', () => {
-      state.month = month.value;
-      state.data = null;
-      state.daily = { ...state.daily, month: '', status: 'idle', data: null, error: '', channel: '', campaign: '' };
-      state.error = '';
-      A.render();
-    });
     el.querySelectorAll('[data-exec-span]').forEach((button) => button.addEventListener('click', () => {
       state.span = button.dataset.execSpan;
       A.render();

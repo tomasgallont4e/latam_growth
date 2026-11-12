@@ -40,7 +40,7 @@
   T.refresh = (month) => {
     T.byMonth = {};
     T.ensure(month, true, TV.country);
-    if (month !== A.S.to.slice(0, 7)) T.ensure(A.S.to.slice(0, 7), true, TV.country);
+    if (month !== A.S.goalMonth) T.ensure(A.S.goalMonth, true, TV.country);
     T.ensure(month, true, 'LATAM'); // the month-goal strips on every screen read the LATAM level
   };
 
@@ -52,7 +52,7 @@
     const first = `${month}-01`, last = U.endOfMonth(month), today = U.today();
     const g = { key, row, label: m.label, kind: m.kind, target: row.target_value, month, country, upcoming: first > today };
     if (g.upcoming) return { ...g, actual: null, status: 'none' };
-    const to = [last, today, month === A.S.to.slice(0, 7) ? A.S.to : last].sort()[0];
+    const to = [last, today].sort()[0];
     const elapsed = U.diffDays(first, to) + 1, dim = U.diffDays(first, last) + 1;
     g.ongoing = to < last; g.to = to;
     g.actual = T.actual(key, country, first, to);
@@ -130,14 +130,14 @@
       <div class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(width)}" aria-label="${U.esc(g.label)} progress"><i style="width:${width.toFixed(1)}%"></i></div>
       <div class="goal-meta">${meta2}</div></div>`;
   };
-  // Month goals strip for a dashboard screen: always the month that contains the end of the selected period.
+  // Month goals strip for a dashboard screen: always the global top-bar Month (memory #141).
   // The strips always read the LATAM level; per-country targets live on the Targets screen.
-  T.strip = (keys, month = A.S.to.slice(0, 7)) => {
+  T.strip = (keys, month = A.S.goalMonth) => {
     if (!T.byMonth[ck(month, 'LATAM')]) { T.ensure(month, false, 'LATAM'); return U.section(`Month goals · ${U.monthName(month)}`, 'Loading targets…', '<div class="goal-row"><div class="goal-card"><div class="skeleton" style="height:70px"></div></div></div>'); }
     const goals = keys.map((k) => T.goal(k, month, 'LATAM')).filter(Boolean);
     const today = U.today(), last = U.endOfMonth(month);
-    const to = [last, today, A.S.to].sort()[0];
-    const sub = `Month to date (${U.win(`${month}-01`, to)}) vs the ${U.monthName(month)} target · counts use month-to-date scope, not the report start date · costs are lower-is-better`;
+    const to = [last, today].sort()[0];
+    const sub = `Month to date (${U.win(`${month}-01`, to)}) vs the ${U.monthName(month)} target · Month selector at the top, not From/To · costs are lower-is-better`;
     const link = `<button type="button" class="btn btn-secondary btn-sm" data-go="targets">${U.icon('bullseye')} Targets</button>`;
     if (!goals.length) return U.section(`Month goals · ${U.monthName(month)}`, sub, `<div class="goal-empty"><span>${U.icon('bullseye')} No targets set for ${U.monthName(month)} on these metrics yet.</span>${link}</div>`);
     return U.section(`Month goals · ${U.monthName(month)}`, sub, `<div class="goal-row">${goals.map(T.card).join('')}</div>`, link);
@@ -196,7 +196,7 @@
   }
   function render() {
     const S = A.S;
-    TV.month = TV.month || S.to.slice(0, 7);
+    TV.month = S.goalMonth;
     const month = TV.month;
     const country = TV.country;
     if (!T.byMonth[ck(month, country)]) T.ensure(month, false, country);
@@ -208,7 +208,7 @@
     const level = country === 'LATAM' ? 'LATAM' : U.esc(country);
     const head = `<section class="card"><div class="card-header"><div><div class="card-title">Monthly targets</div><div class="card-sub">Set for ${level} or for any single market. Upload a CSV (month, country, metric_key, target_value) or edit a value in the table. Rates accept 45% or 0.45.</div></div></div>
       <div class="form-row">
-        <label class="field" for="t-month"><span>Month</span><input type="month" id="t-month" value="${U.esc(month)}" style="width:180px"></label>
+        <span class="text-muted">${U.esc(U.monthName(month))} · set with the Month selector at the top</span>
         <label class="field" for="t-country"><span>Country</span><select id="t-country" style="width:220px">${options}</select></label>
         <button type="button" class="btn btn-secondary" data-t-template>${U.icon('file-arrow-down')} Download template</button>
         <label class="btn btn-primary" for="t-file" style="margin:0">${U.icon('file-arrow-up')} Upload targets CSV<input type="file" id="t-file" accept=".csv,text/csv" hidden></label>
@@ -218,7 +218,7 @@
       : U.section(`Goal completion · ${level} · ${U.monthName(month)}`, '', `<div class="goal-empty"><span>${U.icon('bullseye')} No targets for ${level} in ${U.monthName(month)} yet. Download the template, fill in the values and upload it, or set a value in the table below.</span></div>`)) : '';
     // The real month-to-date actual shows even before a target is set, so the table is never a wall of dashes.
     const today = U.today(), first = `${month}-01`, last = U.endOfMonth(month);
-    const mTo = first > today ? null : [last, today, month === S.to.slice(0, 7) ? S.to : last].sort()[0];
+    const mTo = first > today ? null : [last, today].sort()[0];
     const tableRows = Object.keys(M).map((k) => {
       const g = T.goal(k, month, country);
       return { key: k, m: M[k], t: rows ? rows.find((r) => r.metric_key === k) : null, g, a: g ? g.actual : (mTo == null ? null : T.actual(k, country, first, mTo)) };
@@ -254,7 +254,7 @@
       } catch (err) { if (err.message !== 'code') U.toast(err.message, 'error'); }
       finally { PV.saving = false; if (A.S.data) A.render(); }
     });
-    el.querySelector('#t-month').addEventListener('change', (e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { TV.month = e.target.value; TV.editing = null; T.ensure(TV.month, false, TV.country); A.render(); } });
+
     el.querySelector('#t-country').addEventListener('change', (e) => { TV.country = e.target.value; TV.editing = null; T.ensure(TV.month, false, TV.country); A.render(); });
     el.querySelector('#t-file').addEventListener('change', async (e) => {
       const file = e.target.files[0]; if (!file) return;

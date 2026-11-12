@@ -190,6 +190,89 @@ test('PostHog rate basis reaches the assistant and acquisition stays outside the
   assert.deepEqual(Object.keys(safe.acquisition.sources), ['ads', 'ga4', 'hubspot']);
 });
 
+// ---------- D.goalAccounts (monthly 500K goal, memory #141), tested against the real public/js/app.js
+const vm = require('node:vm');
+const fs = require('node:fs');
+const path = require('node:path');
+function loadApp(today = '2026-11-10') {
+  const el = () => ({ value: '', checked: false, min: '', max: '', options: [], innerHTML: '', textContent: '', dataset: {}, addEventListener() {} });
+  const els = {};
+  const document = { getElementById: (id) => (els[id] = els[id] || el()), documentElement: { dataset: {} }, body: { dataset: {} } };
+  const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const ui = {
+    today: () => today, esc: (s) => String(s), days: () => [],
+    diffDays: (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5),
+    addDays: (d, n) => iso(Date.parse(d) + n * 864e5),
+    endOfMonth: (m) => { const [y, mo] = m.split('-').map(Number); return iso(Date.UTC(y, mo, 0)); },
+  };
+  const App = { ui, views: {}, store: () => null, resolve: (t) => t || 'overview', render() {}, logout() {}, api: () => new Promise(() => {}) };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8'), { window: { App }, document, location: { hash: '' }, Intl, Date, console });
+  return App;
+}
+const GOAL_PLAN = { verified_users: 500000, countries: { Brazil: 1, Mexico: 1, Colombia: 1, Argentina: 1, Peru: 1, Chile: 1, Ecuador: 1, 'Dominican Republic': 1, Bolivia: 1, Paraguay: 1, Uruguay: 1 } };
+const ph = (metric, date, dim, dim_value, value) => ({ source: 'posthog', metric, date, dim, dim_value, value });
+const COVER = [{ source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-08', rows: [{ available: true }] }];
+function goalData(snapshots) {
+  return { goalPlan: GOAL_PLAN, events: [], sources: [], snapshots, metrics: [
+    ph('ph_accounts', '2026-11-02', 'account_type', 'External', 100),
+    ph('ph_accounts', '2026-11-03', 'account_type', 'Internal', 40),
+    ph('ph_accounts', '2026-11-09', 'account_type', 'External', 999), // after the last covered day
+    ph('ph_accounts', '2026-10-30', 'account_type', 'External', 7),
+    ph('ph_accounts_geo', '2026-11-02', 'country', 'Brazil', 30),
+    ph('ph_accounts_geo', '2026-11-02', 'country', 'Mexico', 20),
+    ph('ph_accounts_geo', '2026-11-02', 'country', 'Spain', 5),
+    ph('ph_accounts_geo_internal', '2026-11-03', 'country', 'Brazil', 9),
+  ] };
+}
+
+test('goalAccounts always excludes internal accounts, even when Exclude internal tests is off', () => {
+  const A = loadApp();
+  A.S.data = goalData(COVER);
+  for (const exInt of [true, false]) {
+    A.S.exInt = exInt;
+    const g = A.D.goalAccounts('2026-11');
+    assert.equal(g.status, 'loaded');
+    assert.equal(g.value, 100);
+    assert.equal(g.goal, 500000);
+    assert.equal(g.ratio, 100 / 500000);
+  }
+});
+
+test('goalAccounts LATAM share counts only the 11 plan countries, external only', () => {
+  const A = loadApp();
+  A.S.data = goalData(COVER);
+  A.S.exInt = false;
+  const g = A.D.goalAccounts('2026-11');
+  assert.equal(g.latam, 50);
+  assert.equal(g.latamShare, 0.5);
+});
+
+test('goalAccounts window runs from month start to the last covered day', () => {
+  const A = loadApp();
+  A.S.data = goalData(COVER);
+  const nov = A.D.goalAccounts('2026-11');
+  assert.equal(nov.from, '2026-11-01');
+  assert.equal(nov.to, '2026-11-08');
+  const oct = A.D.goalAccounts('2026-10');
+  assert.equal(oct.from, '2026-10-01');
+  assert.equal(oct.to, '2026-10-31');
+  assert.equal(oct.value, 7);
+});
+
+test('goalAccounts is Pending, never zero, without coverage', () => {
+  const A = loadApp();
+  A.S.data = goalData([]);
+  const g = A.D.goalAccounts('2026-11');
+  assert.equal(g.status, 'pending');
+  assert.equal(g.value, null);
+  assert.equal(g.latam, null);
+  assert.equal(g.goal, 500000);
+  A.S.data = goalData(COVER);
+  const future = A.D.goalAccounts('2026-12');
+  assert.equal(future.status, 'pending');
+  assert.equal(future.to, null);
+});
+
 test('the ordered PostHog identify is called sign-up and assistant never equates it to cross-source totals', async () => {
   const model = agg.build(sample());
   assert.equal(model.product_funnel.steps[3].name, 'Sign-up ($identify)');

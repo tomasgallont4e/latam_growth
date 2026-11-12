@@ -91,8 +91,11 @@ app.get('/api/executive', async (req, res, next) => {
   try {
     const month = req.query.month == null ? null : String(req.query.month);
     if (month != null && !executive.monthOk(month)) return res.status(400).json({ error: 'month must be a valid calendar month in YYYY-MM format' });
+    const goalMonth = req.query.goalMonth == null ? null : String(req.query.goalMonth);
+    if (goalMonth != null && !executive.monthOk(goalMonth)) return res.status(400).json({ error: 'goalMonth must be a valid calendar month in YYYY-MM format' });
     const clean = (rows) => rows.map(({ _at, ...r }) => r);
     const data = await executive.build(store, month);
+    data.goalMonth = goalMonth || data.month || month;
     data.sources = await sourcesView();
     data.synclog = clean(await store.list('synclog')).slice(-30).reverse().map((r) => ({
       ...r, rows: r.rows != null ? r.rows : (Number(r.metrics) || 0) + (Number(r.events) || 0) + (Number(r.snapshots) || 0),

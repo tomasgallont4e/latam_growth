@@ -4,7 +4,7 @@
 (function (A) {
   const U = A.ui;
   const LAUNCH = A.LAUNCH = '2026-10-01';
-  const S = A.S = { data: null, tab: 'overview', grain: 'day', from: LAUNCH, to: U.today(), exInt: true, me: null, goalCountry: 'Colombia' };
+  const S = A.S = { data: null, tab: 'overview', grain: 'day', from: LAUNCH, to: U.today(), exInt: true, me: null, goalCountry: 'Colombia', goalMonth: '' };
 
   // ---------- data helpers
   const D = A.D = {};
@@ -148,6 +148,28 @@
   D.proxy = (from = S.from, to = S.to) => D.covered('posthog', 'activation_action', from, to) || D.has('posthog', 'ph_activated_users') ? D.sum('posthog', 'ph_activated_users', null, from, to) : null;
   D.sessions = (from = S.from, to = S.to) => D.sum('hubspot', 'sessions', null, from, to);
   D.signups = (from = S.from, to = S.to) => D.accounts(from, to);
+  // Monthly 500K goal (memory #141): External first-$identify accounts, all hosts, ALL countries.
+  // Internal accounts are always excluded, even when "Exclude internal tests" is off.
+  // Window = month start to the last covered day (never past month end or today).
+  // "Of which LATAM" = the plan's countries (the 11 markets saved in Targets).
+  D.goalAccounts = (month = S.goalMonth) => {
+    const plan = (S.data && S.data.goalPlan) || {};
+    const goal = Number(plan.verified_users) > 0 ? Number(plan.verified_users) : null;
+    const start = `${month}-01` < LAUNCH ? LAUNCH : `${month}-01`;
+    const end = U.endOfMonth(month);
+    const covTo = ((S.data && S.data.snapshots) || [])
+      .filter((s) => s.source === 'posthog' && s.key === 'account_coverage' && s.from <= start && s.rows && s.rows[0] && s.rows[0].available === true)
+      .reduce((max, s) => (s.to > max ? s.to : max), '');
+    const to = covTo ? [end, U.today(), covTo].sort()[0] : null;
+    const base = { month, from: start, to: to && to >= start ? to : null, goal, value: null, latam: null, latamShare: null, ratio: null };
+    if (!to || to < start || !D.covered('posthog', 'account_coverage', start, to)) {
+      return { ...base, status: 'pending', reason: 'Account coverage unavailable for this month; not zero.' };
+    }
+    const value = D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', start, to);
+    const markets = new Set(Object.keys(plan.countries || {}));
+    const latam = D.sum('posthog', 'ph_accounts_geo', (r) => r.dim === 'country' && markets.has(r.dim_value), start, to);
+    return { ...base, status: 'loaded', reason: null, value, latam, latamShare: value ? latam / value : null, ratio: goal ? value / goal : null };
+  };
   const GRAIN_META = {
     day: { name: 'Daily', bar: 'day' },
     week: { name: 'Weekly', bar: 'week' },
@@ -442,7 +464,7 @@
   };
   A.footer = () => {
     const last = ((S.data && S.data.sources) || []).filter((s) => s.last_sync).map((s) => s.last_sync).sort().pop();
-    document.getElementById('foot').textContent = `Range ${S.from} to ${S.to} · grouped ${D.grainName().toLowerCase()} · CRM/product tests ${S.exInt ? 'excluded where classified' : 'included'}; GA4 traffic can include tests · last data load ${last ? U.stamp(last) : 'none'} · Research, Think4Ever LATAM`;
+    document.getElementById('foot').textContent = `Month ${S.goalMonth} · Range ${S.from} to ${S.to} · grouped ${D.grainName().toLowerCase()} · CRM/product tests ${S.exInt ? 'excluded where classified' : 'included'}; GA4 traffic can include tests · last data load ${last ? U.stamp(last) : 'none'} · Research, Think4Ever LATAM`;
     const ss = (S.data && S.data.sources) || [];
     document.getElementById('sources-foot').textContent = `${ss.filter((s) => s.state === 'connected').length} of ${ss.length} sources connected`;
   };
@@ -452,7 +474,7 @@
     sel.value = v;
     S.grain = v;
     A.store('t4e-growth-grain', v);
-    if (A.targets) A.targets.ensure(S.to.slice(0, 7));
+    if (A.targets) A.targets.ensure(S.goalMonth);
     if (S.data) A.render();
   };
   A.setRange = (from, to, persist = true) => {
@@ -464,12 +486,43 @@
     document.getElementById('range-from').value = S.from;
     document.getElementById('range-to').value = S.to;
     if (persist) { A.store('t4e-growth-range-from', S.from); A.store('t4e-growth-range-to', S.to === U.today() ? 'today' : S.to); }
-    if (A.targets) A.targets.ensure(S.to.slice(0, 7));
+    if (A.targets) A.targets.ensure(S.goalMonth);
+    if (S.data) A.render();
+  };
+
+  // ---------- global Month (memory #141): one top-bar selector for the 500K goal, Executive, goal strips and Targets
+  A.bogotaMonth = () => {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit' }).formatToParts(new Date()).map((p) => [p.type, p.value]));
+    const month = `${parts.year}-${parts.month}`;
+    return month < LAUNCH.slice(0, 7) ? LAUNCH.slice(0, 7) : month;
+  };
+  // Months from launch through the current Bogota month.
+  A.months = () => {
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const end = A.bogotaMonth(), out = [];
+    let ym = LAUNCH.slice(0, 7);
+    while (ym <= end) {
+      out.push({ id: ym, label: `${MON[Number(ym.slice(5)) - 1]} ${ym.slice(0, 4)}` });
+      const [y, m] = ym.split('-').map(Number);
+      ym = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    }
+    return out;
+  };
+  A.setGoalMonth = (month, persist = true) => {
+    const list = A.months();
+    if (!list.some((m) => m.id === month)) month = A.bogotaMonth();
+    S.goalMonth = month;
+    const sel = document.getElementById('month-pick');
+    sel.innerHTML = list.map((m) => `<option value="${U.esc(m.id)}"${m.id === month ? ' selected' : ''}>${U.esc(m.label)}</option>`).join('');
+    sel.value = month;
+    if (persist) A.store('t4e-growth-month', month);
+    if (A.targets) A.targets.ensure(month, false, 'LATAM');
     if (S.data) A.render();
   };
 
   // ---------- header controls
   document.getElementById('period').addEventListener('change', (e) => A.setGrain(e.target.value));
+  document.getElementById('month-pick').addEventListener('change', (e) => A.setGoalMonth(e.target.value));
   for (const id of ['range-from', 'range-to']) document.getElementById(id).addEventListener('change', () => A.setRange(document.getElementById('range-from').value, document.getElementById('range-to').value));
   document.getElementById('ex-int').addEventListener('change', (e) => {
     S.exInt = e.target.checked; A.store('t4e-growth-exclude-internal', S.exInt ? '1' : '0');
@@ -489,6 +542,7 @@
     const hash = location.hash.slice(1);
     const storedTab = A.store('t4e-growth-tab');
     S.tab = A.resolve(hash || (storedTab && storedTab !== 'overview' ? storedTab : 'executive'));
+    A.setGoalMonth(A.store('t4e-growth-month') || A.bogotaMonth(), false);
     for (const id of ['range-from', 'range-to']) { document.getElementById(id).min = LAUNCH; document.getElementById(id).max = U.today(); }
     const savedTo = A.store('t4e-growth-range-to');
     A.setRange(A.store('t4e-growth-range-from') || LAUNCH, !savedTo || savedTo === 'today' ? U.today() : savedTo, false);

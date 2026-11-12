@@ -1,7 +1,8 @@
 'use strict';
 /* Overview: the three numbers Management asked for (impressions, people on the landing, sign-ups),
    each from its own source and unit, then links to the detail tabs. The three sources are not
-   linked person by person, so no rate is computed between them. */
+   linked person by person, so no rate is computed between them. The 500K goal card is MONTHLY and
+   follows the global top-bar Month (memory #141). */
 (function (A) {
   const PAID_NAMES = { meta: 'Meta Ads', google_ads: 'Google Ads', linkedin: 'LinkedIn Ads' };
   function keyCard({ title, source, unit, value, lines, destination }) {
@@ -27,10 +28,36 @@
     }
     return { value: Number(row.users) || 0, lines: [`GA4 users on go.think4ever.com, deduplicated for ${A.ui.win(from, to)}.`, row.subject_to_thresholding ? 'GA4 applied thresholding; the value may be rounded.' : null, 'GA4 traffic can include internal visits.'] };
   }
+  // Monthly 500K goal for the global Month, plus one bar per month since launch.
+  function goalCard() {
+    const U = A.ui, D = A.D, S = A.S;
+    const month = S.goalMonth;
+    const g = D.goalAccounts(month);
+    const loaded = g.status === 'loaded';
+    const value = loaded ? `${U.fmt(g.value)}${g.goal ? ` <small>of ${U.fmt(g.goal)}</small>` : ''}` : '<span class="kpi-awaiting">Pending</span>';
+    const pctLine = !loaded ? (g.reason || 'Coverage unavailable.') : g.goal ? `${U.pct(g.value / g.goal, 1)} of the ${U.monthName(month)} goal` : 'No monthly goal saved in Targets.';
+    const latam = loaded ? `Of which LATAM: ${U.fmt(g.latam)} (${U.pct(g.latamShare || 0, 1)}) · the 11 plan countries` : null;
+    const rows = A.months().map((m) => ({ ...m, g: D.goalAccounts(m.id) }));
+    const bar = (r) => {
+      if (r.g.status !== 'loaded' || !r.g.goal) return '<span class="text-muted">–</span>';
+      const ratio = r.g.value / r.g.goal, width = Math.min(100, Math.max(0, ratio * 100));
+      return `<div class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(width)}" aria-label="${U.esc(r.label)} percent of goal"><i style="width:${width.toFixed(1)}%"></i></div><small>${U.pct(ratio, 1)}</small>`;
+    };
+    const history = U.table([
+      { t: 'Month', f: (r) => (r.id === month ? `<b>${U.esc(r.label)}</b>` : U.esc(r.label)) },
+      { t: 'Accounts created', num: 1, f: (r) => (r.g.status === 'loaded' ? U.fmt(r.g.value) : '<span class="text-muted">Pending</span>') },
+      { t: '% of goal', f: bar },
+    ], rows);
+    const span = g.to ? U.win(g.from, g.to) : 'no covered day yet';
+    return U.card({
+      cls: 'acct-hero-card', title: `LATAM 500K goal · ${U.monthName(month)}`,
+      sub: `Monthly · ${span} · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota`,
+      body: `<div class="overview-metric-value">${value}</div><p class="card-note">${U.esc(pctLine)}</p>${latam ? `<p class="card-note">${U.esc(latam)}</p>` : ''}<h4 class="cf-sub">Accounts created by month</h4>${history}<button class="btn btn-secondary btn-sm" type="button" data-go="targets">View targets</button>`,
+    });
+  }
   function render() {
     const U = A.ui, D = A.D, S = A.S;
     const from = S.from, to = S.to;
-    const goal = Number(S.data && S.data.goalPlan && S.data.goalPlan.verified_users) || null;
     const signupCovered = D.covered('posthog', 'account_coverage', from, to);
     const signups = signupCovered ? D.signups(from, to) : null;
     const imp = impressions(from, to), people = landingPeople(from, to);
@@ -42,17 +69,9 @@
         'Operational sign-up proxy. Not the same as account_created.',
       ], destination: 'conversion' }),
     ];
-    const coverage = D.snap('posthog', 'account_coverage');
-    const through = coverage && coverage.to < U.today() ? coverage.to : U.today();
-    const since = D.covered('posthog', 'account_coverage', A.LAUNCH, through) ? D.signups(A.LAUNCH, through) : null;
-    const goalCard = U.card({
-      cls: 'acct-hero-card', title: 'LATAM 500K goal',
-      sub: `Since launch · ${U.win(A.LAUNCH, through)} · sign-ups once per person · first $identify in PostHog · America/Bogota`,
-      body: `<div class="overview-metric-value">${since == null ? '<span class="kpi-awaiting">Pending</span>' : U.fmt(since)}${goal == null ? '' : ` <small>of ${U.fmt(goal)}</small>`}</div><p class="card-note">${since == null ? 'Coverage unavailable.' : `${U.pct(goal ? since / goal : 0)} of the sign-up goal`}</p><button class="btn btn-secondary btn-sm" type="button" data-go="targets">View targets</button>`,
-    });
     const links = `<div class="form-row">${[['acquisition', 'Acquisition'], ['conversion', 'Conversion'], ['product', 'Product usage'], ['executive', 'Executive']].map(([go, label]) => `<button class="btn btn-ghost btn-sm" type="button" data-go="${go}">${U.esc(label)}</button>`).join('')}</div>`;
     return U.section('Overview', `${from} to ${to} · three key numbers, each from its own source · America/Bogota`, `<div class="grid-3">${key.join('')}</div><p class="card-note">These three sources are not linked person by person, so they are never divided into one another.</p>${links}`)
-      + U.section('Goal', 'Cumulative since launch; independent of the date picker.', goalCard)
+      + U.section('Goal', 'Monthly goal for the Month selected at the top; independent of From/To.', goalCard())
       + U.section('What matters', 'Evidence-based reading of the selected period.', A.assistant.render());
   }
   function mount(el) { A.assistant.mount(el); }
