@@ -1497,3 +1497,21 @@ test('Executive lists campaigns with spend and shows unknown accounts and cost a
   assert.match(html, /brand_latam[\s\S]*?Google Ads(?:(?!<\/tr>)[\s\S])*text-muted">–<\/span><\/td><\/tr>/, 'unknown cost per account is –');
   assert.match(html, /data-mr-channel/);
 });
+
+test('Executive shows Meta Ads by country for the month, sorted by spend, and Pending without the breakdown', async () => {
+  const A = executiveWithReview({});
+  const month = A.bogotaMonth();
+  const day = `${month}-01`;
+  const geo = (metric, country, value) => ({ source: 'meta', metric, date: day, dim: 'country', dim_value: country, value });
+  const pending = await renderExecutive(A);
+  assert.match(pending, /Meta Ads by country[\s\S]*?Meta has not sent the country breakdown yet/);
+  A.S.data.metrics.push(
+    geo('ad_spend_geo', 'Colombia', 30), geo('ad_impressions_geo', 'Colombia', 3000), geo('ad_clicks_geo', 'Colombia', 60),
+    geo('ad_spend_geo', 'Mexico', 70), geo('ad_impressions_geo', 'Mexico', 5000), geo('ad_clicks_geo', 'Mexico', 0),
+    { ...geo('ad_spend_geo', 'Peru', 999), date: '2020-01-01' },
+  );
+  const html = A.views.executive.render();
+  assert.match(html, /Mexico[\s\S]*?70\.00[\s\S]*?Colombia[\s\S]*?30\.00[\s\S]*?2\.00%[\s\S]*?\$0\.50/);
+  assert.doesNotMatch(html, /Peru/, 'rows outside the month are left out');
+  assert.match(html, /Mexico(?:(?!<\/tr>)[\s\S])*text-muted">–<\/span><\/td><\/tr>/, 'no clicks means no cost per click');
+});

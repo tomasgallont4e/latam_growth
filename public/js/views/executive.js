@@ -331,6 +331,42 @@
       + '</div>');
   }
 
+  // Meta Ads by country: the connector's insights with breakdowns=country (*_geo metrics, dim country).
+  // Clicks are link clicks, so CTR and CPC here differ from the outbound clicks in the campaign funnel.
+  function metaCountries(from, to) {
+    const D = A.D;
+    if (!D.has('meta', 'ad_spend_geo')) return null;
+    const out = new Map();
+    const FIELDS = { ad_spend_geo: 'spend', ad_impressions_geo: 'impressions', ad_clicks_geo: 'clicks' };
+    for (const r of D.M()) {
+      const f = r.source === 'meta' && r.dim === 'country' && r.date >= from && r.date <= to && FIELDS[r.metric];
+      if (!f) continue;
+      if (!out.has(r.dim_value)) out.set(r.dim_value, { country: r.dim_value, spend: 0, impressions: 0, clicks: 0 });
+      out.get(r.dim_value)[f] += Number(r.value) || 0;
+    }
+    return [...out.values()]
+      .filter((c) => c.spend || c.impressions || c.clicks)
+      .map((c) => ({ ...c, ctr: c.impressions ? c.clicks / c.impressions : null, cpc: c.clicks ? c.spend / c.clicks : null }))
+      .sort((a, b) => b.spend - a.spend || b.impressions - a.impressions);
+  }
+  function metaCountrySection() {
+    const from = `${state.month}-01`, end = U.endOfMonth(state.month), today = U.today();
+    const to = end < today ? end : today;
+    const rows = metaCountries(from, to);
+    const total = rows && rows.reduce((n, r) => n + r.spend, 0);
+    const body = rows == null
+      ? U.empty('Pending', 'Meta has not sent the country breakdown yet. It arrives with the next Meta sync.', 'hourglass-half')
+      : !rows.length ? U.empty('No Meta delivery by country this month', '', 'globe') : U.table([
+        { t: 'Country', f: (r) => U.esc(r.country) },
+        { t: 'Spend', num: 1, f: (r) => `${money(r.spend)}<small class="text-muted"> ${U.pct(total ? r.spend / total : null)}</small>` },
+        { t: 'Impressions', num: 1, f: (r) => U.fmt(r.impressions) },
+        { t: 'Link clicks', num: 1, f: (r) => U.fmt(r.clicks) },
+        { t: 'CTR', num: 1, f: (r) => U.pct(r.ctr) },
+        { t: 'Cost per click', num: 1, f: (r) => (r.cpc == null ? '<span class="text-muted">–</span>' : money(r.cpc)) },
+      ], rows) + '<p class="card-note">Meta reports the country where the ad was shown. Clicks are link clicks, not the outbound clicks of the campaign funnel. LinkedIn Ads is not connected, so there is no LinkedIn country split.</p>';
+    return U.section('Meta Ads by country', `${U.win(from, to)} · where the ads were shown · sorted by spend`, U.card({ title: 'Meta Ads by country', sub: 'Meta insights · breakdown by country', body }));
+  }
+
   const CAMPAIGN_ROWS = 25;
   function campaignsSection() {
     const c = (state.review.data && state.review.data.campaigns) || {};
@@ -433,6 +469,7 @@
       + U.section('Management indicators', 'Source-native metrics stay separate. Pending outcomes need verified event coverage and identity linkage.', U.kpiRow(tiles, 3))
       + U.section('Campaign funnel', 'Seven stages from ad and page impressions to projects created. % is versus the previous stage; open a stage to see each channel, platform and campaign.', U.card({ cls: 'cf-card', title: 'Executive funnel · 7 stages', sub: cfSub, body: campaignFunnelHtml(view.campaignFunnel) }))
       + campaignsSection()
+      + metaCountrySection()
       + dailySection()
       + U.section('Accounts created this month vs goal', state.span === 'launch' ? 'Cumulative External accounts created since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s accounts created. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Accounts created vs goal', right: drawn.controls, body: `<p class="card-note">Sources: PostHog (accounts created) · monthly goals (Targets)</p>${drawn.body}` }))
       + (A.goalMonthChart ? U.section('LATAM 500K goal by month', 'External accounts created per month as % of the monthly goal · internal always excluded · the same number as Overview · click a month to select it.', U.card({ cls: 'chart-card', title: 'LATAM 500K goal by month', sub: `Selected: ${U.esc(U.monthName(state.month))}${A.goalActualCumText ? ` · ${U.esc(A.goalActualCumText(A.D.goalAccounts(state.month)))}` : ''}`, body: `${A.goalPaceChart ? `<h4 class="cf-sub">Sign-ups vs goal · ${U.esc(U.monthName(state.month))}</h4>${A.goalPaceChart(state.month)}<h4 class="cf-sub">% of the monthly goal by month</h4>` : ''}${A.goalMonthChart(state.month)}` })) : '')
