@@ -170,7 +170,7 @@
     const value = D.sum('posthog', 'ph_accounts', goalExternal, pFrom, pTo);
     return { ...base, status: 'loaded', value, delta: current - value, change: value ? (current - value) / value : null };
   };
-  D.goalAccounts = (month = S.goalMonth) => {
+  const goalMonthCore = (month) => {
     const plan = (S.data && S.data.goalPlan) || {};
     const fromTargets = A.targets && typeof A.targets.signupGoal === 'function' ? A.targets.signupGoal(month) : null;
     const planGoal = Number(plan.verified_users) > 0 ? Number(plan.verified_users) : null;
@@ -191,6 +191,24 @@
     const markets = new Set(Object.keys(plan.countries || {}));
     const latam = D.sum('posthog', 'ph_accounts_geo', (r) => r.dim === 'country' && markets.has(r.dim_value), start, to);
     return { ...base, status: 'loaded', reason: null, value, latam, latamShare: value ? latam / value : null, ratio: goal ? value / goal : null, prev: goalPrev(month, to, value) };
+  };
+  // Actual vs cumulative: cumulative = External accounts from launch to the selected month's last covered
+  // day (internal always excluded), summed month by month with the same rule as the month number.
+  // Every earlier month must be loaded through its last day; otherwise the cumulative is null
+  // (Pending), never 0. cumulativeLatam = the same for the 11 plan countries.
+  const nextMonthId = (m) => { const [y, mo] = m.split('-').map(Number); return mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`; };
+  D.goalAccounts = (month = S.goalMonth) => {
+    const g = goalMonthCore(month);
+    const none = { ...g, cumulative: null, cumulativeLatam: null, cumulativeFrom: LAUNCH };
+    if (g.status !== 'loaded') return none;
+    let cum = 0, cumLatam = 0;
+    for (let m = LAUNCH.slice(0, 7); m < month; m = nextMonthId(m)) {
+      const pm = goalMonthCore(m);
+      if (pm.status !== 'loaded' || pm.to !== U.endOfMonth(m)) return none;
+      cum += pm.value;
+      cumLatam += pm.latam;
+    }
+    return { ...g, cumulative: cum + g.value, cumulativeLatam: cumLatam + g.latam, cumulativeFrom: LAUNCH };
   };
   // Daily cumulative sign-ups for the Month vs the 500K goal. Same population and window as
   // D.goalAccounts (External ph_accounts, internal always excluded, month start to last covered day),

@@ -36,7 +36,7 @@
       const r = ratio(m), sel = m.id === selected;
       const x0 = L + j * step, cx = (x0 + step / 2).toFixed(1);
       const tip = m.g.status === 'loaded'
-        ? `${m.label} · ${U.fmt(m.g.value)} accounts created${m.g.goal ? ` · ${pct(r)} of ${U.fmt(m.g.goal)}` : ''}`
+        ? `${m.label} · ${U.fmt(m.g.value)} accounts created${m.g.goal ? ` · ${pct(r)} of ${U.fmt(m.g.goal)}` : ''} · cumulative since launch ${m.g.cumulative != null ? U.fmt(m.g.cumulative) : 'Pending'}`
         : `${m.label} · Pending: ${m.g.reason || 'coverage unavailable'}`;
       let inner = `<rect class="day-hit" x="${x0.toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"/>`;
       if (r != null) {
@@ -67,6 +67,13 @@
     return `<span class="gp-status gp-${up ? 'ahead' : 'behind'}">${U.icon(up ? 'arrow-trend-up' : 'arrow-trend-down')} ${up ? '+' : '−'}${U.fmt(Math.abs(pr.delta))}${U.esc(pctTxt)}</span>`;
   };
   A.goalPrevHint = (g) => (g && g.prev ? `Same days: ${A.ui.win(g.prev.from, g.prev.to)}` : 'No previous month since launch');
+  // "This month: N · Cumulative since launch: M" (shared with Executive; same D.goalAccounts numbers).
+  A.goalActualCumText = (g) => {
+    const U = A.ui;
+    const cur = g && g.status === 'loaded' ? U.fmt(g.value) : 'Pending';
+    const cum = g && g.cumulative != null ? U.fmt(g.cumulative) : 'Pending';
+    return `This month: ${cur} · Cumulative since launch: ${cum}`;
+  };
   A.goalSourceText = (g) => (g && g.goalSource === 'targets' ? 'Goal from Targets' : g && g.goalSource === 'default' ? 'Default 500K plan' : '');
 
   // Sign-ups vs the 500K goal for one Month: daily cumulative Accounts created (D.goalDaily, same
@@ -107,6 +114,8 @@
       : '<span class="acct-hero-actual"><span class="kpi-awaiting">Pending</span></span>';
     const foot = !loaded ? `<span>${U.esc(g.reason || 'Coverage unavailable.')}</span>`
       : g.goal ? `<span><b>${U.esc(U.pct(ratio, 1))}</b> of the ${U.esc(mName)} goal</span><span>${U.esc(span)}</span><span>${U.esc(A.goalSourceText(g))}</span>` : '<span>No monthly goal saved in Targets.</span>';
+    const cumOk = loaded && g.cumulative != null;
+    const cumBlock = `<div class="acct-hero-cum"><span class="acct-hero-label">Cumulative since launch</span><div class="acct-hero-nums">${cumOk ? `<span class="acct-hero-actual">${U.fmt(g.cumulative)}</span>` : '<span class="acct-hero-actual"><span class="kpi-awaiting">Pending</span></span>'}</div><small class="acct-hero-hint">${cumOk ? `of which LATAM: ${U.fmt(g.cumulativeLatam)} (${U.esc(U.pct(g.cumulative ? g.cumulativeLatam / g.cumulative : 0, 1))}) · ${U.esc(U.win(g.cumulativeFrom, g.to))}` : 'Needs account coverage for every month since launch; not zero.'}</small></div>`;
     const paceOk = p.status === 'loaded' && p.goal > 0;
     const paceVal = paceOk
       ? `<span class="gp-status gp-${p.ahead ? 'ahead' : 'behind'}">${U.icon(p.ahead ? 'arrow-trend-up' : 'arrow-trend-down')} ${p.ahead ? 'Ahead' : 'Behind'} · ${p.ahead ? '+' : '−'}${U.fmt(Math.round(Math.abs(p.delta)))}</span>`
@@ -126,6 +135,7 @@
     const history = U.table([
       { t: 'Month', f: (r) => (r.id === month ? `<b>${U.esc(r.label)}</b>` : U.esc(r.label)) },
       { t: 'Accounts created', num: 1, f: (r) => (r.g.status === 'loaded' ? U.fmt(r.g.value) : '<span class="text-muted">Pending</span>') },
+      { t: 'Cumulative', num: 1, f: (r) => (r.g.cumulative != null ? U.fmt(r.g.cumulative) : '<span class="text-muted">Pending</span>') },
       { t: '% of goal', f: bar },
     ], rows);
     const historyPanel = `<details class="goal-panel ov-history" id="ov-history"${S.ovHistoryOpen ? ' open' : ''}><summary><span><b>Monthly history</b><small>% of the monthly goal and accounts created per month since launch · click a bar to switch the Month</small></span><span class="goal-summary">Details ${U.icon('chevron-down')}</span></summary><div class="goal-body"><h4 class="cf-sub">% of the monthly goal by month</h4>${A.goalMonthChart(month)}<h4 class="cf-sub">Accounts created by month</h4>${history}</div></details>`;
@@ -134,7 +144,7 @@
       cls: 'acct-hero-card', title: `LATAM 500K goal · ${mName}`,
       sub: 'Monthly · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota',
       right: `<button class="btn btn-secondary btn-sm" type="button" data-go="targets">${U.icon('bullseye')} View targets</button>`,
-      body: `<div class="acct-hero"><div class="acct-hero-main"><span class="acct-hero-label">Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${A.goalPaceChart(month, { head: false })}</div></div>${historyPanel}`,
+      body: `<div class="acct-hero"><div class="acct-hero-main"><div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start"><div><span class="acct-hero-label">This month · Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div></div>${cumBlock}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${A.goalPaceChart(month, { head: false })}</div></div>${historyPanel}`,
     });
   }
 

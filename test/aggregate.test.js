@@ -323,6 +323,31 @@ test('goalAccounts compares with the same days of the previous month', () => {
   assert.equal(A.D.goalAccounts('2026-10').prev, null); // no month before launch
 });
 
+test('goalAccounts cumulative since launch = October + November, internal excluded', () => {
+  const A = loadApp();
+  A.S.data = goalData(COVER);
+  A.S.exInt = false;
+  const oct = A.D.goalAccounts('2026-10');
+  assert.equal(oct.cumulative, 7);
+  const nov = A.D.goalAccounts('2026-11');
+  assert.equal(nov.value, 100);
+  assert.equal(nov.cumulative, 107);
+  assert.equal(nov.cumulativeLatam, 50);
+  assert.equal(nov.cumulativeFrom, '2026-10-01');
+});
+
+test('goalAccounts cumulative is Pending (null), never zero, without coverage since launch', () => {
+  const A = loadApp();
+  A.S.data = goalData([]);
+  assert.equal(A.D.goalAccounts('2026-11').cumulative, null);
+  A.S.data = goalData([{ source: 'posthog', key: 'account_coverage', from: '2026-11-01', to: '2026-11-08', rows: [{ available: true }] }]);
+  const nov = A.D.goalAccounts('2026-11');
+  assert.equal(nov.status, 'loaded');
+  assert.equal(nov.value, 100);
+  assert.equal(nov.cumulative, null); // October not covered
+  assert.equal(nov.cumulativeLatam, null);
+});
+
 test('goalDaily is all empty, never zero, without coverage', () => {
   const A = loadApp();
   A.S.data = goalData([]);
