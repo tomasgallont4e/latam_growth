@@ -487,40 +487,23 @@ test('period comparison uses the last two fully covered buckets for each selecte
   assert.equal(A.D.periods('2026-10-01', '2026-10-28')[0].label, 'Oct 1–4');
 });
 
-test('Overview shows the three key metrics with source, unit and coverage, and no cross-source ratio', () => {
+test('Overview opens with the 500K goal hero and section links, without the old three key cards', () => {
   const A = dashboard();
   A.S.from = '2026-10-01'; A.S.to = '2026-10-28';
-  A.S.data.sources = [{ key: 'meta', state: 'connected', last_sync: '2026-10-28T12:00:00Z' }];
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
   A.S.data.metrics = [
-    { ...metric('meta', 'ad_impressions', 9000, 'launch'), dim: 'campaign' },
-    { ...metric('google_ads', 'ad_impressions', 1000, 'search'), dim: 'campaign' },
     { ...metric('posthog', 'ph_accounts', 21, 'External'), dim: 'account_type' },
     { ...metric('posthog', 'ph_accounts', 9, 'Internal'), dim: 'account_type' },
   ];
-  A.S.data.snapshots.push(
-    { source: 'ga4', key: 'landing_people', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true, users: 37, host: 'go.think4ever.com' }] },
-    { ...available('posthog', 'account_coverage'), rows: [{ available: true }] },
-  );
+  A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true }] });
   const html = A.views.overview.render();
-  for (const label of ['Impressions', 'People on the landing', 'Sign-ups']) assert.ok(html.includes(label), label);
-  assert.match(html, /10,000/);
-  assert.match(html, /impressions, not people/);
-  assert.match(html, /LinkedIn Ads: not connected/);
-  assert.match(html, />37</);
-  assert.match(html, /go\.think4ever\.com/);
-  assert.match(html, />21</);
-  assert.match(html, /internal and test accounts excluded/i);
-  assert.match(html, /not linked/i);
+  assert.doesNotMatch(html, /overview-key-card|People on the landing|three key numbers/);
+  assert.match(html, /acct-hero-card/);
+  assert.match(html, /LATAM 500K goal/);
+  assert.match(html, /Monthly history/);
+  assert.match(html, /class="ov-links"/);
+  for (const go of ['acquisition', 'conversion', 'product', 'executive', 'targets']) assert.ok(html.includes(`data-go="${go}"`), go);
   assert.doesNotMatch(html, /Visit-to-sign-up|conversion rate|Campaign funnel/i);
-});
-
-test('Overview landing people stay pending when the exact window was not synced', () => {
-  const A = dashboard();
-  A.S.from = '2026-10-05'; A.S.to = '2026-10-20';
-  A.S.data.snapshots.push({ source: 'ga4', key: 'landing_people', from: '2026-10-01', to: '2026-10-28', rows: [{ available: true, users: 37 }] });
-  const html = A.views.overview.render();
-  assert.doesNotMatch(html, />37</);
-  assert.match(html, /Unique people need an exact-window GA4 query/);
 });
 
 test('Overview 7-step funnel shows % between steps, the weakest step and the country split', () => {
@@ -1128,7 +1111,7 @@ test('Overview sign-up goal stays on first identify and outcomes are separate', 
   assert.match(html, /LATAM 500K goal/);
   assert.match(html, /sign-ups once per person/);
   assert.match(html, /data-go="product"/);
-  assert.match(html, /Not the same as account_created/);
+  assert.match(html, /sign-ups once per person \(first \$identify/);
   assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel/);
 });
 

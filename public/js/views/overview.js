@@ -1,35 +1,11 @@
 'use strict';
-/* Overview: the three key numbers (impressions, people on the landing, sign-ups), the MONTHLY 500K
-   goal for the global top-bar Month (memory #141), the 7-step funnel with a country selector, and the
-   last two complete periods compared. The funnel uses the same step definitions as the Executive
+/* Overview: opens with the MONTHLY 500K goal hero for the global top-bar Month (memory #141) with the
+   daily sign-ups vs goal chart and a collapsible monthly history, then the 7-step funnel with a country
+   selector, and the last two complete periods compared. The funnel uses the same step definitions as the Executive
    campaign funnel (lib/campaignFunnel.js, docs/executive-campaign-funnel.md). Its steps come from
    different sources, so % between steps are indicative, not a tracked person-by-person journey. */
 (function (A) {
-  const PAID_NAMES = { meta: 'Meta Ads', google_ads: 'Google Ads', linkedin: 'LinkedIn Ads' };
   const NOT_SPLIT = 'Not split by country';
-  function keyCard({ title, source, unit, value, lines, destination }) {
-    const U = A.ui;
-    const display = value == null ? '<span class="kpi-awaiting">Pending</span>' : U.fmt(value);
-    const notes = lines.filter(Boolean).map((line) => `<p class="card-note">${U.esc(line)}</p>`).join('');
-    return U.card({ cls: 'overview-key-card', title, sub: `${source} · ${unit}`, body: `<div class="overview-metric-value">${display}</div>${notes}<button class="btn btn-secondary btn-sm" type="button" data-go="${U.esc(destination)}">View details</button>` });
-  }
-  function impressions(from, to) {
-    const D = A.D;
-    const parts = D.PAID.map((key) => ({ key, name: PAID_NAMES[key] || key, reported: D.has(key, 'ad_impressions'), value: D.sum(key, 'ad_impressions', null, from, to) }));
-    const reported = parts.filter((p) => p.reported);
-    const value = reported.length ? reported.reduce((s, p) => s + p.value, 0) : null;
-    const byPlatform = parts.map((p) => (p.key === 'linkedin' && !p.reported ? 'LinkedIn Ads: not connected' : `${p.name}: ${p.reported ? A.ui.fmt(p.value) : 'not reported'}`)).join(' · ');
-    const partial = reported.length && reported.length < parts.length ? 'Partial: only reporting platforms are added.' : null;
-    return { value, lines: [byPlatform, partial, 'Ad platforms report impressions, not people; the same person can be counted many times.'] };
-  }
-  function landingPeople(from, to) {
-    const s = ((A.S.data && A.S.data.snapshots) || []).find((x) => x.source === 'ga4' && x.key === 'landing_people' && x.from === from && x.to === to);
-    const row = s && s.rows && s.rows[0];
-    if (!row || row.available !== true) {
-      return { value: null, lines: [row && row.reason ? row.reason : 'Unique people need an exact-window GA4 query; available windows: launch to date, last 7 and last 28 days.', 'Daily users are never added together.'] };
-    }
-    return { value: Number(row.users) || 0, lines: [`GA4 users on go.think4ever.com, deduplicated for ${A.ui.win(from, to)}.`, row.subject_to_thresholding ? 'GA4 applied thresholding; the value may be rounded.' : null, 'GA4 traffic can include internal visits.'] };
-  }
   // Monthly 500K chart (memory #141): one bar per month since launch, height = % of that month's goal.
   // Same numbers as D.goalAccounts, so Overview and Executive always agree. A click (or Enter/Space)
   // on a bar sets the global Month; call A.bindGoalMonthChart(el) after render.
@@ -83,12 +59,14 @@
 
   // Sign-ups vs the 500K goal for one Month: daily cumulative Accounts created (D.goalDaily, same
   // number as the goal card), required pace and the 100% goal line. Shared with Executive.
-  A.goalPaceChart = (month = A.S.goalMonth) => {
+  // opts.head === false hides the summary line (the Overview hero already shows those numbers).
+  A.goalPaceChart = (month = A.S.goalMonth, opts = {}) => {
     const U = A.ui, C = A.charts;
     const p = A.D.goalDaily(month);
     if (!(p.goal > 0)) return U.empty('No monthly goal saved', 'Set the 500K goal in Targets to chart sign-ups against it.', 'bullseye');
-    let head;
-    if (p.status !== 'loaded') {
+    let head = '';
+    if (opts.head === false) head = '';
+    else if (p.status !== 'loaded') {
       head = `<div class="gp-head"><span class="kpi-awaiting">Pending</span><span>${U.esc(p.reason || 'Coverage unavailable.')}</span></div>`;
     } else {
       const gap = Math.round(Math.abs(p.delta));
@@ -100,15 +78,31 @@
     return `${head}${chart}<p class="card-note">${U.esc(through)}Bars: cumulative External accounts created this month (first $identify, internal always excluded). Dashed line: required pace = goal × day ÷ days in month. Days without data yet are empty.</p>`;
   };
 
-  // Monthly 500K goal for the global Month, the monthly chart, and one row per month since launch.
+  // 500K goal hero for the global Month: Accounts created vs goal, LATAM share and pace (D.goalAccounts /
+  // D.goalDaily, the same numbers as Executive), the daily pace chart and a collapsible monthly history.
   function goalCard() {
     const U = A.ui, D = A.D, S = A.S;
-    const month = S.goalMonth;
+    const month = S.goalMonth, mName = U.monthName(month);
     const g = D.goalAccounts(month);
+    const p = D.goalDaily(month);
     const loaded = g.status === 'loaded';
-    const value = loaded ? `${U.fmt(g.value)}${g.goal ? ` <small>of ${U.fmt(g.goal)}</small>` : ''}` : '<span class="kpi-awaiting">Pending</span>';
-    const pctLine = !loaded ? (g.reason || 'Coverage unavailable.') : g.goal ? `${U.pct(g.value / g.goal, 1)} of the ${U.monthName(month)} goal` : 'No monthly goal saved in Targets.';
-    const latam = loaded ? `Of which LATAM: ${U.fmt(g.latam)} (${U.pct(g.latamShare || 0, 1)}) · the 11 plan countries` : null;
+    const ratio = loaded && g.goal ? g.value / g.goal : null;
+    const width = ratio == null ? 0 : Math.min(100, Math.max(0, ratio * 100));
+    const span = g.to ? U.win(g.from, g.to) : 'no covered day yet';
+    const nums = loaded
+      ? `<span class="acct-hero-actual">${U.fmt(g.value)}</span>${g.goal ? `<span class="acct-hero-goal">of ${U.fmt(g.goal)}</span>` : ''}`
+      : '<span class="acct-hero-actual"><span class="kpi-awaiting">Pending</span></span>';
+    const foot = !loaded ? `<span>${U.esc(g.reason || 'Coverage unavailable.')}</span>`
+      : g.goal ? `<span><b>${U.esc(U.pct(ratio, 1))}</b> of the ${U.esc(mName)} goal</span><span>${U.esc(span)}</span>` : '<span>No monthly goal saved in Targets.</span>';
+    const paceOk = p.status === 'loaded' && p.goal > 0;
+    const paceVal = paceOk
+      ? `<span class="gp-status gp-${p.ahead ? 'ahead' : 'behind'}">${U.icon(p.ahead ? 'arrow-trend-up' : 'arrow-trend-down')} ${p.ahead ? 'Ahead' : 'Behind'} · ${p.ahead ? '+' : '−'}${U.fmt(Math.round(Math.abs(p.delta)))}</span>`
+      : '<span class="text-muted">Pending</span>';
+    const side = [
+      ['Of which LATAM', loaded ? `${U.fmt(g.latam)}<small>${U.esc(U.pct(g.latamShare || 0, 1))}</small>` : '–', 'The 11 plan countries'],
+      ['Minimum to date', paceOk ? U.fmt(Math.ceil(p.required)) : '–', 'Goal × day ÷ days in month'],
+      ['Pace', paceVal, 'Versus the minimum to date'],
+    ].map(([dt, dd, hint]) => `<div><dt>${U.esc(dt)}</dt><dd>${dd}</dd><dd class="acct-hero-hint">${U.esc(hint)}</dd></div>`).join('');
     const rows = A.months().map((m) => ({ ...m, g: D.goalAccounts(m.id) }));
     const bar = (r) => {
       if (r.g.status !== 'loaded' || !r.g.goal) return '<span class="text-muted">–</span>';
@@ -120,11 +114,13 @@
       { t: 'Accounts created', num: 1, f: (r) => (r.g.status === 'loaded' ? U.fmt(r.g.value) : '<span class="text-muted">Pending</span>') },
       { t: '% of goal', f: bar },
     ], rows);
-    const span = g.to ? U.win(g.from, g.to) : 'no covered day yet';
+    const historyPanel = `<details class="goal-panel ov-history" id="ov-history"${S.ovHistoryOpen ? ' open' : ''}><summary><span><b>Monthly history</b><small>% of the monthly goal and accounts created per month since launch · click a bar to switch the Month</small></span><span class="goal-summary">Details ${U.icon('chevron-down')}</span></summary><div class="goal-body"><h4 class="cf-sub">% of the monthly goal by month</h4>${A.goalMonthChart(month)}<h4 class="cf-sub">Accounts created by month</h4>${history}</div></details>`;
+    const progress = `<div class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(width)}" aria-label="${U.esc(mName)} percent of goal"><i style="width:${width.toFixed(1)}%"></i></div>`;
     return U.card({
-      cls: 'acct-hero-card', title: `LATAM 500K goal · ${U.monthName(month)}`,
-      sub: `Monthly · ${span} · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota`,
-      body: `<div class="overview-metric-value">${value}</div><p class="card-note">${U.esc(pctLine)}</p>${latam ? `<p class="card-note">${U.esc(latam)}</p>` : ''}<h4 class="cf-sub">Sign-ups vs goal · ${U.esc(U.monthName(month))}</h4>${A.goalPaceChart(month)}<h4 class="cf-sub">% of the monthly goal by month</h4>${A.goalMonthChart(month)}<h4 class="cf-sub">Accounts created by month</h4>${history}<button class="btn btn-secondary btn-sm" type="button" data-go="targets">View targets</button>`,
+      cls: 'acct-hero-card', title: `LATAM 500K goal · ${mName}`,
+      sub: 'Monthly · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota',
+      right: `<button class="btn btn-secondary btn-sm" type="button" data-go="targets">${U.icon('bullseye')} View targets</button>`,
+      body: `<div class="acct-hero"><div class="acct-hero-main"><span class="acct-hero-label">Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${A.goalPaceChart(month, { head: false })}</div></div>${historyPanel}`,
     });
   }
 
@@ -226,22 +222,10 @@
   }
 
   function render() {
-    const U = A.ui, D = A.D, S = A.S;
+    const U = A.ui, S = A.S;
     const from = S.from, to = S.to;
-    const signupCovered = D.covered('posthog', 'account_coverage', from, to);
-    const signups = signupCovered ? D.signups(from, to) : null;
-    const imp = impressions(from, to), people = landingPeople(from, to);
-    const key = [
-      keyCard({ title: 'Impressions', source: 'Ads · Meta, Google Ads, LinkedIn Ads', unit: 'impressions', value: imp.value, lines: imp.lines, destination: 'social' }),
-      keyCard({ title: 'People on the landing', source: 'GA4 · go.think4ever.com', unit: 'unique users', value: people.value, lines: people.lines, destination: 'landing' }),
-      keyCard({ title: 'Sign-ups', source: 'PostHog · first $identify per unique person', unit: 'people', value: signups, lines: [
-        signupCovered ? (S.exInt ? 'Internal and test accounts excluded (think4ever, moadbus, t4e).' : 'Internal and test accounts included.') : 'Coverage unavailable; not zero.',
-        'Operational sign-up proxy. Not the same as account_created.',
-      ], destination: 'conversion' }),
-    ];
-    const links = `<div class="form-row">${[['acquisition', 'Acquisition'], ['conversion', 'Conversion'], ['product', 'Product usage'], ['executive', 'Executive']].map(([go, label]) => `<button class="btn btn-ghost btn-sm" type="button" data-go="${go}">${U.esc(label)}</button>`).join('')}</div>`;
-    return U.section('Overview', `${from} to ${to} · three key numbers, each from its own source · America/Bogota`, `<div class="grid-3">${key.join('')}</div><p class="card-note">These three key numbers are not linked person by person.</p>${links}`)
-      + U.section('Goal', 'Monthly goal for the Month selected at the top; independent of From/To.', goalCard())
+    const links = `<nav class="ov-links" aria-label="Open a detailed view">${[['acquisition', 'Acquisition', 'bullhorn'], ['conversion', 'Conversion', 'filter'], ['product', 'Product usage', 'cubes'], ['executive', 'Executive', 'chart-line']].map(([go, label, icon]) => `<button class="btn btn-ghost btn-sm" type="button" data-go="${go}">${U.icon(icon)} ${U.esc(label)}</button>`).join('')}</nav>`;
+    return U.section('Overview', `500K goal for the Month selected at the top (independent of From/To) · America/Bogota`, goalCard(), links)
       + U.section('Funnel', `${from} to ${to} · seven steps from impression to project · pick a country to focus on one market`, funnelCard(from, to))
       + periodComparison()
       + U.section('What matters', 'Evidence-based reading of the selected period.', A.assistant.render());
@@ -249,6 +233,8 @@
   function mount(el) {
     A.assistant.mount(el);
     A.bindGoalMonthChart(el);
+    const hist = el.querySelector('#ov-history');
+    if (hist) hist.addEventListener('toggle', () => { A.S.ovHistoryOpen = hist.open; });
     const pick = el.querySelector('#goal-country');
     if (pick) pick.addEventListener('change', () => { A.S.overviewCountry = pick.value; A.render(); });
   }

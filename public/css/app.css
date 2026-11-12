@@ -611,6 +611,23 @@ body[data-page="executive"] .check-chip { display: none; }
 .cty-card { gap: 6px; }
 .cty-share { font: 700 13px var(--font-mono); color: var(--color-text); }
 .cty-pct { font-family: var(--font-mono); }
+/* Overview hero: section links, number vs goal, side stats and collapsible monthly history */
+.ov-links { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface); }
+.ov-links .btn { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; }
+.acct-hero-card > .card-header { margin-bottom: 18px; }
+.acct-hero-nums { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; }
+.acct-hero-goal { font: 500 16px var(--font-mono); color: var(--color-text-muted); }
+.acct-hero .goal-bar i { background: var(--grad-primary); }
+.acct-hero-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; font: 500 12.5px var(--font-body); color: var(--color-text-secondary); }
+.acct-hero-foot b { font-family: var(--font-mono); color: var(--color-text); }
+.acct-hero-side > div { display: grid; gap: 2px; }
+.acct-hero-side dd small { margin-left: 8px; font: 500 12px var(--font-mono); color: var(--color-text-muted); }
+.acct-hero-side dd.acct-hero-hint { margin: 0; font: 500 11px var(--font-body); color: var(--color-text-muted); }
+.acct-hero-side .gp-status { font: 600 12.5px var(--font-body); }
+.ov-history { margin-top: 18px; }
+.goal-summary .fa-chevron-down { transition: transform .15s ease; }
+.ov-history[open] .goal-summary .fa-chevron-down { transform: rotate(180deg); }
+@media (max-width: 760px) { .ov-links { border-radius: var(--radius-lg); } }
 @media (max-width: 760px) { .acct-hero { grid-template-columns: 1fr; gap: 18px; } .acct-hero-side { padding: 14px 0 0; border-left: 0; border-top: 1px solid var(--color-border); } }
 .market-select { width: 190px; flex: 0 0 190px; }
 @media (max-width: 768px) { .market-select { width: 100%; flex-basis: 100%; } }
