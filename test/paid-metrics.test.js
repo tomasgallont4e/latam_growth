@@ -1486,3 +1486,14 @@ test('Executive draws sessions by channel with the long tail folded and spend Pe
   assert.doesNotMatch(html, /tiktok/);
   assert.match(html, /Ads spend by platform[\s\S]*?No ad network has reported/);
 });
+
+test('Executive lists campaigns with spend and shows unknown accounts and cost as –, never 0', async () => {
+  const html = await renderExecutive(executiveWithReview({ campaigns: { status: 'loaded', from: '2026-11-01', to: '2026-11-12', rows: [
+    { channel: 'Meta Ads', campaign: 'latam_launch', paid: true, spend: 120, impressions: 9000, clicks: 300, sessions: 250, forms: 6, accounts: 4, projects: 1, costPerAccount: 30 },
+    { channel: 'Google Ads', campaign: 'brand_latam', paid: true, spend: 40, impressions: 900, clicks: 50, sessions: 40, forms: null, accounts: null, projects: null, costPerAccount: null },
+  ] } }));
+  assert.match(html, /Campaigns this month/);
+  assert.match(html, /latam_launch[\s\S]*?Meta Ads[\s\S]*?120\.00[\s\S]*?9,000[\s\S]*?30\.00/);
+  assert.match(html, /brand_latam[\s\S]*?Google Ads(?:(?!<\/tr>)[\s\S])*text-muted">–<\/span><\/td><\/tr>/, 'unknown cost per account is –');
+  assert.match(html, /data-mr-channel/);
+});

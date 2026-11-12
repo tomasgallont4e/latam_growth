@@ -6,6 +6,7 @@
     product: { key: null, status: 'loading' },
     daily: { open: false, month: '', status: 'idle', data: null, error: '', channel: '', campaign: '' },
     review: { month: '', status: 'idle', data: null, error: '' },
+    campaignChannel: '',
   };
   function activationFunnelOptions() {
     const view = state.data && state.data.view || {};
@@ -302,7 +303,7 @@
     const body = reviewState() || (s.status !== 'loaded' ? U.empty('No comparison yet', U.esc(s.reason || ''), 'calendar-day') : U.table([
       { t: 'Metric', f: (r) => `${U.esc(r.name)}<br><small class="text-muted">${U.esc(r.source)}</small>` },
       { t: 'This month', num: 1, f: (r) => val(r, r.current) },
-      { t: 'Last month, same days', num: 1, f: (r) => val(r, r.previous) },
+      { t: 'Last month', num: 1, f: (r) => val(r, r.previous) },
       { t: 'Change', num: 1, f: (r) => U.delta(r.current, r.previous, { invert: r.lowerIsBetter }) },
     ], s.rows) + (s.reason ? `<p class="card-note">${U.esc(s.reason)} Pending is not zero.</p>` : '<p class="card-note">Pending means a day in the window has no data from that source. Only one month is closed, so full months are not compared yet.</p>'));
     return U.section('This month vs last month · same days', sub, U.card({ title: 'This month vs last month', sub: 'Same days of each month · from the daily report', body }));
@@ -328,6 +329,30 @@
       + U.card({ title: 'Landing sessions by channel', sub: 'GA4 · go.think4ever.com · ad network when the campaign matches, otherwise utm_source', body: body(c.sessions, 'sessions', 'var(--series-a)', (v) => U.fmt(v), 'No landing sessions this month') })
       + U.card({ title: 'Ads spend by platform', sub: 'Meta Ads · Google Ads · LinkedIn Ads is not connected', body: body(c.spend, 'spend', 'var(--series-b)', (v) => money(v), 'No ads spend this month') })
       + '</div>');
+  }
+
+  const CAMPAIGN_ROWS = 25;
+  function campaignsSection() {
+    const c = (state.review.data && state.review.data.campaigns) || {};
+    const all = c.rows || [];
+    const channels = [...new Set(all.map((r) => r.channel))].sort();
+    const pick = channels.includes(state.campaignChannel) ? state.campaignChannel : '';
+    const rows = all.filter((r) => !pick || r.channel === pick);
+    const filter = channels.length > 1 ? `<label class="field"><span>Channel</span><select data-mr-channel aria-label="Channel"><option value="">All channels</option>${channels.map((v) => `<option value="${U.esc(v)}"${v === pick ? ' selected' : ''}>${U.esc(v)}</option>`).join('')}</select></label>` : '';
+    const n = (v) => dfVal(v), m = (v) => dfVal(v, 'money');
+    const body = reviewState() || (c.status !== 'loaded' ? U.empty('No data yet', U.esc(c.reason || ''), 'calendar-day') : !rows.length ? U.empty('No campaign rows this month', '', 'bullhorn') : U.table([
+      { t: 'Campaign', f: (r) => `<code>${U.esc(r.campaign)}</code>` },
+      { t: 'Channel', f: (r) => U.esc(r.channel) },
+      { t: 'Spend', num: 1, f: (r) => m(r.spend) },
+      { t: 'Impressions', num: 1, f: (r) => n(r.impressions) },
+      { t: 'Clicks', num: 1, f: (r) => n(r.clicks) },
+      { t: 'Sessions', num: 1, f: (r) => n(r.sessions) },
+      { t: 'Forms', num: 1, f: (r) => n(r.forms) },
+      { t: 'Accounts', num: 1, f: (r) => n(r.accounts) },
+      { t: 'Cost per account', num: 1, f: (r) => m(r.costPerAccount) },
+    ], rows.slice(0, CAMPAIGN_ROWS)) + `<p class="card-note">${rows.length > CAMPAIGN_ROWS ? `Showing the ${CAMPAIGN_ROWS} rows with the most spend of ${U.fmt(rows.length)}. ` : ''}Accounts per campaign need the identity cohort (UTM match). A campaign without that match shows –, never 0. Open the daily report below for each day.</p>`);
+    const win = c.status === 'loaded' ? U.win(c.from, c.to) : U.monthName(state.month);
+    return U.section('Campaigns this month', `${win} · one row per campaign, rolled up from the daily report · sorted by spend`, U.card({ title: 'Campaigns this month', sub: 'Spend, traffic and results per campaign', body: (filter ? `<div class="form-row">${filter}</div>` : '') + body }));
   }
 
   function dailySection() {
@@ -407,6 +432,7 @@
       + channelsSection()
       + U.section('Management indicators', 'Source-native metrics stay separate. Pending outcomes need verified event coverage and identity linkage.', U.kpiRow(tiles, 3))
       + U.section('Campaign funnel', 'Seven stages from ad and page impressions to projects created. % is versus the previous stage; open a stage to see each channel, platform and campaign.', U.card({ cls: 'cf-card', title: 'Executive funnel · 7 stages', sub: cfSub, body: campaignFunnelHtml(view.campaignFunnel) }))
+      + campaignsSection()
       + dailySection()
       + U.section('Accounts created this month vs goal', state.span === 'launch' ? 'Cumulative External accounts created since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s accounts created. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Accounts created vs goal', right: drawn.controls, body: `<p class="card-note">Sources: PostHog (accounts created) · monthly goals (Targets)</p>${drawn.body}` }))
       + (A.goalMonthChart ? U.section('LATAM 500K goal by month', 'External accounts created per month as % of the monthly goal · internal always excluded · the same number as Overview · click a month to select it.', U.card({ cls: 'chart-card', title: 'LATAM 500K goal by month', sub: `Selected: ${U.esc(U.monthName(state.month))}${A.goalActualCumText ? ` · ${U.esc(A.goalActualCumText(A.D.goalAccounts(state.month)))}` : ''}`, body: `${A.goalPaceChart ? `<h4 class="cf-sub">Sign-ups vs goal · ${U.esc(U.monthName(state.month))}</h4>${A.goalPaceChart(state.month)}<h4 class="cf-sub">% of the monthly goal by month</h4>` : ''}${A.goalMonthChart(state.month)}` })) : '')
@@ -435,6 +461,8 @@
     });
     const ch = el.querySelector('[data-df-channel]');
     if (ch) ch.addEventListener('change', () => { state.daily.channel = ch.value; state.daily.campaign = ''; A.render(); });
+    const mr = el.querySelector('[data-mr-channel]');
+    if (mr) mr.addEventListener('change', () => { state.campaignChannel = mr.value; A.render(); });
     const ca = el.querySelector('[data-df-campaign]');
     if (ca) ca.addEventListener('change', () => { state.daily.campaign = ca.value; A.render(); });
   }

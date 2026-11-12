@@ -63,3 +63,21 @@ test('channels add the month rows by channel, largest first, and keep an unloade
   assert.equal(r.channels.spend, null);
   assert.equal(r.channels.reasons.spend, 'No ad network.');
 });
+
+test('campaigns roll the month up by channel and campaign, sorted by spend, with no cost where accounts are unknown', () => {
+  const rows = [
+    { date: '2026-11-01', channel: 'Meta Ads', campaign: 'Launch', paid: true, spend: 20, impressions: 1000, clicks: 30, sessions: 25, forms: 1, accounts: 2, projects: 1 },
+    { date: '2026-11-02', channel: 'Meta Ads', campaign: 'Launch', paid: true, spend: 10, impressions: 500, clicks: 10, sessions: 5, forms: 0, accounts: 1, projects: 0 },
+    { date: '2026-11-01', channel: 'Google Ads', campaign: 'Brand', paid: true, spend: 40, impressions: 900, clicks: 50, sessions: 40, forms: null, accounts: null, projects: null },
+    { date: '2026-11-01', channel: '(direct)', campaign: '(no UTM campaign)', paid: false, spend: null, impressions: null, clicks: null, sessions: 60, forms: null, accounts: null, projects: null },
+    { date: '2026-11-02', channel: 'newsletter', campaign: 'Digest', paid: false, spend: null, impressions: null, clicks: null, sessions: 0, forms: null, accounts: null, projects: null },
+  ];
+  const r = build({ cur: report('2026-11', range('2026-11', 2), { rows, from: '2026-11-01', to: '2026-11-02' }), prev: null });
+  assert.deepEqual(r.campaigns.rows.map((c) => c.campaign), ['Brand', 'Launch', '(no UTM campaign)'], 'all-zero rows are dropped');
+  const launch = r.campaigns.rows[1];
+  assert.equal(launch.spend, 30);
+  assert.equal(launch.accounts, 3);
+  assert.equal(launch.costPerAccount, 10);
+  assert.equal(r.campaigns.rows[0].costPerAccount, null);
+  assert.equal(r.campaigns.rows[2].spend, null);
+});
