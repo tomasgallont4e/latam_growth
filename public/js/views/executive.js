@@ -367,6 +367,52 @@
     return U.section('Meta Ads by country', `${U.win(from, to)} · where the ads were shown · sorted by spend`, U.card({ title: 'Meta Ads by country', sub: 'Meta insights · breakdown by country', body }));
   }
 
+  // World regions (plan 6.4.21): landing sessions and accounts by country, grouped by A.regions. One window for both
+  // sources, ending on the last day both have synced, so the two shares compare.
+  const REGION_SOURCES = [
+    { id: 'sessions', src: 'ga4', cover: 'executive_landing', metric: 'ga_exec_geo_sessions' },
+    { id: 'accounts', src: 'posthog', cover: 'account_coverage', metric: 'ph_accounts_geo' },
+  ];
+  function regionRows(from, to) {
+    const D = A.D, R = A.regions;
+    const heads = REGION_SOURCES.map((s) => { const h = D.snap(s.src, s.cover, from, to); return h && h.from <= from && h.rows && h.rows[0] && h.rows[0].available === true ? h.to : null; });
+    const ends = heads.filter(Boolean);
+    const through = ends.length ? ends.reduce((a, b) => (a < b ? a : b), to) : to;
+    if (through < from) return { from, through, rows: [], ready: {}, planCount: 0 };
+    const ready = Object.fromEntries(REGION_SOURCES.map((s) => [s.id, !!D.covered(s.src, s.cover, from, through)]));
+    const plan = Object.keys((A.S.data && A.S.data.goalPlan && A.S.data.goalPlan.countries) || {});
+    const out = new Map(R.ORDER.map((r) => [r.id, { ...r, sessions: 0, accounts: 0, countries: new Map() }]));
+    for (const row of D.M()) {
+      const s = row.dim === 'country' && row.date >= from && row.date <= through && REGION_SOURCES.find((x) => x.src === row.source && x.metric === row.metric);
+      if (!s || !ready[s.id]) continue;
+      const g = out.get(R.regionOf(row.dim_value, plan));
+      const v = Number(row.value) || 0;
+      g[s.id] += v;
+      g.countries.set(row.dim_value || '(not set)', (g.countries.get(row.dim_value || '(not set)') || 0) + v);
+    }
+    const rows = [...out.values()].filter((g) => g.sessions || g.accounts).map((g) => ({
+      ...g, countries: [...g.countries].sort((a, b) => b[1] - a[1]).map(([c]) => c),
+    }));
+    return { from, through, rows, ready, planCount: plan.length };
+  }
+  function regionSection() {
+    const from = `${state.month}-01`, end = U.endOfMonth(state.month), today = U.today();
+    const r = regionRows(from, end < today ? end : today);
+    const tot = (k) => r.rows.reduce((n, g) => n + g[k], 0);
+    const total = { sessions: tot('sessions'), accounts: tot('accounts') };
+    const cell = (g, k) => (!r.ready[k] ? reviewPending : `${U.fmt(g[k])}<small class="text-muted"> ${U.pct(total[k] ? g[k] / total[k] : null)}</small>`);
+    const top = (g) => `${g.countries.slice(0, 3).map(U.esc).join(', ')}${g.countries.length > 3 ? ` and ${g.countries.length - 3} more` : ''}`;
+    const none = !r.ready.sessions && !r.ready.accounts;
+    const body = none
+      ? U.empty('Pending', 'Neither GA4 landing sessions nor PostHog accounts by country cover this month yet.', 'hourglass-half')
+      : !r.rows.length ? U.empty('No sessions or accounts by country this month', '', 'globe') : U.table([
+        { t: 'Region', f: (g) => `${U.esc(g.name)}<br><small class="text-muted">${top(g)}</small>` },
+        { t: 'Sessions', num: 1, f: (g) => cell(g, 'sessions') },
+        { t: 'Accounts', num: 1, f: (g) => cell(g, 'accounts') },
+      ], r.rows) + `<p class="card-note">Landing sessions are GA4 on go.think4ever.com. Accounts created is PostHog first identify, External, all hosts, the same number as Overview. Both use the visitor's IP country. LATAM plan countries are the ${U.fmt(r.planCount)} countries of the goal plan.${r.rows.some((g) => g.id === 'unmapped') ? ' "Not in the region table" lists countries the table does not know yet, by name.' : ''}</p>`;
+    return U.section('Sessions and accounts by world region', `${U.win(r.from, r.through)} · month to date, through the last day both sources synced`, U.card({ title: 'By world region', sub: 'Landing sessions (GA4) and accounts created (PostHog) · country grouped into regions', body }));
+  }
+
   const CAMPAIGN_ROWS = 25;
   function campaignsSection() {
     const c = (state.review.data && state.review.data.campaigns) || {};
@@ -470,6 +516,7 @@
       + U.section('Campaign funnel', 'Seven stages from ad and page impressions to projects created. % is versus the previous stage; open a stage to see each channel, platform and campaign.', U.card({ cls: 'cf-card', title: 'Executive funnel · 7 stages', sub: cfSub, body: campaignFunnelHtml(view.campaignFunnel) }))
       + campaignsSection()
       + metaCountrySection()
+      + regionSection()
       + dailySection()
       + U.section('Accounts created this month vs goal', state.span === 'launch' ? 'Cumulative External accounts created since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s accounts created. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Accounts created vs goal', right: drawn.controls, body: `<p class="card-note">Sources: PostHog (accounts created) · monthly goals (Targets)</p>${drawn.body}` }))
       + (A.goalMonthChart ? U.section('LATAM 500K goal by month', 'External accounts created per month as % of the monthly goal · internal always excluded · the same number as Overview · click a month to select it.', U.card({ cls: 'chart-card', title: 'LATAM 500K goal by month', sub: `Selected: ${U.esc(U.monthName(state.month))}${A.goalActualCumText ? ` · ${U.esc(A.goalActualCumText(A.D.goalAccounts(state.month)))}` : ''}`, body: `${A.goalPaceChart ? `<h4 class="cf-sub">Sign-ups vs goal · ${U.esc(U.monthName(state.month))}</h4>${A.goalPaceChart(state.month)}<h4 class="cf-sub">% of the monthly goal by month</h4>` : ''}${A.goalMonthChart(state.month)}` })) : '')

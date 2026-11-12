@@ -120,7 +120,7 @@ function dashboard(stored = {}, hash = '') {
     },
   } });
   App.testLoad = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
-  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'aggregate.js', 'assistant.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/form.js', 'views/acquisition.js', 'app.js']) {
+  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'aggregate.js', 'assistant.js', 'regions.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/form.js', 'views/acquisition.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
   }
   App.S.from = '2026-10-01'; App.S.to = '2026-10-28';
@@ -1514,4 +1514,28 @@ test('Executive shows Meta Ads by country for the month, sorted by spend, and Pe
   assert.match(html, /Mexico[\s\S]*?70\.00[\s\S]*?Colombia[\s\S]*?30\.00[\s\S]*?2\.00%[\s\S]*?\$0\.50/);
   assert.doesNotMatch(html, /Peru/, 'rows outside the month are left out');
   assert.match(html, /Mexico(?:(?!<\/tr>)[\s\S])*text-muted">–<\/span><\/td><\/tr>/, 'no clicks means no cost per click');
+});
+
+test('Executive groups landing sessions and accounts by world region and keeps an uncovered source Pending', async () => {
+  const A = executiveWithReview({});
+  const month = A.bogotaMonth();
+  const from = `${month}-01`, today = A.ui.today();
+  const cover = (source, key) => ({ source, key, from, to: today, rows: [{ available: true }] });
+  const geo = (source, metric, country, value) => ({ source, metric, date: from, dim: 'country', dim_value: country, value });
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  A.S.data.snapshots.push(cover('ga4', 'executive_landing'));
+  A.S.data.metrics.push(
+    geo('ga4', 'ga_exec_geo_sessions', 'Colombia', 60), geo('ga4', 'ga_exec_geo_sessions', 'Mexico', 20),
+    geo('ga4', 'ga_exec_geo_sessions', 'United States', 15), geo('ga4', 'ga_exec_geo_sessions', 'Atlantis', 5),
+    geo('posthog', 'ph_accounts_geo', 'Colombia', 4),
+  );
+  const html = await renderExecutive(A);
+  assert.match(html, /Sessions and accounts by world region/);
+  assert.match(html, /LATAM plan countries<br><small class="text-muted">Colombia, Mexico<\/small>[\s\S]*?>80<small class="text-muted"> 80\.0%/);
+  assert.match(html, /United States and Canada[\s\S]*?>15</);
+  assert.match(html, /Not in the region table<br><small class="text-muted">Atlantis/, 'an unknown country is listed by name');
+  assert.match(html, /LATAM plan countries(?:(?!<\/tr>)[\s\S])*Pending/, 'accounts without coverage are Pending, not 0');
+  A.S.data.snapshots.push(cover('posthog', 'account_coverage'));
+  const both = A.views.executive.render();
+  assert.match(both, /LATAM plan countries(?:(?!<\/tr>)[\s\S])*>4<small class="text-muted"> 100\.0%/);
 });
