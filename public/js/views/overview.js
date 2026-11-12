@@ -93,9 +93,11 @@
         + `<span class="gp-status gp-${p.ahead ? 'ahead' : 'behind'}">${U.icon(p.ahead ? 'arrow-trend-up' : 'arrow-trend-down')} ${p.ahead ? 'Ahead of pace' : 'Behind pace'} · ${p.ahead ? '+' : '−'}${U.fmt(gap)}</span>`
         + (p.prev ? `<span>vs previous month (${U.esc(U.win(p.prev.from, p.prev.to))}) ${A.goalPrevHtml(p)}</span>` : '') + '</div>';
     }
-    const chart = C.goalProgress({ dates: p.dates, values: p.values, goal: p.goal, pace: p.pace, goalLine: true, label: `Sign-ups vs goal · ${U.monthName(month)}`, unit: 'sign-ups' });
+    const fit = !!opts.fit && p.status === 'loaded';
+    const chart = C.goalProgress({ dates: p.dates, values: p.values, goal: p.goal, pace: p.pace, goalLine: true, fit, label: `Sign-ups vs goal · ${U.monthName(month)}`, unit: 'sign-ups' });
     const through = p.to ? `Through ${U.dshort(p.to)}. ` : '';
-    return `${head}${chart}<p class="card-note">${U.esc(through)}Bars: cumulative External accounts created this month (first $identify, internal always excluded). Dashed line: required pace = goal × day ÷ days in month. Days without data yet are empty.</p>`;
+    const fitNote = fit ? ' Scaled to the actual: the required pace line leaves the top of the chart and the goal is off the scale.' : '';
+    return `${head}${chart}<p class="card-note">${U.esc(through)}Bars: cumulative External accounts created this month (first $identify, internal always excluded). Dashed line: required pace = goal × day ÷ days in month. Days without data yet are empty.${U.esc(fitNote)}</p>`;
   };
 
   // 500K goal hero for the global Month: Accounts created vs goal, LATAM share and pace (D.goalAccounts /
@@ -120,12 +122,17 @@
     const paceVal = paceOk
       ? `<span class="gp-status gp-${p.ahead ? 'ahead' : 'behind'}">${U.icon(p.ahead ? 'arrow-trend-up' : 'arrow-trend-down')} ${p.ahead ? 'Ahead' : 'Behind'} · ${p.ahead ? '+' : '−'}${U.fmt(Math.round(Math.abs(p.delta)))}</span>`
       : '<span class="text-muted">Pending</span>';
+    // Far below the goal (under 20% of the minimum to date) the full-goal scale flattens the bars, so the
+    // chart opens scaled to the actual; the toggle shows the full goal.
+    const canFit = paceOk && p.required > 0 && p.value < p.required * 0.2;
+    const fit = canFit && !S.ovPaceFull;
+    const scaleToggle = canFit ? `<div class="seg" role="group" aria-label="Chart scale"><button type="button" class="btn btn-ghost btn-sm" data-ov-scale="fit" aria-pressed="${fit}">Fit to actual</button><button type="button" class="btn btn-ghost btn-sm" data-ov-scale="full" aria-pressed="${!fit}">Full goal</button></div>` : '';
     const side = [
       ['Of which LATAM', loaded ? `${U.fmt(g.latam)}<small>${U.esc(U.pct(g.latamShare || 0, 1))}</small>` : '–', 'The 11 plan countries'],
       ['Minimum to date', paceOk ? U.fmt(Math.ceil(p.required)) : '–', 'Goal × day ÷ days in month'],
       ['Pace', paceVal, 'Versus the minimum to date'],
       ['vs previous month', loaded ? A.goalPrevHtml(g) : '–', A.goalPrevHint(g)],
-    ].map(([dt, dd, hint]) => `<div><dt>${U.esc(dt)}</dt><dd>${dd}</dd><dd class="acct-hero-hint">${U.esc(hint)}</dd></div>`).join('');
+    ].map(([dt, dd, hint]) => `<div class="acct-stat"><dt>${U.esc(dt)}</dt><dd>${dd}</dd><dd class="acct-hero-hint">${U.esc(hint)}</dd></div>`).join('');
     const rows = A.months().map((m) => ({ ...m, g: D.goalAccounts(m.id) }));
     const bar = (r) => {
       if (r.g.status !== 'loaded' || !r.g.goal) return '<span class="text-muted">–</span>';
@@ -144,7 +151,7 @@
       cls: 'acct-hero-card', title: `LATAM 500K goal · ${mName}`,
       sub: 'Monthly · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota',
       right: `<button class="btn btn-secondary btn-sm" type="button" data-go="targets">${U.icon('bullseye')} View targets</button>`,
-      body: `<div class="acct-hero"><div class="acct-hero-main"><div style="display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start"><div><span class="acct-hero-label">This month · Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div></div>${cumBlock}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${A.goalPaceChart(month, { head: false })}</div></div>${historyPanel}`,
+      body: `<div class="acct-hero"><div class="acct-hero-main"><div class="acct-hero-top"><div class="acct-hero-now"><span class="acct-hero-label">This month · Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div></div>${cumBlock}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><div class="acct-hero-trend-head"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${scaleToggle}</div>${A.goalPaceChart(month, { head: false, fit })}</div></div>${historyPanel}`,
     });
   }
 
@@ -172,6 +179,7 @@
     const impNets = ['meta', 'google_ads'].filter((k) => D.has(k, impMetric));
     if (impNets.length) steps.push({ name: 'Impressions', src: 'Meta Ads · Google Ads', n: add(impNets.map((k) => D.sum(k, impMetric, all ? null : inCountry, from, to))) });
     else steps.push(all ? { name: 'Impressions', src: 'Meta Ads · Google Ads', n: null, note: 'No ad platform has reported' } : split('Impressions', 'Meta Ads · Google Ads'));
+    steps[0].group = 'Ads · bars and % of impressions';
     // 2. Clicks to the landing (Meta outbound + Google Ads clicks); never split by country
     if (!all) steps.push(split('Clicks to the landing', 'Meta outbound · Google Ads clicks'));
     else {
@@ -181,9 +189,12 @@
       steps.push({ name: 'Clicks to the landing', src: 'Meta outbound · Google Ads clicks', n: parts.length ? add(parts) : null, note: 'No outbound clicks reported' });
     }
     // 3. Landing sessions (GA4, go.think4ever.com only)
+    // Bars restart here: impressions are ~100x larger than every on-site step, so one scale would
+    // flatten steps 4 to 7.
+    const onSite = { group: 'On the site · bars and % of landing sessions', rescale: true };
     steps.push(D.has('ga4', 'ga_exec_geo_sessions')
-      ? { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: D.sum('ga4', 'ga_exec_geo_sessions', all ? null : inCountry, from, to) }
-      : { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: null, note: 'GA4 go-host sessions not synced' });
+      ? { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: D.sum('ga4', 'ga_exec_geo_sessions', all ? null : inCountry, from, to), ...onSite }
+      : { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: null, note: 'GA4 go-host sessions not synced', ...onSite });
     // 4. Form submissions (HubSpot)
     if (!all) steps.push(split('Form submissions', 'HubSpot · CRM contacts'));
     else {
@@ -244,7 +255,7 @@
       { label: 'Registration starts', source: 'PostHog', cur: D.registrations(cur.from, cur.to), prev: D.registrations(prev.from, prev.to), format: U.fmt, delta: U.delta },
     ].filter((x) => x.cur != null || x.prev != null);
     const tiles = fields.map((x) => U.kpi({ label: x.label, source: x.source, value: x.format(x.cur), delta: x.delta(x.cur, x.prev), compare: `${prev.label}: ${x.format(x.prev)}` }));
-    const body = tiles.length ? U.kpiRow(tiles, 3) : U.empty('No comparable metrics yet', 'The connected sources have no daily facts for these completed buckets.');
+    const body = tiles.length ? U.kpiRow(tiles, tiles.length === 4 ? 4 : 3) : U.empty('No comparable metrics yet', 'The connected sources have no daily facts for these completed buckets.');
     return U.section(title, `${cur.label} vs ${prev.label} · last two complete ${D.grainName().toLowerCase()} buckets since launch; independent of the selected date range; in-progress bucket excluded`, body);
   }
 
@@ -262,6 +273,7 @@
     A.bindGoalMonthChart(el);
     const hist = el.querySelector('#ov-history');
     if (hist) hist.addEventListener('toggle', () => { A.S.ovHistoryOpen = hist.open; });
+    el.querySelectorAll('[data-ov-scale]').forEach((b) => b.addEventListener('click', () => { A.S.ovPaceFull = b.dataset.ovScale === 'full'; A.render(); }));
     const pick = el.querySelector('#goal-country');
     if (pick) pick.addEventListener('change', () => { A.S.overviewCountry = pick.value; A.render(); });
   }

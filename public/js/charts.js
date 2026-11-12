@@ -83,12 +83,16 @@
   // The two axes share a scale, so a bar top and its line point are the same value.
   // Optional `pace` (required cumulative sign-ups per day) draws a dashed pace line and `goalLine`
   // draws the 100% goal as a horizontal line. With either, the scale reaches them so the gap is honest.
-  C.goalProgress = ({ dates, values, goal, planned, pace, goalLine = false, label = 'LATAM 500K goal', unit = 'sign-ups' }) => {
+  // `fit` scales the axis to the actual values: the pace line is clipped at the top and the goal line
+  // is left out, so a month far below its goal still shows its daily shape.
+  C.goalProgress = ({ dates, values, goal, planned, pace, goalLine = false, fit = false, label = 'LATAM 500K goal', unit = 'sign-ups' }) => {
     if (!dates.length || !(goal > 0)) return U.empty('No goal to chart yet', 'The 500K plan sets the line this chart measures against.', 'chart-column');
     const W = 1000, H = 292, L = 54, R = 68, T = 18, B = 256;
     const pending = !values.some((v) => v != null);
     const reach = pace ? Math.max(0, ...pace.map((v) => Number(v) || 0)) : 0;
-    const maxLeft = pace || goalLine
+    const maxLeft = fit && !pending
+      ? niceMax(Math.max(1, ...values.map((v) => Number(v) || 0)) * 1.2)
+      : pace || goalLine
       ? niceMax(Math.max(1, goalLine ? goal : 0, reach, ...values.map((v) => Number(v) || 0)))
       : pending ? goal : niceMax(Math.max(1, ...values));
     const maxRight = planned ? goal : maxLeft / goal;
@@ -126,7 +130,7 @@
     } else if (pts.length) g += `<polyline class="goal-line" points="${pts.join(' ')}"/>`;
     if (pace) {
       const pp = dates.map((d, j) => `${(L + j * step + step / 2).toFixed(2)},${y(Number(pace[j]) || 0).toFixed(2)}`);
-      g += `<polyline class="goal-pace" points="${pp.join(' ')}"><title>Required pace: goal × day ÷ days in month</title></polyline>`;
+      g += `<clipPath id="goal-clip"><rect x="${L}" y="${T}" width="${W - L - R}" height="${B - T}"/></clipPath><polyline class="goal-pace" clip-path="url(#goal-clip)" points="${pp.join(' ')}"><title>Required pace: goal × day ÷ days in month</title></polyline>`;
     }
     if (goalLine && goal <= maxLeft) {
       const gy = y(goal).toFixed(1);
@@ -144,7 +148,7 @@
       if (j % every === 0) g += `<text x="${(L + j * step + step / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle">${U.esc(U.dshort(d))}</text>`;
     });
     if (pending) g += `<text x="${W / 2}" y="${(T + B) / 2}" text-anchor="middle">Actual pending</text>`;
-    const legend = `<div class="goal-legend"><span class="swatch-bar">Month-to-date ${U.esc(unit)} (left axis)</span><span class="swatch-line">${planned ? 'Planned cumulative sign-ups' : `% of ${U.esc(U.fmt(goal))} goal`} (right axis)</span>${pace ? '<span class="swatch-pace">Required pace</span>' : ''}${goalLine ? `<span class="swatch-goal">Goal ${U.esc(U.fmt(goal))}</span>` : ''}</div>`;
+    const legend = `<div class="goal-legend"><span class="swatch-bar">Month-to-date ${U.esc(unit)} (left axis)</span><span class="swatch-line">${planned ? 'Planned cumulative sign-ups' : `% of ${U.esc(U.fmt(goal))} goal`} (right axis)</span>${pace ? '<span class="swatch-pace">Required pace</span>' : ''}${goalLine && goal <= maxLeft ? `<span class="swatch-goal">Goal ${U.esc(U.fmt(goal))}</span>` : ''}</div>`;
     return `<div class="chart-scroll"><svg class="chart-svg goal-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(label)}">${g}</svg></div>${legend}`;
   };
 
@@ -257,7 +261,7 @@
     let h = '';
     let pathBase = null;
     steps.forEach((s, k) => {
-      if (s.separate && s.n != null) pathBase = s.n;
+      if ((s.separate || s.rescale) && s.n != null) pathBase = s.n;
       const denom = pathBase != null ? pathBase : base;
       if (k > 0) {
         if (s.kind === 'rate' || s.separate || s.aside) h += `<div class="funnel-conn"><span class="conn-note">${U.icon('arrow-down')} ${U.esc(s.bridge || (s.kind === 'rate' ? 'Rate for the step above' : s.aside ? 'Not part of the step %' : 'Separate path'))}</span></div>`;
@@ -272,9 +276,10 @@
           }
         }
       }
+      if (s.group) h += `<div class="funnel-group">${U.esc(s.group)}</div>`;
       const pend = s.n == null;
       const rate = s.kind === 'rate';
-      const restarted = s.separate && s.n != null && s.n === pathBase;
+      const restarted = (s.separate || s.rescale) && s.n != null && s.n === pathBase;
       const w = pend ? 0 : rate ? Math.min(100, Math.max(0, Number(s.n) * 100)) : (denom ? Math.min(100, Math.max(0.8, (s.n / denom) * 100)) : 0);
       const count = pend
         ? `<span class="awaiting-chip">${U.esc(s.note || `Awaiting ${s.src}`)}</span>`
