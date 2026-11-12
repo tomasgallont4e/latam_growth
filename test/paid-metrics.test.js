@@ -1539,3 +1539,17 @@ test('Executive groups landing sessions and accounts by world region and keeps a
   const both = A.views.executive.render();
   assert.match(both, /LATAM plan countries(?:(?!<\/tr>)[\s\S])*>4<small class="text-muted"> 100\.0%/);
 });
+
+test('Executive lists personas with their names, keeps the untagged row and says how much carries a code', async () => {
+  const html = await renderExecutive(executiveWithReview({ personas: {
+    status: 'loaded', from: '2026-11-01', to: '2026-11-12', loaded: { sessions: true, forms: false, accounts: true, projects: true }, tagged: { sessions: 0.25, forms: null, accounts: 0.5, projects: 1 },
+    rows: [
+      { persona: 'p05', name: 'Designers', sessions: 25, forms: null, accounts: 3, projects: 0 },
+      { persona: '(no persona code)', name: null, sessions: 75, forms: null, accounts: 3, projects: 0 },
+    ],
+  } }));
+  assert.match(html, /Personas this month/);
+  assert.match(html, /p05<\/span> Designers[\s\S]*?>25<[\s\S]*?Pending[\s\S]*?>3</);
+  assert.match(html, /class="muted"[\s\S]*?\(no persona code\)/);
+  assert.match(html, /A persona code reaches 25\.0% of landing sessions, 50\.0% of attributed accounts\./);
+});

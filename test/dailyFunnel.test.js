@@ -176,3 +176,24 @@ test('a month after today is pending', () => {
   assert.equal(r.status, 'pending');
   assert.deepEqual(r.rows, []);
 });
+
+test('personas follow utm_content with the same attribution as campaigns, and untagged rows stay apart', () => {
+  const inp = input();
+  const utm = inp.snapshots.find((s) => s.key === 'executive_landing_utm_1');
+  utm.rows[0].content = 'p1-launch';
+  const cohort = inp.snapshots.find((s) => s.key === 'identity_cohort_1');
+  cohort.rows[1].utm_content = 'p99';
+  cohort.rows[2].utm_content = 'p13';
+  inp.eventRows[0].first_utm_content = 'p05';
+  const r = build(inp);
+  const p = (date, persona) => r.personas.find((x) => x.date === date && x.persona === persona);
+  assert.deepEqual(p('2026-11-03', 'p01'), { date: '2026-11-03', persona: 'p01', sessions: 30, forms: 0, accounts: 0, projects: 0 }, 'p1 is read as p01');
+  assert.equal(p('2026-11-03', 'p05').forms, 1);
+  assert.equal(p('2026-11-03', 'p05').accounts, 1, 'the account takes the persona of its matched HubSpot form');
+  assert.equal(p('2026-11-04', 'p05').projects, 1);
+  assert.equal(p('2026-11-03', 'p13').accounts, 1);
+  const none = p('2026-11-03', '(no persona code)');
+  assert.equal(none.sessions, 55);
+  assert.equal(none.forms, 1, 'internal forms are left out');
+  assert.equal(none.accounts, 1, 'p99 is not one of the 13 personas');
+});

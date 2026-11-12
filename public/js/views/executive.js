@@ -413,6 +413,21 @@
     return U.section('Sessions and accounts by world region', `${U.win(r.from, r.through)} · month to date, through the last day both sources synced`, U.card({ title: 'By world region', sub: 'Landing sessions (GA4) and accounts created (PostHog) · country grouped into regions', body }));
   }
 
+  function personaSection() {
+    const c = (state.review.data && state.review.data.personas) || {};
+    const cell = (f) => (r) => (c.loaded && !c.loaded[f] ? reviewPending : dfVal(r[f]));
+    const share = (f) => (c.tagged && c.tagged[f] != null ? U.pct(c.tagged[f]) : null);
+    const shares = [['sessions', 'landing sessions'], ['forms', 'form submissions'], ['accounts', 'attributed accounts']].map(([f, label]) => (share(f) ? `${share(f)} of ${label}` : null)).filter(Boolean);
+    const body = reviewState() || (c.status !== 'loaded' ? U.empty('No data yet', U.esc(c.reason || ''), 'calendar-day') : !c.rows.length ? U.empty('No sessions, forms or accounts this month', '', 'users') : U.table([
+      { t: 'Persona', f: (r) => (r.name ? `${U.pill('info', r.persona)} ${U.esc(r.name)}` : `<span class="text-muted">${U.esc(r.persona)}</span>`) },
+      { t: 'Sessions', num: 1, f: cell('sessions') },
+      { t: 'Forms', num: 1, f: cell('forms') },
+      { t: 'Accounts', num: 1, f: cell('accounts') },
+    ], c.rows, (r) => (r.name ? '' : 'muted')) + `<p class="card-note">${shares.length ? `A persona code reaches ${shares.join(', ')}. ` : ''}The persona is the code at the start of utm_content (p01 to p13), the rule every ad piece follows. Visits and sign-ups without it stay under "(no persona code)", never spread across personas. Accounts here are the identity cohort with its UTMs, so they add up to less than the Overview total.</p>`);
+    const win = c.status === 'loaded' ? U.win(c.from, c.to) : U.monthName(state.month);
+    return U.section('Personas this month', `${win} · month to date · from the daily report, by utm_content`, U.card({ title: 'By persona', sub: 'Landing sessions (GA4) · forms (HubSpot) · accounts (PostHog identity cohort)', body }));
+  }
+
   const CAMPAIGN_ROWS = 25;
   function campaignsSection() {
     const c = (state.review.data && state.review.data.campaigns) || {};
@@ -517,6 +532,7 @@
       + campaignsSection()
       + metaCountrySection()
       + regionSection()
+      + personaSection()
       + dailySection()
       + U.section('Accounts created this month vs goal', state.span === 'launch' ? 'Cumulative External accounts created since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s accounts created. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Accounts created vs goal', right: drawn.controls, body: `<p class="card-note">Sources: PostHog (accounts created) · monthly goals (Targets)</p>${drawn.body}` }))
       + (A.goalMonthChart ? U.section('LATAM 500K goal by month', 'External accounts created per month as % of the monthly goal · internal always excluded · the same number as Overview · click a month to select it.', U.card({ cls: 'chart-card', title: 'LATAM 500K goal by month', sub: `Selected: ${U.esc(U.monthName(state.month))}${A.goalActualCumText ? ` · ${U.esc(A.goalActualCumText(A.D.goalAccounts(state.month)))}` : ''}`, body: `${A.goalPaceChart ? `<h4 class="cf-sub">Sign-ups vs goal · ${U.esc(U.monthName(state.month))}</h4>${A.goalPaceChart(state.month)}<h4 class="cf-sub">% of the monthly goal by month</h4>` : ''}${A.goalMonthChart(state.month)}` })) : '')

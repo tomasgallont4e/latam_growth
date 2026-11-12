@@ -81,3 +81,23 @@ test('campaigns roll the month up by channel and campaign, sorted by spend, with
   assert.equal(r.campaigns.rows[0].costPerAccount, null);
   assert.equal(r.campaigns.rows[2].spend, null);
 });
+
+test('personas roll the month up by persona, keep the untagged row last and report the tagged share', () => {
+  const personas = [
+    { date: '2026-11-01', persona: 'p01', sessions: 30, forms: 1, accounts: 2, projects: 0 },
+    { date: '2026-11-02', persona: 'p01', sessions: 10, forms: 0, accounts: 1, projects: 1 },
+    { date: '2026-11-01', persona: 'p05', sessions: 10, forms: 2, accounts: 0, projects: 0 },
+    { date: '2026-11-01', persona: '(no persona code)', sessions: 50, forms: 1, accounts: 1, projects: 0 },
+  ];
+  const stages = ['sessions', 'forms', 'accounts', 'projects'].map((id) => ({ id, status: id === 'forms' ? 'not_connected' : 'loaded' }));
+  const r = build({ cur: report('2026-11', range('2026-11', 2, { accountsCohort: 3 }), { personas, stages, from: '2026-11-01', to: '2026-11-02' }), prev: null });
+  assert.deepEqual(r.personas.rows.map((x) => x.persona), ['p01', 'p05', '(no persona code)']);
+  assert.equal(r.personas.rows[0].name, 'Software developers and analysts');
+  assert.equal(r.personas.rows[0].sessions, 40);
+  assert.equal(r.personas.rows[0].forms, null, 'an unloaded stage stays null');
+  assert.equal(r.personas.tagged.sessions, 0.5);
+  assert.equal(r.personas.tagged.accounts, 0.75);
+  assert.equal(r.personas.tagged.forms, null);
+  const noCohort = build({ cur: report('2026-11', range('2026-11', 2), { personas, stages, from: '2026-11-01', to: '2026-11-02' }), prev: null });
+  assert.equal(noCohort.personas.rows[0].accounts, null, 'without the identity cohort accounts by persona are unknown');
+});
