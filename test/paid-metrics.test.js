@@ -410,7 +410,7 @@ test('audited 4 CRM + 34 PostHog case never claims 38 verified accounts or 850% 
   assert.equal(A.D.ga().rate, 508 / 1752);
   const conversion = A.views.conversion.render(), overview = A.views.overview.render();
   assert.match(conversion, /29\.0%/);
-  assert.match(overview, /LATAM 500K goal · .*Monthly · .*sign-ups once per person \(first \$identify/);
+  assert.match(overview, /LATAM 500K goal · .*Monthly · .*sign-ups once per person \(first account_created or \$identify/);
   assert.doesNotMatch(conversion + overview, /850|72\.1%|35\.6%|38 sign-ups|Direct Platform Sign-ups/);
   assert.doesNotMatch(conversion, /Weakest step|drop-off<|continue</);
   A.S.exInt = false;
@@ -1220,7 +1220,7 @@ test('loaded PostHog funnel exposes only aggregate step counts to the assistant 
   assert.equal(JSON.stringify(summary).includes('private@example.com'), false);
 });
 
-test('Overview sign-up goal stays on first identify and outcomes are separate', () => {
+test('Overview sign-up goal counts first account_created or identify and outcomes are separate', () => {
   const A = auditedDashboard();
   A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true, country_available: true }] });
   A.S.data.snapshots.push({ ...available('posthog', 'accounts_created_coverage'), rows: [{ available: true, event: 'account_created' }] });
@@ -1234,7 +1234,7 @@ test('Overview sign-up goal stays on first identify and outcomes are separate', 
   assert.match(html, /LATAM 500K goal/);
   assert.match(html, /sign-ups once per person/);
   assert.match(html, /data-go="product"/);
-  assert.match(html, /sign-ups once per person \(first \$identify/);
+  assert.match(html, /sign-ups once per person \(first account_created or \$identify/);
   assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel/);
 });
 
