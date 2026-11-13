@@ -612,6 +612,12 @@ test('Overview: dates typed in From/To set the accounts card, the pace chart and
   // Step 4 split by HubSpot form: Developer Network registrations read apart from the landing sign-up.
   A.S.data.events = [{ kind: 'form_signup', date: '2026-11-12', form: 'T4E – Early Builders Colombia' }, { kind: 'form_signup', date: '2026-11-13', form: 'T4E – Early Builders Colombia' }, { kind: 'form_signup', date: '2026-11-13', form: 'T4E – Landing Signup LATAM' }, { kind: 'form_signup', date: '2026-11-13', form: 'T4E – Landing Signup LATAM', utm_medium: 'test' }, { kind: 'form_signup', date: '2026-11-05', form: 'T4E – Landing Signup LATAM' }];
   assert.match(A.views.overview.render(), /ov-forms-by-form">Form submissions by form: Early Builders Colombia <b>2<\/b> · Landing Signup LATAM <b>1<\/b>/);
+  // Accounts split by the HubSpot form matched to the account (daily counts from the connector).
+  assert.doesNotMatch(A.views.overview.render(), /ov-accounts-by-origin/);
+  A.S.data.snapshots.push({ ...available('posthog', 'account_origin_coverage'), to: '2026-11-13', rows: [{ available: true }] });
+  const origin = (n, d, v) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n });
+  A.S.data.metrics.push(origin(5, '2026-11-10', 'Developer Network form'), origin(1, '2026-11-11', 'Developer Network form'), origin(2, '2026-11-13', 'Landing sign-up form'), origin(2, '2026-11-12', 'No form matched'), origin(9, '2026-11-06', 'No form matched'));
+  assert.match(A.views.overview.render(), /ov-accounts-by-origin">Accounts created by origin: Developer Network form <b>6<\/b> · Landing sign-up form <b>2<\/b> · No form matched <b>2<\/b>/);
   // Narrower dates move every number together.
   A.S.from = '2026-11-12';
   assert.equal(period(A.views.overview.render()), 4);
