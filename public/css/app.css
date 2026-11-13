@@ -587,7 +587,6 @@ body[data-role="ads"] :is(#note-form, #csv-form, #source-form, [data-sync], [dat
 .pace-leading, .pace-met { color: var(--color-success); }
 .pace-trailing, .pace-missed { color: var(--color-error); }
 body[data-page="executive"] .range-field:not(.month-field),
-body[data-page="overview"] #period,
 body[data-page="executive"] #period,
 body[data-page="executive"] .check-chip { display: none; }
 @media (max-width: 1024px) {

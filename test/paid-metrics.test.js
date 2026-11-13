@@ -509,6 +509,12 @@ test('Overview opens with the 500K goal hero and section links, without the old 
 test('Overview 7-step funnel shows % between steps, the weakest step and the country split', () => {
   const A = dashboard();
   A.S.from = '2026-10-01'; A.S.to = '2026-10-28';
+  // Group by at the top sets the funnel window, always ending at To; Monthly = the selected From -> To.
+  assert.deepEqual([A.grainWindow('day').from, A.grainWindow('day').to], ['2026-10-28', '2026-10-28']);
+  assert.deepEqual([A.grainWindow('week').from, A.grainWindow('week').to], ['2026-10-22', '2026-10-28']);
+  assert.equal(A.grainWindow('quarter').from, '2026-10-01', 'capped at launch');
+  assert.equal(A.grainWindow('year').from, '2026-10-01');
+  A.S.grain = 'month';
   A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
   A.S.data.metrics = [
     { ...metric('meta', 'ad_impressions', 9000, 'launch'), dim: 'campaign' },

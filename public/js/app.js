@@ -590,6 +590,26 @@
     const r = A.monthRange(S.goalMonth);
     return S.from === r.from && S.to === r.to;
   };
+  // Overview funnel window from the top-bar Group by, always ending at To (capped at launch and today):
+  // Daily = the To day, Weekly = last 7 days, Bi-weekly = last 14 days, Monthly = the selected Month (From -> To),
+  // Quarterly = last 3 months, Yearly = since launch. Other views keep using From/To as they are.
+  A.grainWindow = (grain = D.grain(), from = S.from, to = S.to) => {
+    let end = to > U.today() ? U.today() : to;
+    if (end < LAUNCH) end = LAUNCH;
+    const back = (days) => { const t = new Date(`${end}T00:00:00Z`); t.setUTCDate(t.getUTCDate() - days); return t.toISOString().slice(0, 10); };
+    let start;
+    if (grain === 'day') start = end;
+    else if (grain === 'week') start = back(6);
+    else if (grain === 'biweek') start = back(13);
+    else if (grain === 'quarter') {
+      const [y, m, d] = end.split('-').map(Number);
+      start = new Date(Date.UTC(y, m - 1 - 3, d + 1)).toISOString().slice(0, 10);
+    } else if (grain === 'year') start = LAUNCH;
+    else start = from || end;
+    if (start < LAUNCH) start = LAUNCH;
+    if (start > end) start = end;
+    return { grain, from: start, to: end };
+  };
   A.setGoalMonth = (month, persist = true) => {
     const list = A.months();
     if (!list.some((m) => m.id === month)) month = A.bogotaMonth();

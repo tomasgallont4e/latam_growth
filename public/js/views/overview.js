@@ -240,15 +240,11 @@
   }
 
   // ---------- last two complete periods (in-progress bucket excluded)
-  // Group by only changes this block in Overview, so its control sits here instead of the top bar.
-  function grainToggle() {
-    const U = A.ui, g = A.S.grain;
-    return `<div class="seg" role="group" aria-label="Compare by">${[['day', 'Day'], ['week', 'Week'], ['month', 'Month']].map(([v, l]) => `<button type="button" class="btn btn-ghost btn-sm" data-ov-grain="${v}" aria-pressed="${g === v}">${l}</button>`).join('')}</div>`;
-  }
+  // Follows the Group by selector in the top bar, like the 7-step funnel.
   function periodComparison(comparison = A.D.completeBucketComparison()) {
     const U = A.ui, D = A.D;
     const title = `Last complete ${D.grainName()} period vs previous`;
-    if (!comparison) return U.section(title, `No comparison yet: available history since launch must contain two fully completed ${D.grainName().toLowerCase()} buckets.`, U.card({ title: 'Comparison unavailable', body: U.empty('Not enough completed history', 'The in-progress bucket is excluded from comparisons.') }), grainToggle());
+    if (!comparison) return U.section(title, `No comparison yet: available history since launch must contain two fully completed ${D.grainName().toLowerCase()} buckets. Change Group by at the top to compare another period.`, U.card({ title: 'Comparison unavailable', body: U.empty('Not enough completed history', 'The in-progress bucket is excluded from comparisons.') }));
     const cur = comparison.current, prev = comparison.previous;
     const a = D.ga(cur.from, cur.to), b = D.ga(prev.from, prev.to);
     const fields = [
@@ -261,15 +257,18 @@
     ].filter((x) => x.cur != null || x.prev != null);
     const tiles = fields.map((x) => U.kpi({ label: x.label, source: x.source, value: x.format(x.cur), delta: x.delta(x.cur, x.prev), compare: `${prev.label}: ${x.format(x.prev)}` }));
     const body = tiles.length ? U.kpiRow(tiles, tiles.length === 4 ? 4 : 3) : U.empty('No comparable metrics yet', 'The connected sources have no daily facts for these completed buckets.');
-    return U.section(title, `${cur.label} vs ${prev.label} · last two complete ${D.grainName().toLowerCase()} buckets since launch; independent of the selected date range; in-progress bucket excluded`, body, grainToggle());
+    return U.section(title, `${cur.label} vs ${prev.label} · last two complete ${D.grainName().toLowerCase()} buckets since launch · set by Group by at the top; in-progress bucket excluded`, body);
   }
 
   function render() {
     const U = A.ui, S = A.S;
-    const from = S.from, to = S.to;
+    // The 7-step funnel follows Group by at the top, always ending at To (A.grainWindow).
+    const win = A.grainWindow();
+    const from = win.from, to = win.to;
+    const span = from === to ? from : `${from} to ${to}`;
     const links = `<nav class="ov-links" aria-label="Open a detailed view">${[['acquisition', 'Acquisition', 'bullhorn'], ['conversion', 'Conversion', 'filter'], ['product', 'Product usage', 'cubes'], ['executive', 'Executive', 'chart-line']].map(([go, label, icon]) => `<button class="btn btn-ghost btn-sm" type="button" data-go="${go}">${U.icon(icon)} ${U.esc(label)}</button>`).join('')}</nav>`;
     return U.section('Overview', `Monthly sign-up goal for the Month selected at the top (goal from Targets, else the 500K plan) · America/Bogota`, goalCard(), links)
-      + U.section('Funnel', `${from} to ${to} · seven steps from impression to project · pick a country to focus on one market`, funnelCard(from, to))
+      + U.section('Funnel', `${span} · ${A.D.grainName()} (Group by at the top) · seven steps from impression to project · pick a country to focus on one market`, funnelCard(from, to))
       + periodComparison()
       + U.section('What matters', 'Evidence-based reading of the selected period.', A.assistant.render());
   }
@@ -279,7 +278,7 @@
     const hist = el.querySelector('#ov-history');
     if (hist) hist.addEventListener('toggle', () => { A.S.ovHistoryOpen = hist.open; });
     el.querySelectorAll('[data-ov-scale]').forEach((b) => b.addEventListener('click', () => { A.S.ovPaceFull = b.dataset.ovScale === 'full'; A.render(); }));
-    el.querySelectorAll('[data-ov-grain]').forEach((b) => b.addEventListener('click', () => A.setGrain(b.dataset.ovGrain)));
+
     const pick = el.querySelector('#goal-country');
     if (pick) pick.addEventListener('change', () => { A.S.overviewCountry = pick.value; A.render(); });
   }
