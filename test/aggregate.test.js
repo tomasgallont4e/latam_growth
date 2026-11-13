@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const agg = require('../public/js/aggregate');
 const { buildQuery, read } = require('../lib/funnels');
-const { cleanRequest, ask } = require('../lib/assistant');
+const { cleanRequest, cleanExecutive, ask } = require('../lib/assistant');
 
 const from = '2026-10-01', to = '2026-11-05';
 const phSteps = [676, 73, 33, 9, 3, 3].map((n, i) => ({ name: `step ${i}`, n }));
@@ -127,7 +127,8 @@ test('assistant receives the aggregate funnel and channel comparison, sanitized 
   summary.acquisition.sources.ga4.channels.push({ channel: 'leak@example.com', sessions: 1 });
   const safe = cleanRequest({ mode: 'insights', question: 'Which funnel step is next?', context: { period: { from, to }, executive_funnel: summary } });
   const funnel = safe.context.executive_funnel;
-  assert.equal(funnel.product_funnel.steps.length, 6);
+  assert.equal(funnel.product_funnel, undefined, 'the saved PostHog funnel does not reach the model');
+  assert.equal(cleanExecutive(summary).product_funnel.steps.length, 6);
   assert.equal(funnel.acquisition.sources.ads.totals.impressions, 348000);
   assert.equal(funnel.acquisition.sources.ads.totals.clicks, 6468);
   assert.equal(funnel.acquisition.sources.ga4.totals.sessions, 2900);
@@ -183,7 +184,7 @@ test('coverage mismatches never become source joins and absent channels remain s
 
 test('PostHog rate basis reaches the assistant and acquisition stays outside the ordered model', () => {
   const model = agg.build(sample());
-  const safe = cleanRequest({ question: 'q', context: { executive_funnel: agg.summarize(model) } }).context.executive_funnel;
+  const safe = cleanExecutive(agg.summarize(model));
   assert.equal(safe.product_funnel.steps[2].rate_basis, 'within saved ordered PostHog funnel');
   assert.ok(safe.product_funnel.steps.every((s, i) => s.rate_basis === (i ? 'within saved ordered PostHog funnel' : null)));
   assert.equal(safe.product_funnel.steps[3].step, 'Sign-up ($identify)');
@@ -366,5 +367,6 @@ test('the ordered PostHog identify is called sign-up and assistant never equates
     apiKey: 'test-secret', fetchImpl: async (url, options) => { sent = JSON.parse(options.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }; },
   });
   assert.match(sent.system, /never calculate cross-source conversion\/drop-off/);
-  assert.match(sent.messages[0].content, /"Sign-up \(\$identify\)"/);
+  assert.match(sent.system, /saved ordered PostHog funnel is not part of this context/);
+  assert.doesNotMatch(sent.messages[0].content, /"Sign-up \(\$identify\)"/);
 });

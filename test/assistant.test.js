@@ -223,3 +223,31 @@ test('read-only users can POST assistant questions but cannot change dashboard d
   const note = await fetch(`${base}/api/notes`, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({}) });
   assert.equal(note.status, 403);
 });
+
+test('the assistant reviews the 7-step Overview funnel and never receives the saved PostHog funnel', async () => {
+  const overview_funnel = { from: '2026-11-10', to: '2026-11-13', set_by: 'From/To', steps: [
+    { step: 'Impressions', source: 'Meta Ads + Google Ads', value: 12000 },
+    { step: 'Clicks to the landing', source: 'Meta Ads + Google Ads', value: 300 },
+    { step: 'Landing sessions', source: 'GA4', value: 250 },
+    { step: 'Form submissions', source: 'HubSpot', value: 20 },
+    { step: 'Accounts created', source: 'PostHog', value: 10 },
+    { step: 'Logins', source: 'PostHog · signed_in (events)', value: 40, counts: 'events' },
+    { step: 'Projects created', source: 'PostHog · project_created', value: null, note: 'PostHog events not synced' },
+    { step: 'leak@example.com', value: 1 },
+  ] };
+  const posthog_funnel = [{ step: 'Sign-up ($identify)', persons: 0 }];
+  const safe = cleanRequest({ question: 'Review funnel', context: { overview_funnel, posthog_funnel, funnel_name: 'Landing → cuenta' } }).context;
+  assert.deepEqual(safe.overview_funnel.steps.map((s) => s.step), ['Impressions', 'Clicks to the landing', 'Landing sessions', 'Form submissions', 'Accounts created', 'Logins', 'Projects created']);
+  assert.equal(safe.overview_funnel.steps[5].counts, 'events');
+  assert.equal(safe.overview_funnel.steps[6].value, null);
+  assert.equal(safe.overview_funnel.steps[6].note, 'PostHog events not synced');
+  assert.equal(safe.posthog_funnel, undefined);
+  assert.equal(safe.funnel_name, undefined);
+  let sent;
+  await ask({ question: 'Review funnel', context: { overview_funnel, posthog_funnel } }, {
+    apiKey: 'test-secret', fetchImpl: async (url, options) => { sent = JSON.parse(options.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }; },
+  });
+  assert.match(sent.system, /The funnel to review is overview_funnel/);
+  assert.match(sent.messages[0].content, /"Clicks to the landing"/);
+  assert.doesNotMatch(sent.messages[0].content, /Sign-up \(\$identify\)|leak@example/);
+});
