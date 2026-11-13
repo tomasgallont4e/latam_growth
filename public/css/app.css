@@ -632,6 +632,12 @@ body[data-page="executive"] .check-chip { display: none; }
 .acct-hero-top:has(.acct-hero-period) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .acct-hero-period { padding-left: 24px; border-left: 1px solid var(--color-border); display: grid; gap: 4px; }
 .acct-hero-period .acct-hero-actual { font-size: 32px; }
+/* Dates typed in From/To: the selected-dates block leads and the Month total moves to second place. */
+.acct-hero-top.is-range .acct-hero-period { order: -1; padding-left: 0; border-left: 0; }
+.acct-hero-top.is-range .acct-hero-now { padding-left: 24px; border-left: 1px solid var(--color-border); }
+.acct-hero-top.is-range .acct-hero-now .acct-hero-actual { font-size: 32px; color: var(--color-text-secondary); }
+.chart-svg .goal-focus { fill: var(--color-primary); opacity: .07; }
+.chart-svg .goal-col.is-dim { opacity: .3; }
 .acct-hero-side { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding-left: 0; border-left: 0; }
 .acct-stat { padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface-2); }
 .acct-hero-side .acct-stat dd { font-size: 18px; }
@@ -650,6 +656,8 @@ body[data-page="executive"] .check-chip { display: none; }
 @media (max-width: 560px) {
   .acct-hero-top { grid-template-columns: 1fr; }
   .acct-hero-cum, .acct-hero-period { padding-left: 0; border-left: 0; padding-top: 12px; border-top: 1px solid var(--color-border); }
+  .acct-hero-top.is-range .acct-hero-period { padding-top: 0; border-top: 0; }
+  .acct-hero-top.is-range .acct-hero-now { padding-left: 0; border-left: 0; padding-top: 12px; border-top: 1px solid var(--color-border); }
   .acct-hero-top:has(.acct-hero-period) { grid-template-columns: 1fr; }
 }
 .acct-hero-side dd.acct-hero-hint { margin: 0; font: 500 11px var(--font-body); color: var(--color-text-muted); }
