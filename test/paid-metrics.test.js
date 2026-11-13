@@ -609,6 +609,10 @@ test('Overview: dates typed in From/To set the accounts card, the pace chart and
   assert.match(html, /2026-11-10 to 2026-11-13 · From\/To at the top/);
   assert.match(html, /class="goal-focus"/);
   assert.ok((html.match(/goal-col is-dim/g) || []).length >= 1, 'days outside the typed dates are dimmed');
+  // The assistant receives the same seven steps and window the page draws.
+  const fed = A.overviewFunnel();
+  assert.deepEqual([fed.from, fed.to, fed.set_by, fed.steps.length], ['2026-11-10', '2026-11-13', 'From/To', 7]);
+  assert.equal(fed.steps.find((x) => x.step === 'Accounts created').value, 10);
   // Narrower dates move every number together.
   A.S.from = '2026-11-12';
   assert.equal(period(A.views.overview.render()), 4);

@@ -239,6 +239,11 @@
     else steps.push({ name: 'Projects created', src: 'PostHog · project_created', n: D.has('posthog', 'ph_event') ? D.sum('posthog', 'ph_event', (r) => r.dim_value === 'project_created', from, to) : null, note: 'PostHog events not synced' });
     return steps;
   }
+  // Same seven steps the page draws, for the assistant (window = A.overviewWindow, all countries).
+  A.overviewFunnel = () => {
+    const w = A.overviewWindow();
+    return { from: w.from, to: w.to, set_by: w.mode === 'range' ? 'From/To' : `Group by ${A.D.grainName()}`, steps: funnelSteps(w.from, w.to, 'all').map((s) => ({ step: s.name, source: s.src, value: s.n == null ? null : Number(s.n), counts: s.aside ? 'events' : undefined, note: s.n == null ? s.note : undefined })) };
+  };
   function funnelCard(from, to) {
     const U = A.ui, C = A.charts, S = A.S;
     const options = countryOptions();
