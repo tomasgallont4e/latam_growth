@@ -1039,7 +1039,10 @@ test('Executive PostHog account country rows use event GeoIP on external first i
 
   const load = await connectors.posthog();
   const accountQuery = requests.find((r) => r.query.query.includes("event = '$identify'") && !r.query.query.includes('first_host'));
-  assert.match(accountQuery.query.query, /argMin\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name/);
+  // Accounts = first account_created or $identify per person; country only from the person's first $identify
+  // (account_created is a server event, so its GeoIP is the server's).
+  assert.match(accountQuery.query.query, /event IN \('\$identify', 'account_created'\)/);
+  assert.match(accountQuery.query.query, /argMinIf\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name[\s\S]*event = '\$identify'\) AS country/);
   assert.match(accountQuery.query.query, /person\.properties\.country/);
   const executiveTotal = load.metrics.find((r) => r.metric === 'ph_exec_accounts');
   const executiveGeo = load.metrics.find((r) => r.metric === 'ph_exec_accounts_geo');

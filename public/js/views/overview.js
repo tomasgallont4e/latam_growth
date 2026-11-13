@@ -168,7 +168,7 @@
     const progress = `<div class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(width)}" aria-label="${U.esc(mName)} percent of goal"><i style="width:${width.toFixed(1)}%"></i></div>`;
     return U.card({
       cls: 'acct-hero-card', title: `LATAM 500K goal · ${mName}`,
-      sub: 'Monthly · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota',
+      sub: 'Monthly · External accounts created, once per person (first account_created or $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota',
       right: `<button class="btn btn-secondary btn-sm" type="button" data-go="targets">${U.icon('bullseye')} View targets</button>`,
       body: `<div class="acct-hero"><div class="acct-hero-main"><div class="acct-hero-top${byRange ? ' is-range' : ''}"><div class="acct-hero-now"><span class="acct-hero-label">This month · Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div></div>${periodBlock}${cumBlock}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><div class="acct-hero-trend-head"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${scaleToggle}</div>${A.goalPaceChart(month, { head: false, fit, focus: byRange ? { from: pw.from, to: pw.to } : null })}</div></div>${historyPanel}`,
     });
@@ -225,7 +225,7 @@
     const accounts = !covered ? null : all
       ? D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', from, to)
       : D.sum('posthog', 'ph_accounts_geo', inCountry, from, to);
-    steps.push({ name: 'Accounts created', src: 'PostHog · first $identify · External', n: accounts, note: 'Account coverage unavailable; not zero' });
+    steps.push({ name: 'Accounts created', src: 'PostHog · account_created or first $identify · External', n: accounts, note: 'Account coverage unavailable; not zero' });
     // 6. Logins (PostHog signed_in events; entries to the platform; events, not people)
     const loginsSynced = metricsList().some((r) => r.source === 'posthog' && r.metric === 'ph_event' && r.dim_value === 'signed_in');
     // Shown in place but `aside`: login events include returning accounts, so they are not a subset of
