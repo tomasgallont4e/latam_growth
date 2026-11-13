@@ -4,7 +4,7 @@
 (function (A) {
   const U = A.ui;
   const LAUNCH = A.LAUNCH = '2026-10-01';
-  const S = A.S = { data: null, tab: 'overview', grain: 'day', from: LAUNCH, to: U.today(), exInt: true, me: null, goalCountry: 'Colombia', goalMonth: '' };
+  const S = A.S = { data: null, tab: 'overview', grain: 'day', ovWin: 'grain', from: LAUNCH, to: U.today(), exInt: true, me: null, goalCountry: 'Colombia', goalMonth: '' };
 
   // ---------- data helpers
   const D = A.D = {};
@@ -610,10 +610,21 @@
     if (start > end) start = end;
     return { grain, from: start, to: end };
   };
+  // Overview window. Dates typed in From/To win (S.ovWin = 'range'): the window is exactly From -> To,
+  // whatever Group by says. Picking a Group by option or a Month returns to the presets above.
+  A.overviewWindow = () => {
+    if (S.ovWin !== 'range') return { mode: 'grain', ...A.grainWindow() };
+    let to = S.to > U.today() ? U.today() : S.to;
+    if (to < LAUNCH) to = LAUNCH;
+    let from = S.from < LAUNCH ? LAUNCH : S.from;
+    if (from > to) from = to;
+    return { mode: 'range', grain: D.grain(), from, to };
+  };
   A.setGoalMonth = (month, persist = true) => {
     const list = A.months();
     if (!list.some((m) => m.id === month)) month = A.bogotaMonth();
     S.goalMonth = month;
+    S.ovWin = 'grain';
     const sel = document.getElementById('month-pick');
     sel.innerHTML = list.map((m) => `<option value="${U.esc(m.id)}"${m.id === month ? ' selected' : ''}>${U.esc(m.label)}</option>`).join('');
     sel.value = month;
@@ -625,9 +636,9 @@
   };
 
   // ---------- header controls
-  document.getElementById('period').addEventListener('change', (e) => A.setGrain(e.target.value));
+  document.getElementById('period').addEventListener('change', (e) => { S.ovWin = 'grain'; A.setGrain(e.target.value); });
   document.getElementById('month-pick').addEventListener('change', (e) => A.setGoalMonth(e.target.value));
-  for (const id of ['range-from', 'range-to']) document.getElementById(id).addEventListener('change', () => A.setRange(document.getElementById('range-from').value, document.getElementById('range-to').value));
+  for (const id of ['range-from', 'range-to']) document.getElementById(id).addEventListener('change', () => { S.ovWin = 'range'; A.setRange(document.getElementById('range-from').value, document.getElementById('range-to').value); });
   document.getElementById('ex-int').addEventListener('change', (e) => {
     S.exInt = e.target.checked; A.store('t4e-growth-exclude-internal', S.exInt ? '1' : '0');
     if (S.data) A.render();

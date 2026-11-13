@@ -94,10 +94,13 @@
         + (p.prev ? `<span>vs previous month (${U.esc(U.win(p.prev.from, p.prev.to))}) ${A.goalPrevHtml(p)}</span>` : '') + '</div>';
     }
     const fit = !!opts.fit && p.status === 'loaded';
-    const chart = C.goalProgress({ dates: p.dates, values: p.values, goal: p.goal, pace: p.pace, goalLine: true, fit, label: `Sign-ups vs goal · ${U.monthName(month)}`, unit: 'sign-ups' });
+    // opts.focus = { from, to }: the dates typed in From/To. Those days stay solid and the rest of the month dims.
+    const focus = opts.focus && p.dates.some((d) => d >= opts.focus.from && d <= opts.focus.to) ? opts.focus : null;
+    const chart = C.goalProgress({ dates: p.dates, values: p.values, goal: p.goal, pace: p.pace, goalLine: true, fit, focus, label: `Sign-ups vs goal · ${U.monthName(month)}`, unit: 'sign-ups' });
     const through = p.to ? `Through ${U.dshort(p.to)}. ` : '';
     const fitNote = fit ? ' Scaled to the actual: the required pace line leaves the top of the chart and the goal is off the scale.' : '';
-    return `${head}${chart}<p class="card-note">${U.esc(through)}Bars: cumulative External accounts created this month (first $identify, internal always excluded). Dashed line: required pace = goal × day ÷ days in month. Days without data yet are empty.${U.esc(fitNote)}</p>`;
+    const focusNote = focus ? ` Highlighted: ${U.win(focus.from, focus.to)}, the dates in From/To; the other days of the month are dimmed.` : '';
+    return `${head}${chart}<p class="card-note">${U.esc(through)}Bars: cumulative External accounts created this month (first $identify, internal always excluded). Dashed line: required pace = goal × day ÷ days in month. Days without data yet are empty.${U.esc(fitNote)}${U.esc(focusNote)}</p>`;
   };
 
   // 500K goal hero for the global Month: Accounts created vs goal, LATAM share and pace (D.goalAccounts /
@@ -121,15 +124,19 @@
     // Accounts created for the top-bar Group by period, always inside the selected Month's dates
     // (memory #141 population: External first $identify, all hosts, internal always excluded).
     // Ends at To when To is in the Month (same window as the 7-step funnel), else at the Month's last day.
+    // Dates typed in From/To win: the block then counts exactly From -> To (the same window and number as
+    // step 5 of the 7-step funnel) and leads the card; the Month total moves to second place.
+    const ow = A.overviewWindow();
+    const byRange = ow.mode === 'range';
     const mr = A.monthRange(month);
     const pTo = S.to >= mr.from && S.to <= mr.to ? S.to : mr.to;
     const pFrom = S.from >= mr.from && S.from <= pTo ? S.from : mr.from;
-    const pw = A.grainWindow(D.grain(), pFrom, pTo);
+    const pw = byRange ? ow : A.grainWindow(D.grain(), pFrom, pTo);
     const pOk = D.covered('posthog', 'account_coverage', pw.from, pw.to);
     const pVal = pOk ? D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', pw.from, pw.to) : null;
     const pMarkets = new Set(Object.keys((S.data && S.data.goalPlan && S.data.goalPlan.countries) || {}));
     const pLatam = pOk ? D.sum('posthog', 'ph_accounts_geo', (r) => r.dim === 'country' && pMarkets.has(r.dim_value), pw.from, pw.to) : null;
-    const periodBlock = `<div class="acct-hero-period"><span class="acct-hero-label">Selected period · ${U.esc(D.grainName())}</span><div class="acct-hero-nums">${pOk ? `<span class="acct-hero-actual">${U.fmt(pVal)}</span>` : '<span class="acct-hero-actual"><span class="kpi-awaiting">Pending</span></span>'}</div><small class="acct-hero-hint">${pOk ? `of which LATAM: ${U.fmt(pLatam)} (${U.esc(U.pct(pVal ? pLatam / pVal : 0, 1))}) · ${U.esc(U.win(pw.from, pw.to))} · follows Group by` : `Account coverage unavailable for ${U.esc(U.win(pw.from, pw.to))}; not zero.`}</small></div>`;
+    const periodBlock = `<div class="acct-hero-period"><span class="acct-hero-label">${byRange ? `Selected dates · Accounts created · ${U.esc(U.win(pw.from, pw.to))}` : `Selected period · ${U.esc(D.grainName())}`}</span><div class="acct-hero-nums">${pOk ? `<span class="acct-hero-actual">${U.fmt(pVal)}</span>` : '<span class="acct-hero-actual"><span class="kpi-awaiting">Pending</span></span>'}</div><small class="acct-hero-hint">${pOk ? `of which LATAM: ${U.fmt(pLatam)} (${U.esc(U.pct(pVal ? pLatam / pVal : 0, 1))}) · ${byRange ? 'follows From/To at the top' : `${U.esc(U.win(pw.from, pw.to))} · follows Group by`}` : `Account coverage unavailable for ${U.esc(U.win(pw.from, pw.to))}; not zero.`}</small></div>`;
     const paceOk = p.status === 'loaded' && p.goal > 0;
     const paceVal = paceOk
       ? `<span class="gp-status gp-${p.ahead ? 'ahead' : 'behind'}">${U.icon(p.ahead ? 'arrow-trend-up' : 'arrow-trend-down')} ${p.ahead ? 'Ahead' : 'Behind'} · ${p.ahead ? '+' : '−'}${U.fmt(Math.round(Math.abs(p.delta)))}</span>`
@@ -163,7 +170,7 @@
       cls: 'acct-hero-card', title: `LATAM 500K goal · ${mName}`,
       sub: 'Monthly · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota',
       right: `<button class="btn btn-secondary btn-sm" type="button" data-go="targets">${U.icon('bullseye')} View targets</button>`,
-      body: `<div class="acct-hero"><div class="acct-hero-main"><div class="acct-hero-top"><div class="acct-hero-now"><span class="acct-hero-label">This month · Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div></div>${periodBlock}${cumBlock}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><div class="acct-hero-trend-head"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${scaleToggle}</div>${A.goalPaceChart(month, { head: false, fit })}</div></div>${historyPanel}`,
+      body: `<div class="acct-hero"><div class="acct-hero-main"><div class="acct-hero-top${byRange ? ' is-range' : ''}"><div class="acct-hero-now"><span class="acct-hero-label">This month · Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div></div>${periodBlock}${cumBlock}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><div class="acct-hero-trend-head"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${scaleToggle}</div>${A.goalPaceChart(month, { head: false, fit, focus: byRange ? { from: pw.from, to: pw.to } : null })}</div></div>${historyPanel}`,
     });
   }
 
@@ -274,13 +281,14 @@
 
   function render() {
     const U = A.ui, S = A.S;
-    // The 7-step funnel follows Group by at the top, always ending at To (A.grainWindow).
-    const win = A.grainWindow();
+    // The 7-step funnel uses the Overview window: From -> To when the dates were typed, else the Group by
+    // preset ending at To (A.overviewWindow).
+    const win = A.overviewWindow();
     const from = win.from, to = win.to;
     const span = from === to ? from : `${from} to ${to}`;
     const links = `<nav class="ov-links" aria-label="Open a detailed view">${[['acquisition', 'Acquisition', 'bullhorn'], ['conversion', 'Conversion', 'filter'], ['product', 'Product usage', 'cubes'], ['executive', 'Executive', 'chart-line']].map(([go, label, icon]) => `<button class="btn btn-ghost btn-sm" type="button" data-go="${go}">${U.icon(icon)} ${U.esc(label)}</button>`).join('')}</nav>`;
     return U.section('Overview', `Monthly sign-up goal for the Month selected at the top (goal from Targets, else the 500K plan) · America/Bogota`, goalCard(), links)
-      + U.section('Funnel', `${span} · ${A.D.grainName()} (Group by at the top) · seven steps from impression to project · pick a country to focus on one market`, funnelCard(from, to))
+      + U.section('Funnel', `${span} · ${win.mode === 'range' ? 'From/To at the top' : `${A.D.grainName()} (Group by at the top)`} · seven steps from impression to project · pick a country to focus on one market`, funnelCard(from, to))
       + periodComparison()
       + U.section('What matters', 'Evidence-based reading of the selected period.', A.assistant.render());
   }

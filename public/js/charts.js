@@ -85,7 +85,7 @@
   // draws the 100% goal as a horizontal line. With either, the scale reaches them so the gap is honest.
   // `fit` scales the axis to the actual values: the pace line is clipped at the top and the goal line
   // is left out, so a month far below its goal still shows its daily shape.
-  C.goalProgress = ({ dates, values, goal, planned, pace, goalLine = false, fit = false, label = 'LATAM 500K goal', unit = 'sign-ups' }) => {
+  C.goalProgress = ({ dates, values, goal, planned, pace, goalLine = false, fit = false, focus = null, label = 'LATAM 500K goal', unit = 'sign-ups' }) => {
     if (!dates.length || !(goal > 0)) return U.empty('No goal to chart yet', 'The 500K plan sets the line this chart measures against.', 'chart-column');
     const W = 1000, H = 292, L = 54, R = 68, T = 18, B = 256;
     const pending = !values.some((v) => v != null);
@@ -112,6 +112,12 @@
       g += `<text class="axis-pct" x="${W - R + 10}" y="${(y(v) + 4).toFixed(1)}" text-anchor="start">${U.esc(planned ? U.fmt((maxRight * k) / 4) : pctAxis((maxRight * k) / 4))}</text>`;
     }
     const pts = [];
+    // `focus` = { from, to }: a band marks those days and the bars outside them are dimmed.
+    const inFocus = (d) => !focus || (d >= focus.from && d <= focus.to);
+    if (focus) {
+      const idx = dates.map((d, j) => (inFocus(d) ? j : -1)).filter((j) => j >= 0);
+      if (idx.length) g += `<rect class="goal-focus" x="${(L + idx[0] * step).toFixed(2)}" y="${T}" width="${(idx.length * step).toFixed(2)}" height="${B - T}"><title>${U.esc(`Selected dates: ${U.dshort(focus.from)} to ${U.dshort(focus.to)}`)}</title></rect>`;
+    }
     dates.forEach((d, j) => {
       if (values[j] == null) return;
       const v = Number(values[j]) || 0;
@@ -120,7 +126,7 @@
       const yy = y(v).toFixed(2);
       const tip = `${U.dshort(d)} · ${U.fmt(v)} ${unit} · ${pctAxis(v / goal)} of goal${pace && pace[j] != null ? ` · required pace ${U.fmt(Math.ceil(pace[j]))}` : ''}`;
       g += `<rect class="day-hit" x="${(L + j * step).toFixed(2)}" y="${T}" width="${step.toFixed(2)}" height="${B - T}"><title>${U.esc(tip)}</title></rect>`;
-      if (v > 0) g += `<rect class="goal-col" x="${x.toFixed(2)}" y="${yy}" width="${bw.toFixed(2)}" height="${Math.max(0.6, (B - y(v)).toFixed(2))}"><title>${U.esc(tip)}</title></rect>`;
+      if (v > 0) g += `<rect class="goal-col${inFocus(d) ? '' : ' is-dim'}" x="${x.toFixed(2)}" y="${yy}" width="${bw.toFixed(2)}" height="${Math.max(0.6, (B - y(v)).toFixed(2))}"><title>${U.esc(tip)}</title></rect>`;
       pts.push(`${cx},${yy}`);
     });
     if (planned) {

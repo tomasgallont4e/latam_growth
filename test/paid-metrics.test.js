@@ -576,6 +576,48 @@ test('Overview accounts for the selected period follow Group by inside the selec
   assert.equal(period(A.views.overview.render()), 31);
 });
 
+test('Overview: dates typed in From/To set the accounts card, the pace chart and the 7-step funnel', () => {
+  const A = dashboard();
+  A.ui.today = () => '2026-11-13';
+  A.S.goalMonth = '2026-11';
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  const at = (row, d) => ({ ...row, date: d });
+  const ext = (n, d) => at({ ...metric('posthog', 'ph_accounts', n, 'External'), dim: 'account_type' }, d);
+  A.S.data.metrics = [
+    ext(3, '2026-11-06'), ext(3, '2026-11-10'), ext(3, '2026-11-11'), ext(2, '2026-11-12'), ext(2, '2026-11-13'),
+    at({ ...metric('posthog', 'ph_accounts', 5, 'Internal'), dim: 'account_type' }, '2026-11-12'),
+  ];
+  A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), to: '2026-11-13', rows: [{ available: true }] });
+  const period = (html) => Number((html.match(/acct-hero-period[\s\S]*?acct-hero-actual">([\d,]+)</) || [])[1].replace(/,/g, ''));
+  const monthNum = (html) => Number((html.match(/acct-hero-now[\s\S]*?acct-hero-actual">([\d,]+)</) || [])[1].replace(/,/g, ''));
+  const funnelAccounts = (w) => A.D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', w.from, w.to);
+  // Month picked, Group by Daily: the preset (the To day) still applies.
+  A.S.from = '2026-11-01'; A.S.to = '2026-11-13'; A.S.grain = 'day'; A.S.ovWin = 'grain';
+  assert.deepEqual([A.overviewWindow().mode, A.overviewWindow().from], ['grain', '2026-11-13']);
+  assert.equal(period(A.views.overview.render()), 2);
+  // Dates typed by hand: exactly From -> To, whatever Group by says.
+  A.S.from = '2026-11-10'; A.S.to = '2026-11-13'; A.S.ovWin = 'range';
+  const win = A.overviewWindow();
+  assert.deepEqual([win.mode, win.from, win.to], ['range', '2026-11-10', '2026-11-13']);
+  const html = A.views.overview.render();
+  assert.equal(period(html), 10, 'accounts created in the typed dates, internal excluded');
+  assert.equal(period(html), funnelAccounts(win), 'same number as step 5 of the funnel');
+  assert.equal(monthNum(html), 13, 'the Month total stays next to it');
+  assert.match(html, /acct-hero-top is-range/);
+  assert.match(html, /Selected dates · Accounts created/);
+  assert.match(html, /follows From\/To at the top/);
+  assert.match(html, /2026-11-10 to 2026-11-13 · From\/To at the top/);
+  assert.match(html, /class="goal-focus"/);
+  assert.ok((html.match(/goal-col is-dim/g) || []).length >= 1, 'days outside the typed dates are dimmed');
+  // Narrower dates move every number together.
+  A.S.from = '2026-11-12';
+  assert.equal(period(A.views.overview.render()), 4);
+  // Picking a Group by preset hands the window back to Group by.
+  A.S.ovWin = 'grain'; A.S.grain = 'week';
+  assert.equal(A.overviewWindow().from, '2026-11-07');
+  assert.doesNotMatch(A.views.overview.render(), /is-range|goal-focus/);
+});
+
 test('Overview shows the monthly 500K chart: one clickable bar per month, selected month highlighted', () => {
   const A = dashboard();
   A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
