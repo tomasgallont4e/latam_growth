@@ -30,9 +30,9 @@
 
     const funnel = A.platformFunnels.render();
     const periodRows = D.periods().map((p) => ({ ...p, registrations: D.registrations(p.from, p.to), accounts: D.accounts(p.from, p.to), crm: D.crmTotal(p.from, p.to) }));
-    const chart = U.card({ cls: 'chart-card', title: `${grain} registration starts and sign-ups`, sub: `PostHog unique people · ${U.win(S.from, S.to)} · registration starts precede first identify`, body:
+    const chart = U.card({ cls: 'chart-card', title: `${grain} registration starts and sign-ups`, sub: `PostHog unique people · ${U.win(S.from, S.to)} · registration starts precede first account_created or identify`, body:
       '<h3>Registration starts · before sign-up</h3>' + (registrationDaily ? C.stacked({ dates: ticks, keys: [{ name: 'Registration starts', color: 'var(--series-a)' }], value: (d) => registrationDaily[d] || 0, label: `${grain} registration starts` }) : U.awaiting('posthog', 'Registration coverage is not available for this period'))
-      + '<h3>Sign-ups · first identify</h3>' + (accountsDaily ? C.stacked({ dates: ticks, keys: [{ name: 'Sign-ups', color: 'var(--series-b)' }], value: (d) => accountsDaily[d] || 0, label: `${grain} sign-ups` }) : U.awaiting('posthog', 'Sign-up coverage is not available for this period'))
+      + '<h3>Sign-ups · first account_created or identify</h3>' + (accountsDaily ? C.stacked({ dates: ticks, keys: [{ name: 'Sign-ups', color: 'var(--series-b)' }], value: (d) => accountsDaily[d] || 0, label: `${grain} sign-ups` }) : U.awaiting('posthog', 'Sign-up coverage is not available for this period'))
       + U.details('Activity by period', `${periodRows.length} periods`, U.table([
       { t: 'Period', f: (r) => U.esc(U.win(r.from, r.to)) }, { t: 'Registration starts', num: 1, f: (r) => U.fmt(r.registrations) },
       { t: 'Sign-ups', num: 1, f: (r) => U.fmt(r.accounts) }, { t: 'CRM contacts', num: 1, f: (r) => U.fmt(r.crm) },

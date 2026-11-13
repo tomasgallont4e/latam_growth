@@ -295,7 +295,7 @@
       subline: sub.length ? `${sub.join(' · ')}.`.replace(/^./, (c) => c.toUpperCase()) : '',
       tiles, strip,
       changed: changed.slice(0, 4), risks: risks.slice(0, 4), actions: actions.slice(0, 3),
-      foot: `Text generated automatically from the numbers on this page. Accounts = first $identify per person, all hosts, internal accounts always excluded.${productThrough} Missing feeds show No data or Waiting for event, never zero.`,
+      foot: `Text generated automatically from the numbers on this page. Accounts = first account_created or $identify per person, all hosts, internal accounts always excluded.${productThrough} Missing feeds show No data or Waiting for event, never zero.`,
     };
   }
 

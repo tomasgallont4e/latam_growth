@@ -392,7 +392,7 @@
         { t: 'Region', f: (g) => `${U.esc(g.name)}<br><small class="text-muted">${top(g)}</small>` },
         { t: 'Sessions', num: 1, f: (g) => cell(g, 'sessions') },
         { t: 'Accounts', num: 1, f: (g) => cell(g, 'accounts') },
-      ], r.rows) + `<p class="card-note">Landing sessions are GA4 on go.think4ever.com. Accounts created is PostHog first identify, External, all hosts, the same number as Overview. Both use the visitor's IP country. LATAM plan countries are the ${U.fmt(r.planCount)} countries of the goal plan.${r.rows.some((g) => g.id === 'unmapped') ? ' "Not in the region table" lists countries the table does not know yet, by name.' : ''}</p>`;
+      ], r.rows) + `<p class="card-note">Landing sessions are GA4 on go.think4ever.com. Accounts created is PostHog first account_created or identify, External, all hosts, the same number as Overview. Both use the visitor's IP country. LATAM plan countries are the ${U.fmt(r.planCount)} countries of the goal plan.${r.rows.some((g) => g.id === 'unmapped') ? ' "Not in the region table" lists countries the table does not know yet, by name.' : ''}</p>`;
     return U.section('Sessions and accounts by world region', `${U.win(r.from, r.through)} · month to date, through the last day both sources synced`, U.card({ title: 'By world region', sub: 'Landing sessions (GA4) and accounts created (PostHog) · country grouped into regions', body }));
   }
 

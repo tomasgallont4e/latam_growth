@@ -6,8 +6,8 @@
   const U = A.ui;
   const T = A.targets = { meta: {}, byMonth: {}, loading: {} };
   const SRC = {
-    landing_sessions: 'GA4', unique_visitors: 'GA4', engagement_rate: 'GA4', total_signups: 'PostHog first identify',
-    platform_signups: 'PostHog first $identify per person (all-host operational proxy)', crm_contacts: 'HubSpot', new_people: 'PostHog observed people (not sign-ups)', visit_to_signup_rate: 'unlinked source ratio; confirm same window and denominator', ad_spend_budget: 'ads platforms', clicks: 'ads platforms', ctr: 'ads platforms',
+    landing_sessions: 'GA4', unique_visitors: 'GA4', engagement_rate: 'GA4', total_signups: 'PostHog first account_created or identify',
+    platform_signups: 'PostHog first account_created or $identify per person (all-host operational proxy)', crm_contacts: 'HubSpot', new_people: 'PostHog observed people (not sign-ups)', visit_to_signup_rate: 'unlinked source ratio; confirm same window and denominator', ad_spend_budget: 'ads platforms', clicks: 'ads platforms', ctr: 'ads platforms',
     total_impressions: 'paid ad reports only',
     cps: 'paid UTM contacts + spend', activation_7d: 'mature seven-day signup/project cohort',
   };
