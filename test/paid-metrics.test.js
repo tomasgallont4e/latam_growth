@@ -52,10 +52,10 @@ test('Executive renders separate management indicators and no mixed/source funne
   A.views.executive.render();
   await new Promise((resolve) => setImmediate(resolve));
   const html = A.views.executive.render();
-  for (const label of ['Management indicators', 'Sign-ups target progress', 'Ads spend', 'Accounts created', 'Projects created', '14-day project activation', 'What changed']) assert.ok(html.includes(label), label);
+  for (const label of ['Management indicators', 'Sign-ups target progress', 'Ads spend', 'Accounts created', 'Projects created', '14-day project activation']) assert.ok(html.includes(label), label);
   assert.match(html, /No verified shared identity key/);
   assert.match(html, /Campaign funnel/);
-  assert.match(html, /Marketing-to-Project Activation Funnel/);
+  assert.doesNotMatch(html, /Marketing-to-Project Activation Funnel|LATAM 500K goal by month|Accounts created vs goal|<h2 class="section-title">What changed/);
   assert.doesNotMatch(html, /Visit to sign-up rate|Cost per sign-up/);
 });
 
@@ -106,7 +106,7 @@ test('Executive view keeps the monthly sign-up KPI and pending outcomes separate
   assert.match(html, /account_created coverage unavailable/);
   assert.match(html, /No verified shared identity key/);
   assert.match(html, /Campaign funnel/);
-  assert.match(html, /Marketing-to-Project Activation Funnel/);
+  assert.doesNotMatch(html, /Marketing-to-Project Activation Funnel|LATAM 500K goal by month|Accounts created vs goal|<h2 class="section-title">What changed/);
   assert.doesNotMatch(html, /Goal 30,000 · Proposal/);
 });
 

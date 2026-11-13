@@ -2,17 +2,12 @@
 (function (A) {
   const U = A.ui;
   const state = {
-    month: '', zoom: false, span: 'month', data: null, error: '', loading: false,
+    month: '', data: null, error: '', loading: false,
     product: { key: null, status: 'loading' },
     daily: { open: false, month: '', status: 'idle', data: null, error: '', channel: '', campaign: '' },
     review: { month: '', status: 'idle', data: null, error: '' },
     campaignChannel: '',
   };
-  function activationFunnelOptions() {
-    const view = state.data && state.data.view || {};
-    return { path: 'marketing_project', from: A.LAUNCH, to: state.data && (state.data.cutoff || view.cutoff || state.data.asOf) || state.month + '-01', exclude: true };
-  }
-
   function stamp(value) {
     if (!value) return '';
     const date = new Date(value);
@@ -157,25 +152,6 @@
       U.kpi({ label: 'Plan unknown', source: 'PostHog', value: U.fmt(plan.unknown), compare: 'No plan value found in plan events' }),
     ], 4)}` : U.empty('Plan data unavailable', reason, 'circle-question');
     return plans + coverage + countryTable;
-  }
-
-  function chartControls() {
-    return `<div class="form-row">
-      <button type="button" class="btn btn-secondary btn-sm" data-exec-span="month" aria-pressed="${state.span === 'month'}">This month</button>
-      <button type="button" class="btn btn-secondary btn-sm" data-exec-span="launch" aria-pressed="${state.span === 'launch'}">Since launch</button>
-      <button type="button" class="btn btn-secondary btn-sm" data-exec-zoom aria-pressed="${state.zoom}">Zoom to actual</button>
-    </div>`;
-  }
-
-  function chart(view) {
-    const block = view.chart || {};
-    const controls = chartControls();
-    if (!block.certified) return { controls, body: U.empty('No data yet', block.reason || 'Accounts created are not available for this month.', 'chart-column') };
-    const points = state.span === 'launch' ? (block.sinceLaunch || []) : (block.days || []);
-    const goal = state.span === 'launch' ? null : block.goal;
-    const note = state.span === 'month' && block.note ? `<p class="card-note">${U.esc(block.note)}</p>` : state.span === 'launch' && block.underReview ? `<p class="card-note">Under review: ${U.esc(block.underReview.reason)}</p>` : '';
-    const drawn = A.charts.executiveSignups({ points, goal, goalLabel: state.span === 'launch' ? null : block.goalLabel, zoom: state.zoom || state.span === 'launch', label: 'Accounts created this month vs goal' });
-    return { controls, body: drawn + note };
   }
 
   // ---------- CEO brief (docs/ceo-brief.md). Logic lives in public/js/ceoBrief.js; this only draws it.
@@ -515,13 +491,8 @@
       value: spend.value != null ? `<span class="under-review-value">${money(spend.value)}</span>` : pending(spend),
       compare: `<span class="under-review">${U.esc(pendingReason(spend.underReview, 'One or more ad sources are pending.'))}</span>${(spend.lines || []).map((line) => `<div>${U.esc(line)}</div>`).join('')}`,
     });
-    const changed = view.changed || { phrases: [] };
-    const notes = (changed.phrases || []).map((line) => `<p>${U.esc(line)}</p>`).join('') || '<p>No evidence-backed changes for this period.</p>';
-    const research = view.researchNote ? `<p class="card-note">Research note, ${U.esc(longDate(view.researchNote.date))}: ${U.esc(view.researchNote.text)}</p>` : '';
     const cf = view.campaignFunnel || {};
     const cfSub = cf.from && cf.to ? `Window ${U.esc(longDate(cf.from))} – ${U.esc(longDate(cf.to))} · the same window for every stage` : 'Waiting for the first complete day';
-    const drawn = chart(view);
-    const activationFunnelHtml = A.posthogFunnel ? A.posthogFunnel.render(activationFunnelOptions()) : '<p class="card-note">PostHog funnel unavailable.</p>';
     return U.section('Executive', 'Monthly targets, Ads coverage and confirmed product outcomes.', header)
       + ceoBrief(view)
       + '<div class="exec-detail">'
@@ -534,22 +505,10 @@
       + regionSection()
       + personaSection()
       + dailySection()
-      + U.section('Accounts created this month vs goal', state.span === 'launch' ? 'Cumulative External accounts created since launch. The goal line is monthly, so it stays on This month.' : 'Bars are the day’s accounts created. The line is the month’s cumulative total.', U.card({ cls: 'chart-card', title: 'Accounts created vs goal', right: drawn.controls, body: `<p class="card-note">Sources: PostHog (accounts created) · monthly goals (Targets)</p>${drawn.body}` }))
-      + (A.goalMonthChart ? U.section('LATAM 500K goal by month', 'External accounts created per month as % of the monthly goal · internal always excluded · the same number as Overview · click a month to select it.', U.card({ cls: 'chart-card', title: 'LATAM 500K goal by month', sub: `Selected: ${U.esc(U.monthName(state.month))}${A.goalActualCumText ? ` · ${U.esc(A.goalActualCumText(A.D.goalAccounts(state.month)))}` : ''}`, body: `${A.goalPaceChart ? `<h4 class="cf-sub">Sign-ups vs goal · ${U.esc(U.monthName(state.month))}</h4>${A.goalPaceChart(state.month)}<h4 class="cf-sub">% of the monthly goal by month</h4>` : ''}${A.goalMonthChart(state.month)}` })) : '')
-      + U.section('What changed', 'Evidence from the selected month.', U.card({ title: 'What changed', body: research + notes }))
-      + U.section('Marketing-to-Project Activation Funnel', 'Product activation in PostHog, after sign-up.', U.card({ title: 'Marketing-to-Project Activation Funnel', sub: 'Saved PostHog ordered funnel · excludes internal and test accounts. This is product activation, not an advertising funnel.', body: activationFunnelHtml }))
       + '</div>';
   }
 
   function mount(el) {
-    el.querySelectorAll('[data-exec-span]').forEach((button) => button.addEventListener('click', () => {
-      state.span = button.dataset.execSpan;
-      A.render();
-    }));
-    const zoom = el.querySelector('[data-exec-zoom]');
-    if (zoom) zoom.addEventListener('click', () => { state.zoom = !state.zoom; A.render(); });
-    if (A.posthogFunnel) A.posthogFunnel.mount(el, activationFunnelOptions());
-    if (A.bindGoalMonthChart) A.bindGoalMonthChart(el);
     const print = el.querySelector('[data-ceo-print]');
     if (print) print.addEventListener('click', () => window.print());
     const df = el.querySelector('[data-df-toggle]');
