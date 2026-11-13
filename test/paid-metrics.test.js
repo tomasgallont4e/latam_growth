@@ -1536,6 +1536,17 @@ test('Executive lists campaigns with spend and shows unknown accounts and cost a
   assert.match(html, /data-mr-channel/);
 });
 
+test('Executive hides QA and research traffic from the campaign table unless asked', async () => {
+  const html = await renderExecutive(executiveWithReview({ campaigns: { status: 'loaded', from: '2026-11-01', to: '2026-11-12', rows: [
+    { channel: 'google', campaign: 'early_builders_co_202611', paid: false, spend: null, impressions: null, clicks: null, sessions: 218, forms: 11, accounts: 3, projects: 3, costPerAccount: null },
+    { channel: 'qa', campaign: 'qa-directo-1106', paid: false, spend: null, impressions: null, clicks: null, sessions: 21, forms: 1, accounts: 0, projects: 0, costPerAccount: null },
+    { channel: 'meta', campaign: 'qa_registro_28oct', paid: false, spend: null, impressions: null, clicks: null, sessions: 5, forms: 0, accounts: 0, projects: 0, costPerAccount: null },
+  ] } }));
+  assert.match(html, /early_builders_co_202611/);
+  assert.doesNotMatch(html, /qa-directo-1106|qa_registro_28oct/);
+  assert.match(html, /Show test traffic · 26 sessions, 1 form</);
+});
+
 test('Executive shows Meta Ads by country for the month, sorted by spend, and Pending without the breakdown', async () => {
   const A = executiveWithReview({});
   const month = A.bogotaMonth();

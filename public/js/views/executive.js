@@ -6,8 +6,13 @@
     product: { key: null, status: 'loading' },
     daily: { open: false, month: '', status: 'idle', data: null, error: '', channel: '', campaign: '' },
     review: { month: '', status: 'idle', data: null, error: '' },
-    campaignChannel: '',
+    campaignChannel: '', showTests: false, folds: {},
   };
+  // A fold keeps its open state across re-renders (a filter change redraws the whole view).
+  const fold = (key, label, body) => `<details class="collapsible" data-fold="${key}"${state.folds[key] ? ' open' : ''}><summary>${U.icon('chevron-right', 'fa-solid', 'chev')}${label}</summary><div class="collapsible-body">${body}</div></details>`;
+  // Sources the team uses for QA and research checks, not for real campaigns.
+  const TEST_SOURCES = new Set(['qa', 'test', 'research_test', 'research', 'prueba']);
+  const isTestRow = (r) => TEST_SOURCES.has(String(r.channel).toLowerCase()) || /^qa[_-]/i.test(String(r.campaign));
   function stamp(value) {
     if (!value) return '';
     const date = new Date(value);
@@ -253,7 +258,8 @@
       ? U.table([{ t: 'Day', f: (x) => U.esc(U.dshort(x.date)) }, { t: 'Channel', f: (x) => U.esc(x.channel) }, { t: 'Campaign', f: (x) => U.esc(x.campaign) }, ...cols], filtered.slice(0, 200))
       : U.empty('No rows', 'No row matches this channel and campaign.', 'filter');
     const notes = (r.notes || []).map((n) => `<li>${U.esc(n)}</li>`).join('');
-    return `${stages ? `<ul class="cf-notes">${stages}</ul>` : ''}<h4 class="cf-sub">Daily totals</h4>${totals}<h4 class="cf-sub">By day, channel and campaign</h4>${filters}${detail}${filtered.length > 200 ? `<p class="card-note">Showing the first 200 of ${U.fmt(filtered.length)} rows.</p>` : ''}${notes ? `<ul class="cf-notes">${notes}</ul>` : ''}`;
+    const byDay = `${filters}${detail}${filtered.length > 200 ? `<p class="card-note">Showing the first 200 of ${U.fmt(filtered.length)} rows.</p>` : ''}`;
+    return `${stages ? `<ul class="cf-notes">${stages}</ul>` : ''}<h4 class="cf-sub">Daily totals</h4>${totals}${fold('df-detail', `By day, channel and campaign · ${U.fmt(rows.length)} rows`, byDay)}${notes ? fold('df-notes', 'How it is calculated', `<ul class="cf-notes">${notes}</ul>`) : ''}`;
   }
   // ---------- Month review (lib/monthReview.js): same-days comparison, channels and campaigns.
   function ensureReview(month) {
@@ -341,7 +347,7 @@
         { t: 'CTR', num: 1, f: (r) => U.pct(r.ctr) },
         { t: 'Cost per click', num: 1, f: (r) => (r.cpc == null ? '<span class="text-muted">–</span>' : money(r.cpc)) },
       ], rows) + '<p class="card-note">Meta reports the country where the ad was shown. Clicks are link clicks, not the outbound clicks of the campaign funnel. LinkedIn Ads is not connected, so there is no LinkedIn country split.</p>';
-    return U.section('Meta Ads by country', `${U.win(from, to)} · where the ads were shown · sorted by spend`, U.card({ title: 'Meta Ads by country', sub: 'Meta insights · breakdown by country', body }));
+    return U.card({ title: 'Meta Ads by country', sub: `${U.win(from, to)} · where the ads were shown · sorted by spend`, body: fold('meta-country', `Open Meta Ads by country${rows && rows.length ? ` · ${U.fmt(rows.length)} countries` : ''}`, body) });
   }
 
   // World regions (plan 6.4.21): landing sessions and accounts by country, grouped by A.regions. One window for both
@@ -414,7 +420,9 @@
   const CAMPAIGN_ROWS = 25;
   function campaignsSection() {
     const c = (state.review.data && state.review.data.campaigns) || {};
-    const all = c.rows || [];
+    const every = c.rows || [];
+    const tests = every.filter(isTestRow);
+    const all = state.showTests ? every : every.filter((r) => !isTestRow(r));
     const channels = [...new Set(all.map((r) => r.channel))].sort();
     const pick = channels.includes(state.campaignChannel) ? state.campaignChannel : '';
     const rows = all.filter((r) => !pick || r.channel === pick);
@@ -432,7 +440,10 @@
       { t: 'Cost per account', num: 1, f: (r) => m(r.costPerAccount) },
     ], rows.slice(0, CAMPAIGN_ROWS)) + `<p class="card-note">${rows.length > CAMPAIGN_ROWS ? `Showing the ${CAMPAIGN_ROWS} rows with the most spend of ${U.fmt(rows.length)}. ` : ''}Accounts per campaign need the identity cohort (UTM match). A campaign without that match shows –, never 0. Open the daily report below for each day.</p>`);
     const win = c.status === 'loaded' ? U.win(c.from, c.to) : U.monthName(state.month);
-    return U.section('Campaigns this month', `${win} · one row per campaign, rolled up from the daily report · sorted by spend`, U.card({ title: 'Campaigns this month', sub: 'Spend, traffic and results per campaign', body: (filter ? `<div class="form-row">${filter}</div>` : '') + body }));
+    const sum = (f) => tests.reduce((n, r) => n + (r[f] || 0), 0);
+    const testToggle = tests.length ? `<label class="check-chip"><input type="checkbox" data-mr-tests${state.showTests ? ' checked' : ''}>Show test traffic · ${U.fmt(sum('sessions'))} sessions, ${U.fmt(sum('forms'))} form${sum('forms') === 1 ? '' : 's'}</label>` : '';
+    const controls = [filter, testToggle].filter(Boolean).join('');
+    return U.section('Campaigns this month', `${win} · one row per campaign, rolled up from the daily report · sorted by spend`, U.card({ title: 'Campaigns this month', sub: 'Spend, traffic and results per campaign', body: (controls ? `<div class="form-row">${controls}</div>` : '') + body }));
   }
 
   function dailySection() {
@@ -508,8 +519,8 @@
       + U.section('Management indicators', 'Source-native metrics stay separate. Pending outcomes need verified event coverage and identity linkage.', U.kpiRow(tiles, 3))
       + U.section('Campaign funnel', 'Seven stages from ad and page impressions to projects created. % is versus the previous stage; open a stage to see each channel, platform and campaign.', U.card({ cls: 'cf-card', title: 'Executive funnel · 7 stages', sub: cfSub, body: campaignFunnelHtml(view.campaignFunnel) }))
       + campaignsSection()
-      + metaCountrySection()
       + regionSection()
+      + metaCountrySection()
       + personaSection()
       + dailySection()
       + '</div>';
@@ -527,6 +538,9 @@
     });
     const ch = el.querySelector('[data-df-channel]');
     if (ch) ch.addEventListener('change', () => { state.daily.channel = ch.value; state.daily.campaign = ''; A.render(); });
+    el.querySelectorAll('[data-fold]').forEach((d) => d.addEventListener('toggle', () => { state.folds[d.dataset.fold] = d.open; }));
+    const tests = el.querySelector('[data-mr-tests]');
+    if (tests) tests.addEventListener('change', () => { state.showTests = tests.checked; A.render(); });
     const mr = el.querySelector('[data-mr-channel]');
     if (mr) mr.addEventListener('change', () => { state.campaignChannel = mr.value; A.render(); });
     const ca = el.querySelector('[data-df-campaign]');
