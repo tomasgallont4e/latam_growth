@@ -118,6 +118,18 @@
       : g.goal ? `<span><b>${U.esc(U.pct(ratio, 1))}</b> of the ${U.esc(mName)} goal</span><span>${U.esc(span)}</span><span>${U.esc(A.goalSourceText(g))}</span>` : '<span>No monthly goal saved in Targets.</span>';
     const cumOk = loaded && g.cumulative != null;
     const cumBlock = `<div class="acct-hero-cum"><span class="acct-hero-label">Cumulative since launch</span><div class="acct-hero-nums">${cumOk ? `<span class="acct-hero-actual">${U.fmt(g.cumulative)}</span>` : '<span class="acct-hero-actual"><span class="kpi-awaiting">Pending</span></span>'}</div><small class="acct-hero-hint">${cumOk ? `of which LATAM: ${U.fmt(g.cumulativeLatam)} (${U.esc(U.pct(g.cumulative ? g.cumulativeLatam / g.cumulative : 0, 1))}) · ${U.esc(U.win(g.cumulativeFrom, g.to))}` : 'Needs account coverage for every month since launch; not zero.'}</small></div>`;
+    // Accounts created for the top-bar Group by period, always inside the selected Month's dates
+    // (memory #141 population: External first $identify, all hosts, internal always excluded).
+    // Ends at To when To is in the Month (same window as the 7-step funnel), else at the Month's last day.
+    const mr = A.monthRange(month);
+    const pTo = S.to >= mr.from && S.to <= mr.to ? S.to : mr.to;
+    const pFrom = S.from >= mr.from && S.from <= pTo ? S.from : mr.from;
+    const pw = A.grainWindow(D.grain(), pFrom, pTo);
+    const pOk = D.covered('posthog', 'account_coverage', pw.from, pw.to);
+    const pVal = pOk ? D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', pw.from, pw.to) : null;
+    const pMarkets = new Set(Object.keys((S.data && S.data.goalPlan && S.data.goalPlan.countries) || {}));
+    const pLatam = pOk ? D.sum('posthog', 'ph_accounts_geo', (r) => r.dim === 'country' && pMarkets.has(r.dim_value), pw.from, pw.to) : null;
+    const periodBlock = `<div class="acct-hero-period"><span class="acct-hero-label">Selected period · ${U.esc(D.grainName())}</span><div class="acct-hero-nums">${pOk ? `<span class="acct-hero-actual">${U.fmt(pVal)}</span>` : '<span class="acct-hero-actual"><span class="kpi-awaiting">Pending</span></span>'}</div><small class="acct-hero-hint">${pOk ? `of which LATAM: ${U.fmt(pLatam)} (${U.esc(U.pct(pVal ? pLatam / pVal : 0, 1))}) · ${U.esc(U.win(pw.from, pw.to))} · follows Group by` : `Account coverage unavailable for ${U.esc(U.win(pw.from, pw.to))}; not zero.`}</small></div>`;
     const paceOk = p.status === 'loaded' && p.goal > 0;
     const paceVal = paceOk
       ? `<span class="gp-status gp-${p.ahead ? 'ahead' : 'behind'}">${U.icon(p.ahead ? 'arrow-trend-up' : 'arrow-trend-down')} ${p.ahead ? 'Ahead' : 'Behind'} · ${p.ahead ? '+' : '−'}${U.fmt(Math.round(Math.abs(p.delta)))}</span>`
@@ -151,7 +163,7 @@
       cls: 'acct-hero-card', title: `LATAM 500K goal · ${mName}`,
       sub: 'Monthly · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota',
       right: `<button class="btn btn-secondary btn-sm" type="button" data-go="targets">${U.icon('bullseye')} View targets</button>`,
-      body: `<div class="acct-hero"><div class="acct-hero-main"><div class="acct-hero-top"><div class="acct-hero-now"><span class="acct-hero-label">This month · Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div></div>${cumBlock}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><div class="acct-hero-trend-head"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${scaleToggle}</div>${A.goalPaceChart(month, { head: false, fit })}</div></div>${historyPanel}`,
+      body: `<div class="acct-hero"><div class="acct-hero-main"><div class="acct-hero-top"><div class="acct-hero-now"><span class="acct-hero-label">This month · Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div></div>${periodBlock}${cumBlock}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><div class="acct-hero-trend-head"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${scaleToggle}</div>${A.goalPaceChart(month, { head: false, fit })}</div></div>${historyPanel}`,
     });
   }
 

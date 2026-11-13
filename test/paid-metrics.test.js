@@ -544,6 +544,38 @@ test('Overview 7-step funnel shows % between steps, the weakest step and the cou
   assert.match(country, /option value="Colombia" selected/);
 });
 
+test('Overview accounts for the selected period follow Group by inside the selected Month; the monthly goal stays fixed', () => {
+  const A = dashboard();
+  A.ui.today = () => '2026-11-15';
+  A.S.goalMonth = '2026-10';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-28';
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  const at = (row, d) => ({ ...row, date: d });
+  A.S.data.metrics = [
+    at({ ...metric('posthog', 'ph_accounts', 21, 'External'), dim: 'account_type' }, '2026-10-05'),
+    at({ ...metric('posthog', 'ph_accounts', 6, 'External'), dim: 'account_type' }, '2026-10-25'),
+    at({ ...metric('posthog', 'ph_accounts', 4, 'External'), dim: 'account_type' }, '2026-10-28'),
+    at({ ...metric('posthog', 'ph_accounts', 9, 'Internal'), dim: 'account_type' }, '2026-10-28'),
+  ];
+  A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true }] });
+  const period = (html) => Number((html.match(/acct-hero-period[\s\S]*?acct-hero-actual">([\d,]+)</) || [])[1].replace(/,/g, ''));
+  const monthNum = (html) => Number((html.match(/acct-hero-now[\s\S]*?acct-hero-actual">([\d,]+)</) || [])[1].replace(/,/g, ''));
+  A.S.grain = 'day';
+  const day = A.views.overview.render();
+  assert.match(day, /Selected period/);
+  assert.equal(period(day), 4, 'Daily = the To day, internal excluded');
+  A.S.grain = 'week';
+  const week = A.views.overview.render();
+  assert.equal(period(week), 10, 'Weekly = last 7 days up to To');
+  A.S.grain = 'month';
+  const month = A.views.overview.render();
+  assert.equal(period(month), 31, 'Monthly = the selected Month From -> To');
+  for (const html of [day, week, month]) assert.equal(monthNum(html), 31, 'the monthly goal number does not move');
+  // From/To outside the selected Month: the period still uses the Month's dates.
+  A.S.from = '2026-11-01'; A.S.to = '2026-11-10';
+  assert.equal(period(A.views.overview.render()), 31);
+});
+
 test('Overview shows the monthly 500K chart: one clickable bar per month, selected month highlighted', () => {
   const A = dashboard();
   A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
