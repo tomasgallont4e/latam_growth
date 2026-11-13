@@ -618,6 +618,10 @@ test('Overview: dates typed in From/To set the accounts card, the pace chart and
   const origin = (n, d, v) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n });
   A.S.data.metrics.push(origin(5, '2026-11-10', 'Developer Network form'), origin(1, '2026-11-11', 'Developer Network form'), origin(2, '2026-11-13', 'Landing sign-up form'), origin(2, '2026-11-12', 'No form matched'), origin(9, '2026-11-06', 'No form matched'));
   assert.match(A.views.overview.render(), /ov-accounts-by-origin">Accounts created by origin: Developer Network form <b>6<\/b> · Landing sign-up form <b>2<\/b> · No form matched <b>2<\/b>/);
+  // The assistant receives the same seven steps and window the page draws.
+  const fed = A.overviewFunnel();
+  assert.deepEqual([fed.from, fed.to, fed.set_by, fed.steps.length], ['2026-11-10', '2026-11-13', 'From/To', 7]);
+  assert.equal(fed.steps.find((x) => x.step === 'Accounts created').value, 10);
   // Narrower dates move every number together.
   A.S.from = '2026-11-12';
   assert.equal(period(A.views.overview.render()), 4);

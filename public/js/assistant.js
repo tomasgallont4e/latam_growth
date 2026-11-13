@@ -48,6 +48,8 @@
       countries: [...countries.values()].sort((a, b) => ((b.sessions || 0) + (b.signups || 0) + (b.accounts_created || 0)) - ((a.sessions || 0) + (a.signups || 0) + (a.accounts_created || 0))).slice(0, 10),
       posthog_funnel: funnel ? (funnel.steps || []).slice(0, 10).map((step) => ({ step: step.name, persons: finite(step.n), median_seconds: finite(step.median_seconds) })) : [],
       executive_funnel: executiveSummary,
+      // The 7-step funnel exactly as the Overview draws it (same window and numbers the reader sees).
+      overview_funnel: A.overviewFunnel ? A.overviewFunnel() : null,
     };
   }
   function inlineMarkdown(value) {
