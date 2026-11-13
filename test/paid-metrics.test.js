@@ -1508,6 +1508,24 @@ test('HubSpot sync reads the t4e_ plan and credit properties into an aggregate w
   assert.doesNotMatch(JSON.stringify(snap), /ana@cliente|"id"/);
 });
 
+test('HubSpot plan and credits search retries once after the per-second limit', async (t) => {
+  env(t, { HUBSPOT_TOKEN: 'test-token' });
+  const { connectors } = require('../lib/connectors');
+  let planCalls = 0;
+  t.mock.method(global, 'fetch', async (url, opts = {}) => {
+    if (!String(url).includes('/crm/v3/objects/contacts/search')) return response({});
+    if (!JSON.parse(opts.body).properties.includes('t4e_plan_name')) return response({ results: [] });
+    planCalls += 1;
+    if (planCalls === 1) return { ok: false, status: 429, text: async () => '{"message":"You have reached your secondly limit."}' };
+    return response({ results: [{ id: '1', properties: { email: 'ana@cliente.co', t4e_plan_name: 'Builder', t4e_credits_used: '3' } }] });
+  });
+  const load = await connectors.hubspot();
+  const row = load.snapshots.find((s) => s.key === 'plan_credits').rows[0];
+  assert.equal(planCalls, 2);
+  assert.equal(row.available, true);
+  assert.equal(row.credits_used, 3);
+});
+
 test('Product usage shows plans and credits from HubSpot and drops the waiting credit and churn cards', () => {
   const A = dashboard();
   A.testLoad('productUsage.js');
