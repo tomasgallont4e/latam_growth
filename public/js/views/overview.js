@@ -262,13 +262,19 @@
     }
     const formRows = Object.entries(byForm).sort((a, b) => b[1] - a[1]);
     const formLine = formRows.length ? `<p class="card-note ov-forms-by-form">Form submissions by form: ${formRows.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Early Builders is the Developer Network registration; Landing Signup is the general sign-up.</p>` : '';
+    // Accounts created split by the HubSpot form matched to the account's email (HMAC; no identifiers
+    // stored): Developer Network (Early Builders form), landing sign-up form, or no form matched.
+    const originOk = country === 'all' && A.D.covered('posthog', 'account_origin_coverage', from, to);
+    const originRows = originOk ? ['Developer Network form', 'Landing sign-up form', 'No form matched']
+      .map((name) => [name, A.D.sum('posthog', 'ph_accounts_origin', (r) => r.dim === 'origin' && r.dim_value === name, from, to)]) : [];
+    const originLine = originRows.some(([, n]) => n > 0) ? `<p class="card-note ov-accounts-by-origin">Accounts created by origin: ${originRows.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Matched by the email used on the HubSpot form; an account with no form came straight to the product or signed up in one click.</p>` : '';
     const picker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country"><option value="all"${country === 'all' ? ' selected' : ''}>All countries</option>${options.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
     const note = `<p class="card-note">Each step comes from its own source and is not linked person by person, so the % between steps is indicative. Accounts created is the same number as the 500K goal (External, internal excluded). Logins count signed_in events, not people, and include returning accounts, so they are shown for reference and Projects created is compared with Accounts created. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
     return U.card({
       cls: 'chart-card', title: 'Funnel · 7 steps',
       sub: `${U.win(from, to)} · ${country === 'all' ? 'All countries' : U.esc(country)} · % versus the previous step`,
       right: picker,
-      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${formLine}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
+      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${formLine}${originLine}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
     });
   }
 
