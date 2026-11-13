@@ -222,7 +222,8 @@
     if (d.status === 'error') return U.empty('Could not load the daily report', U.esc(d.error), 'triangle-exclamation');
     const r = d.data || {};
     if (r.status !== 'loaded') return U.empty('No data yet', U.esc(r.reason || 'No day in this month yet.'), 'calendar-day');
-    const stages = (r.stages || []).map((s) => {
+    // Only a stage that did not load is worth a line; a full load says nothing new.
+    const stages = (r.stages || []).filter((s) => s.status !== 'loaded').map((s) => {
       const [kind, text] = DF_STATUS[s.status] || ['neutral', s.status || 'Unknown'];
       return `<li><b>${U.esc(s.name)}</b> ${U.pill(kind, text, true)} <small class="text-muted">${U.esc(s.source || '')}${s.reason ? ` · ${U.esc(s.reason)}` : ''}</small></li>`;
     }).join('');
@@ -252,7 +253,7 @@
       ? U.table([{ t: 'Day', f: (x) => U.esc(U.dshort(x.date)) }, { t: 'Channel', f: (x) => U.esc(x.channel) }, { t: 'Campaign', f: (x) => U.esc(x.campaign) }, ...cols], filtered.slice(0, 200))
       : U.empty('No rows', 'No row matches this channel and campaign.', 'filter');
     const notes = (r.notes || []).map((n) => `<li>${U.esc(n)}</li>`).join('');
-    return `<ul class="cf-notes">${stages}</ul><h4 class="cf-sub">Daily totals</h4>${totals}<h4 class="cf-sub">By day, channel and campaign</h4>${filters}${detail}${filtered.length > 200 ? `<p class="card-note">Showing the first 200 of ${U.fmt(filtered.length)} rows.</p>` : ''}${notes ? `<ul class="cf-notes">${notes}</ul>` : ''}`;
+    return `${stages ? `<ul class="cf-notes">${stages}</ul>` : ''}<h4 class="cf-sub">Daily totals</h4>${totals}<h4 class="cf-sub">By day, channel and campaign</h4>${filters}${detail}${filtered.length > 200 ? `<p class="card-note">Showing the first 200 of ${U.fmt(filtered.length)} rows.</p>` : ''}${notes ? `<ul class="cf-notes">${notes}</ul>` : ''}`;
   }
   // ---------- Month review (lib/monthReview.js): same-days comparison, channels and campaigns.
   function ensureReview(month) {
@@ -401,6 +402,12 @@
       { t: 'Accounts', num: 1, f: cell('accounts') },
     ], c.rows, (r) => (r.name ? '' : 'muted')) + `<p class="card-note">${shares.length ? `A persona code reaches ${shares.join(', ')}. ` : ''}The persona is the code at the start of utm_content (p01 to p13), the rule every ad piece follows. Visits and sign-ups without it stay under "(no persona code)", never spread across personas. Accounts here are the identity cohort with its UTMs, so they add up to less than the Overview total.</p>`);
     const win = c.status === 'loaded' ? U.win(c.from, c.to) : U.monthName(state.month);
+    // With no tagged row the table is one untagged line, so one sentence says the same thing.
+    if (!reviewState() && c.status === 'loaded' && c.rows.length && !c.rows.some((r) => r.name)) {
+      const r = c.rows[0];
+      const counts = [['sessions', 'landing sessions'], ['forms', 'forms']].filter(([f]) => r[f] != null).map(([f, label]) => `${U.fmt(r[f])} ${label}`).join(' and ');
+      return U.section('Personas this month', win, `<p class="card-note">No visit this month carries a persona code (p01 to p13 at the start of utm_content)${counts ? `, so all ${counts} stay untagged` : ''}. The split by persona appears once the ads carry the code.</p>`);
+    }
     return U.section('Personas this month', `${win} · month to date · from the daily report, by utm_content`, U.card({ title: 'By persona', sub: 'Landing sessions (GA4) · forms (HubSpot) · accounts (PostHog identity cohort)', body }));
   }
 

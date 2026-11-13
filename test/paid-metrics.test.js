@@ -1591,3 +1591,12 @@ test('Executive lists personas with their names, keeps the untagged row and says
   assert.match(html, /class="muted"[\s\S]*?\(no persona code\)/);
   assert.match(html, /A persona code reaches 25\.0% of landing sessions, 50\.0% of attributed accounts\./);
 });
+
+test('Executive says in one line that no visit carries a persona code instead of a one-row table', async () => {
+  const html = await renderExecutive(executiveWithReview({ personas: {
+    status: 'loaded', from: '2026-11-01', to: '2026-11-12', loaded: { sessions: true, forms: true, accounts: true, projects: true }, tagged: { sessions: 0, forms: 0, accounts: 0, projects: 0 },
+    rows: [{ persona: '(no persona code)', name: null, sessions: 849, forms: 22, accounts: 13, projects: 13 }],
+  } }));
+  assert.match(html, /No visit this month carries a persona code[^<]*all 849 landing sessions and 22 forms stay untagged/);
+  assert.doesNotMatch(html, /By persona|A persona code reaches/);
+});
