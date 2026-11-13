@@ -50,3 +50,24 @@ test('cutoff is yesterday in America/Bogota', () => {
   assert.equal(bogotaYesterday(new Date('2026-11-10T03:00:00Z')), '2026-11-08'); // 22:00 on Nov 9 in Bogota
   assert.equal(bogotaYesterday(new Date('2026-11-10T06:00:00Z')), '2026-11-09');
 });
+
+test('plans and credits sum external contacts, keep empty credits as null and derive active subscriptions from dates', () => {
+  const { planCredits } = require('../lib/productUsage');
+  const r = planCredits([
+    { plan: 'Builder', status: 'Active', used: '30', remaining: '70', last_used: '2026-11-12', started: '2026-10-20' },
+    { plan: 'Builder', status: 'cancelled', used: '5', remaining: '0', last_used: '2026-10-01', started: '2026-10-02', cancelled: '2026-11-03' },
+    { plan: 'Free', used: '0', remaining: '10' },
+    { plan: 'Builder', used: '999', started: '2026-10-01', internal: true },
+  ], '2026-11-13');
+  assert.equal(r.contacts, 3);
+  assert.equal(r.internal_excluded, 1);
+  assert.equal(r.credits_used, 35);
+  assert.equal(r.credits_remaining, 80);
+  assert.equal(r.using_credits, 2);
+  assert.equal(r.used_last_7d, 1);
+  assert.equal(r.active, 1);
+  assert.equal(r.cancelled, 1);
+  assert.deepEqual(r.by_plan.map((p) => [p.plan, p.contacts, p.active]), [['Builder', 2, 1], ['Free', 1, 0]]);
+  assert.deepEqual(r.months, [{ month: '2026-10', started: 2, cancelled: 0 }, { month: '2026-11', started: 0, cancelled: 1 }]);
+  assert.equal(planCredits([{ plan: 'Free' }], '2026-11-13').credits_used, null, 'no credit property means unknown, not zero');
+});

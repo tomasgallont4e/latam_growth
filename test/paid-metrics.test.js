@@ -1484,6 +1484,58 @@ test('Product usage shows unique-account KPIs through yesterday, 7-day activatio
   assert.doesNotMatch(html, /<td[^>]*>Oct 29</, 'days before the first product event are not shown as zero');
 });
 
+test('HubSpot sync reads the t4e_ plan and credit properties into an aggregate with no contact identifier', async (t) => {
+  env(t, { HUBSPOT_TOKEN: 'test-token' });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(global, 'fetch', async (url, opts = {}) => {
+    if (!String(url).includes('/crm/v3/objects/contacts/search')) return response({});
+    const body = JSON.parse(opts.body);
+    if (!body.properties.includes('t4e_plan_name')) return response({ results: [] });
+    assert.equal(body.filterGroups[0].filters[0].operator, 'HAS_PROPERTY');
+    return response({ results: [
+      { id: '1', properties: { email: 'ana@cliente.co', t4e_plan_name: 'Builder', t4e_subscription_status: 'active', t4e_credits_used: '12', t4e_credits_remaining: '88', t4e_subscription_started_at: '2026-11-02T15:00:00.000Z', t4e_last_credit_used_at: '2026-11-10T15:00:00.000Z' } },
+      { id: '2', properties: { email: 'qa@think4ever.com', t4e_plan_name: 'Builder', t4e_credits_used: '500' } },
+    ] });
+  });
+  const load = await connectors.hubspot();
+  const snap = load.snapshots.find((s) => s.key === 'plan_credits');
+  const row = snap.rows[0];
+  assert.equal(row.available, true);
+  assert.equal(row.contacts, 1);
+  assert.equal(row.internal_excluded, 1);
+  assert.equal(row.credits_used, 12);
+  assert.equal(row.active, 1);
+  assert.doesNotMatch(JSON.stringify(snap), /ana@cliente|"id"/);
+});
+
+test('Product usage shows plans and credits from HubSpot and drops the waiting credit and churn cards', () => {
+  const A = dashboard();
+  A.testLoad('productUsage.js');
+  A.testLoad('views/product.js');
+  const row = { available: true, ...A.productUsage.planCredits([
+    { plan: 'Builder', status: 'active', used: 40, remaining: 60, last_used: '2026-11-12', started: '2026-11-01' },
+    { plan: 'Free', status: '', used: 0, remaining: 10 },
+  ], '2026-11-13') };
+  A.S.data.snapshots.push({ source: 'hubspot', key: 'plan_credits', from: '2026-10-01', to: '2026-11-13', pulled_at: '2026-11-13T12:00:00Z', rows: [row] });
+  const html = A.views.product.render();
+  assert.match(html, /Plans and credits/);
+  assert.match(html, /Credits used/);
+  assert.match(html, />40</);
+  assert.match(html, /Builder/);
+  assert.match(html, /Subscriptions by month/);
+  assert.doesNotMatch(html, /Cancellations and monthly churn/);
+  assert.match(html, /Retention D1 \/ D7/);
+});
+
+test('Plans and credits waits for HubSpot instead of showing zero', () => {
+  const A = dashboard();
+  A.testLoad('productUsage.js');
+  A.testLoad('views/product.js');
+  const html = A.views.product.render();
+  assert.match(html, /Waiting for the next HubSpot sync/);
+  assert.match(html, /Cancellations and monthly churn/);
+});
+
 test('Product usage is pending, not zero, when the PostHog query failed', () => {
   const A = dashboard();
   A.testLoad('productUsage.js');

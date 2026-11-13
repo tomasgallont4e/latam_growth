@@ -132,7 +132,55 @@ function creditUsage({ days = [], people = [], from, cutoff }) {
   return { daily, total, last_7d: last7, accounts_using: users.length, median_days_to_first: median };
 }
 
-  const api = { summarize, monthlyChurn, creditUsage, bogotaYesterday, addDays, ACTIVE_WINDOW, ACTIVATION_DAYS };
+// Plans and credits from the HubSpot contact properties t4e_* (one row per contact, no identifier).
+// contacts: [{ plan, status, used, remaining, last_used, started, cancelled, internal }]
+// Numbers are null when the property is empty, never 0. Dates are America/Bogota days.
+// A subscription is active when it started on or before today and has no later cancellation.
+function planCredits(contacts = [], today) {
+  const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  const day = (d) => (DAY.test(String(d || '')) && d <= today ? d : null);
+  const ext = contacts.filter((c) => !c.internal);
+  const rows = ext.map((c) => {
+    const started = day(c.started), cancelled = day(c.cancelled);
+    return {
+      plan: String(c.plan || '').trim(), status: String(c.status || '').trim().toLowerCase(),
+      used: num(c.used), remaining: num(c.remaining), last_used: day(c.last_used), started, cancelled,
+      active: !!started && !(cancelled && cancelled >= started),
+    };
+  });
+  const sum = (list, f) => (list.some((r) => r[f] != null) ? list.reduce((n, r) => n + (r[f] || 0), 0) : null);
+  const group = (key) => {
+    const m = new Map();
+    for (const r of rows) {
+      const k = r[key] || '';
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(r);
+    }
+    return [...m.entries()].map(([k, list]) => ({ key: k, list })).sort((a, b) => b.list.length - a.list.length || a.key.localeCompare(b.key));
+  };
+  const weekAgo = addDays(today, -(ACTIVE_WINDOW - 1));
+  const monthsSet = new Set(rows.flatMap((r) => [r.started, r.cancelled]).filter(Boolean).map((d) => d.slice(0, 7)));
+  const months = [...monthsSet].sort().map((m) => ({
+    month: m,
+    started: rows.filter((r) => r.started && r.started.startsWith(m)).length,
+    cancelled: rows.filter((r) => r.cancelled && r.cancelled.startsWith(m)).length,
+  }));
+  return {
+    contacts: rows.length,
+    internal_excluded: contacts.length - ext.length,
+    credits_used: sum(rows, 'used'),
+    credits_remaining: sum(rows, 'remaining'),
+    using_credits: rows.filter((r) => r.used > 0).length,
+    used_last_7d: rows.filter((r) => r.last_used && r.last_used >= weekAgo).length,
+    active: rows.filter((r) => r.active).length,
+    cancelled: rows.filter((r) => r.cancelled && !r.active).length,
+    by_plan: group('plan').map(({ key, list }) => ({ plan: key, contacts: list.length, active: list.filter((r) => r.active).length, credits_used: sum(list, 'used'), credits_remaining: sum(list, 'remaining') })),
+    by_status: group('status').map(({ key, list }) => ({ status: key, contacts: list.length })),
+    months,
+  };
+}
+
+  const api = { summarize, monthlyChurn, creditUsage, planCredits, bogotaYesterday, addDays, ACTIVE_WINDOW, ACTIVATION_DAYS };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root && root.App) root.App.productUsage = api;
 })(typeof window !== 'undefined' ? window : this);

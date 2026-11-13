@@ -59,10 +59,50 @@
   function waiting(label, name, why) {
     return A.ui.card({ title: label, body: `<div class="overview-metric-value"><span class="kpi-awaiting">Waiting for event · ${A.ui.esc(name)}</span></div><p class="card-note">${A.ui.esc(why)}</p>` });
   }
+  // Plans and credits from the HubSpot t4e_* contact properties (aggregate stored by the connector).
+  function hubspotPlans() {
+    const head = ((A.S.data && A.S.data.snapshots) || []).filter((s) => s.source === 'hubspot' && s.key === 'plan_credits')
+      .sort((a, b) => String(b.pulled_at || b._at || '').localeCompare(String(a.pulled_at || a._at || '')))[0];
+    const row = head && head.rows && head.rows[0];
+    if (!row) return { ok: false, reason: 'Waiting for the next HubSpot sync to read the t4e_ plan and credit properties.' };
+    if (row.available !== true) return { ok: false, reason: row.reason || 'HubSpot plan and credits did not load.' };
+    if (!row.contacts) return { ok: false, reason: `No external contact carries a t4e_ plan, subscription status or credit count yet${row.internal_excluded ? ` (${row.internal_excluded} internal excluded)` : ''}.` };
+    return { ok: true, row, pulled: head.pulled_at || head._at || '' };
+  }
+  function plansSection(hp) {
+    const U = A.ui;
+    const sub = 'HubSpot contact properties t4e_* · external contacts · credit totals are the current balance per contact';
+    if (!hp.ok) return U.section('Plans and credits', sub, U.card({ title: 'Plans and credits', body: U.empty('No data yet', U.esc(hp.reason), 'credit-card') }));
+    const r = hp.row;
+    const n = (v) => (v == null ? '–' : U.fmt(v));
+    const kpis = [
+      kpi('Credits used', r.credits_used, `Sum of t4e_credits_used over ${U.fmt(r.contacts)} contacts · ${U.fmt(r.using_credits)} have used at least one credit.`),
+      kpi('Credits remaining', r.credits_remaining, 'Sum of t4e_credits_remaining. What accounts still hold, not what was granted.'),
+      kpi('Used credits in the last 7 days', r.used_last_7d, 'Contacts whose t4e_last_credit_used_at falls in the last 7 days.'),
+      kpi('Active subscriptions', r.active, `Started and not cancelled after the start · ${U.fmt(r.cancelled)} cancelled.`),
+    ];
+    const plans = U.table([
+      { t: 'Plan', f: (x) => (x.plan ? U.esc(x.plan) : '<span class="text-muted">No plan set</span>') },
+      { t: 'Contacts', num: 1, f: (x) => U.fmt(x.contacts) },
+      { t: 'Active subscriptions', num: 1, f: (x) => U.fmt(x.active) },
+      { t: 'Credits used', num: 1, f: (x) => n(x.credits_used) },
+      { t: 'Credits remaining', num: 1, f: (x) => n(x.credits_remaining) },
+    ], r.by_plan || []);
+    const months = (r.months || []).length ? U.table([
+      { t: 'Month', f: (x) => U.esc(U.monthName(x.month)) },
+      { t: 'Subscriptions started', num: 1, f: (x) => U.fmt(x.started) },
+      { t: 'Cancelled', num: 1, f: (x) => U.fmt(x.cancelled) },
+    ], r.months.slice().reverse()) : U.empty('No subscription dates yet', 'No contact has t4e_subscription_started_at or t4e_subscription_cancelled_at.', 'calendar');
+    const status = (r.by_status || []).map((x) => `${U.esc(x.status || 'no status')} ${U.fmt(x.contacts)}`).join(' · ');
+    const note = `<p class="card-note">Status as written by the platform: ${status}. Last HubSpot sync ${U.esc(U.stamp(hp.pulled))}${r.internal_excluded ? ` · ${U.fmt(r.internal_excluded)} internal contact${r.internal_excluded === 1 ? '' : 's'} excluded` : ''}${r.truncated ? ' · <b>Partial: 10,000 contact limit reached</b>' : ''}.</p>`;
+    return U.section('Plans and credits', sub, `<div class="grid-2">${kpis.join('')}</div>`
+      + `<div class="grid-2">${U.card({ title: 'By plan', body: plans + note })}${U.card({ title: 'Subscriptions by month', body: months })}</div>`);
+  }
   // Credits, churn and retention. With the live reader they turn on by themselves once the event exists.
-  function later(data, cutoff) {
+  function later(data, cutoff, hubspot) {
     const U = A.ui, P = A.productUsage;
     const retention = pending('Retention D1 / D7', 'Product must define calendar day vs 24-hour windows before this is shown.');
+    if (hubspot) return [retention];
     const ev = data && data.events;
     if (!ev) {
       return [
@@ -100,11 +140,13 @@
     const from = A.LAUNCH;
     // Yesterday in America/Bogota, never later than yesterday on the app clock: today is never consolidated.
     const cutoffWanted = [P.bogotaYesterday(), U.addDays(U.today(), -1)].sort()[0];
+    const hp = hubspotPlans();
     let data = load();
     if (!data.ok && data.missing) data = fromApi(cutoffWanted);
     if (!data.ok) {
       return U.section('Product usage', 'PostHog · unique portal accounts · America/Bogota', U.card({ title: 'Product usage', body: U.empty('No data yet', U.esc(data.reason), 'chart-line') }))
-        + U.section('Waiting on Product', 'Shown as no data, never as zero.', `<div class="grid-2">${later(null, cutoffWanted).join('')}</div>`);
+        + plansSection(hp)
+        + U.section('Waiting on Product', 'Shown as no data, never as zero.', `<div class="grid-2">${later(null, cutoffWanted, hp.ok).join('')}</div>`);
     }
     const cutoff = data.head.to && data.head.to < cutoffWanted ? data.head.to : cutoffWanted;
     const s = P.summarize({ accounts: data.accounts, projectDays: data.projects, from, cutoff });
@@ -142,9 +184,10 @@
     ], s.cohorts.slice().reverse()) : U.empty('No cohorts yet', 'No external account_created in this period.', 'users');
     const note = '<p class="card-note">Unique accounts are keyed by portal_user_id inside PostHog; no identifier is stored here. Open cohort = created less than 7 days before the cut, so it can still activate. Small cohorts move the rate a lot; read it with its n.</p>';
     return U.section('Product usage', 'PostHog · unique portal accounts and distinct projects · separate from the acquisition funnel', header + `<div class="grid-3">${kpis.join('')}</div>`)
+      + plansSection(hp)
       + U.section('Daily trend', 'Last 14 consolidated days. Units differ per column; nothing is added across them.', U.card({ title: 'Daily activity and projects', body: trend }))
       + U.section('Cohorts by account creation day', '7-day activation = first project_created on day 0 to 6 after account_created.', U.card({ title: 'Activation cohorts', body: cohorts + note }))
-      + U.section('Waiting on Product', 'Shown as no data, never as zero.', `<div class="grid-2">${later(data, cutoff).join('')}</div>`);
+      + U.section('Waiting on Product', 'Shown as no data, never as zero.', `<div class="grid-2">${later(data, cutoff, hp.ok).join('')}</div>`);
   }
   A.views.product = { title: 'Product usage', render, mount() {} };
 })(window.App);
