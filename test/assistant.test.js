@@ -275,6 +275,9 @@ test('automatic findings get only the funnel card with its tables, and the promp
   let sent;
   await ask(body, { apiKey: 'test-secret', fetchImpl: async (url, options) => { sent = JSON.parse(options.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }; } });
   assert.match(sent.system, /Each finding must make sense on its own/);
+  assert.match(sent.system, /"## Suggestion" with one sentence/);
+  assert.ok(sent.system.indexOf('## Suggestion') < sent.system.indexOf('## Findings'), 'the suggestion comes first');
+  assert.match(sent.system, /under 120 words/);
   assert.match(sent.system, /Never write internal names such as overview_funnel/);
   assert.match(sent.system, /never compare with another period/);
   assert.doesNotMatch(sent.messages[0].content, /ga4_sessions|Organic Search/);

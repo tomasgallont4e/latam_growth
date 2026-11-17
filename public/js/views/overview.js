@@ -342,7 +342,7 @@
     const sum = (rows, f) => rows.reduce((t, r) => t + (r[f] || 0), 0);
     const groupRow = (group, label) => { const rs = sp.rows.filter((r) => r.group === group); return { label, subtotal: true, forms: sum(rs, 'forms'), accounts: sp.accountsReady ? sum(rs, 'accounts') : null }; };
     const rows = [
-      groupRow('campaign', 'Campaigns · the three official links'), ...sp.rows.filter((r) => r.group === 'campaign'),
+      groupRow('campaign', 'Campaigns · the official program links'), ...sp.rows.filter((r) => r.group === 'campaign'),
       groupRow('general', 'General traffic'), ...sp.rows.filter((r) => r.group === 'general'),
       ...sp.rows.filter((r) => r.group === 'test'),
     ];
@@ -354,7 +354,7 @@
     ], rows, (r) => (r.subtotal ? 'is-subtotal' : r.group === 'test' ? 'muted' : ''));
     const formsTotal = sum(sp.rows, 'forms'), accTotal = sp.accountsReady ? sum(sp.rows, 'accounts') : null;
     const gap = steps[4] && steps[4].n != null && accTotal != null && accTotal !== steps[4].n ? ` The channels cover ${U.fmt(accTotal)} of the ${U.fmt(steps[4].n)} accounts in step 5; the rest arrived before the channel was synced.` : '';
-    return `<div class="ov-by-channel"><h4 class="cf-sub">Form submissions and accounts by channel</h4>${table}<p class="card-note">Same channels and rules as the Early Builders dashboard: the three official links match on utm_source, utm_medium and utm_campaign, and the Developer Network emails sent from HubSpot count with Referrals. Each row counts once, by its first-touch UTMs: forms by the HubSpot submission (${U.fmt(formsTotal)}, a separate path) and accounts by the PostHog person (step 5).${sp.accountsReady ? '' : ' Accounts by channel arrive with the next PostHog sync; Pending is not zero.'}${U.esc(gap)}</p></div>`;
+    return `<div class="ov-by-channel"><h4 class="cf-sub">Form submissions and accounts by channel</h4>${table}<p class="card-note">Same channels and rules as the Early Builders dashboard: the official links match on utm_source, utm_medium and utm_campaign, the Developer Network emails sent from HubSpot count with Referrals, and each builder's own link (medium influencer) counts as Influencers. Each row counts once, by its first-touch UTMs: forms by the HubSpot submission (${U.fmt(formsTotal)}, a separate path) and accounts by the PostHog person (step 5).${sp.accountsReady ? '' : ' Accounts by channel arrive with the next PostHog sync; Pending is not zero.'}${U.esc(gap)}</p></div>`;
   }
   // One line per step: where the number comes from and what it counts, so a step larger than the one above reads as expected.
   function howMeasured() {

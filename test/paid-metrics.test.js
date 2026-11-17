@@ -1766,6 +1766,9 @@ test('channels follow the Early Builders rule: exact source, medium and campaign
   assert.equal(classify({ source: 'google', medium: 'cpc', campaign: 'brand_search' }), 'other', 'google / cpc outside the program campaign');
   for (const source of ['hs_email', 'hs_automation', 'hubspot']) assert.equal(classify({ source, medium: 'email', campaign: 'dn_welcome' }), 'referral');
   assert.equal(classify({ source: 'hubspot', medium: 'social' }), 'other');
+  assert.equal(classify({ source: 'linkedin', medium: 'influencer', campaign: 'early_builders_co_202611', content: 'jdoe_dev' }), 'influencer', 'a builder referral link');
+  assert.equal(classify({ source: 'instagram', medium: 'influencer', campaign: 'early_builders_co_202611' }), 'influencer');
+  assert.equal(classify({ source: 'instagram', medium: 'influencer', campaign: 'other_campaign' }), 'other');
   assert.equal(classify({ source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611', content: 'prueba-01' }), 'test');
   assert.equal(classify({ source: '(not set)', medium: '', campaign: null }), 'none');
   assert.deepEqual(formUtm({ first_utm_source: 'equipo', first_utm_medium: 'referral', first_utm_campaign: 'developer-network', utm_source: 'google' }).source, 'equipo', 'first touch wins');
@@ -1822,7 +1825,7 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
     ...[['gmail', 5], ['referral', 3], ['none', 2]].map(([v, n]) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n })),
   );
   const html = A.views.overview.render();
-  assert.match(html, /<b>Campaigns · the three official links<\/b><\/td><td class="td-num"><b>2<\/b><\/td><td class="td-num"><b>8<\/b>/);
+  assert.match(html, /<b>Campaigns · the official program links<\/b><\/td><td class="td-num"><b>2<\/b><\/td><td class="td-num"><b>8<\/b>/);
   assert.match(html, /<b>General traffic<\/b><\/td><td class="td-num"><b>1<\/b><\/td><td class="td-num"><b>2<\/b>/);
   assert.match(html, /Gmail ads<br><small class="text-muted">google \/ cpc \/ early_builders_co_202611<\/small><\/td><td class="td-num">1<\/td><td class="td-num">5<\/td>/);
   assert.doesNotMatch(html, /The channels cover/, 'channels match step 5');

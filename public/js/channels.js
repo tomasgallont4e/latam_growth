@@ -1,11 +1,12 @@
 'use strict';
 // Channel of a form submission or an account, from its first-touch UTMs. Shared by the browser
 // (App.channels) and Node (lib/connectors.js), like paid.js.
-// Same rule as the Early Builders dashboard (think4ever project 290, lib/campaigns.js): the three official
+// Same rule as the Early Builders dashboard (think4ever project 290, lib/campaigns.js): the official
 // links match on utm_source + utm_medium + utm_campaign, case-insensitive; utm_content is the piece and never
 // decides the channel; qa / test / prueba values are Tests. One difference, decided on 2026-11-17: the
 // Developer Network emails sent from HubSpot (hs_email, hs_automation, hubspot with medium email) count with
-// Referrals · Developer Network. The Early Builders dashboard still files them under Other UTM.
+// Referrals · Developer Network. Each builder's own referral link (any network, medium influencer, campaign
+// early_builders_co_202611; utm_content = the builder's public user) is its own channel, Influencers.
 (function (root) {
   const LINKS = [
     { key: 'referral', source: 'equipo', medium: 'referral', campaign: 'developer-network' },
@@ -13,12 +14,14 @@
     { key: 'linkedin', source: 'linkedin', medium: 'paid_social', campaign: 'early_builders_co_202611' },
   ];
   const DN_EMAIL_SOURCES = new Set(['hs_email', 'hs_automation', 'hubspot']);
+  const PROGRAM_CAMPAIGN = 'early_builders_co_202611';
   // group: 'campaign' = the official links of the program, 'general' = everything else, 'test' = left out.
   const CHANNELS = [
     { key: 'referral', label: 'Referrals · Developer Network', rule: 'equipo / referral / developer-network, and HubSpot emails (hs_email, hs_automation, hubspot / email)', group: 'campaign' },
     { key: 'gmail', label: 'Gmail ads', rule: 'google / cpc / early_builders_co_202611', group: 'campaign' },
     { key: 'linkedin', label: 'LinkedIn paid', rule: 'linkedin / paid_social / early_builders_co_202611', group: 'campaign' },
-    { key: 'other', label: 'Other UTM', rule: 'a UTM that matches none of the three links', group: 'general' },
+    { key: 'influencer', label: 'Influencers · builder links', rule: 'linkedin, instagram… / influencer / early_builders_co_202611 (each builder shares their own link)', group: 'campaign' },
+    { key: 'other', label: 'Other UTM', rule: 'a UTM that matches none of the program links', group: 'general' },
     { key: 'none', label: 'No UTM', rule: 'no utm_source, utm_medium or utm_campaign', group: 'general' },
     { key: 'test', label: 'Tests', rule: 'qa, test or prueba in any UTM value', group: 'test' },
   ];
@@ -33,6 +36,7 @@
     const hit = LINKS.find((l) => l.source === s && l.medium === m && l.campaign === c);
     if (hit) return hit.key;
     if (m === 'email' && DN_EMAIL_SOURCES.has(s)) return 'referral';
+    if (m === 'influencer' && c === PROGRAM_CAMPAIGN) return 'influencer';
     return 'other';
   }
   // A HubSpot form row: its first-touch UTMs when it has any, otherwise the UTMs of the submission.
