@@ -260,16 +260,44 @@
     }
     return worst;
   };
-  C.funnel = (steps, label = 'Independent measurement stages') => {
+  const pctLabel = (v) => `${+(v * 100).toFixed(1)}%`;
+  C.targetLabel = (t) => `${t.atLeast ? 'at least ' : ''}${t.max != null ? `${+(t.pct * 100).toFixed(1)}–${pctLabel(t.max)}` : pctLabel(t.pct)}`;
+  // The % versus the previous step, large and to the right, with a short verdict against the step's target.
+  function verdict(steps, k, weak) {
+    const s = steps[k];
+    const note = (t) => `<span class="fv-note">${U.esc(t)}</span>`;
+    const block = (cls, big, head, sub) => `<div class="funnel-verdict ${cls}"><span class="fv-text"><b>${U.esc(head)}</b>${sub ? `<small>${U.esc(sub)}</small>` : ''}</span><span class="fv-pct">${U.esc(big)}</span></div>`;
+    if (k === 0) return s.n == null ? block('is-empty', '–', 'No data yet', 'not zero') : note('Start of the funnel');
+    if (s.aside) return note('Reference · not part of the %');
+    if (s.kind === 'rate' || s.separate) return note(s.bridge || 'Separate path');
+    const p = prevOf(steps, k), a = steps[p].n, b = s.n;
+    const vs = p === k - 1 ? '' : `vs ${steps[p].name}`;
+    if (a == null || b == null) return block('is-empty', '–', 'No data yet', 'not zero');
+    if (a && b > a) {
+      const r = b / a;
+      return block('is-over', r >= 1.5 ? `${r.toFixed(1)}×` : `+${Math.round((r - 1) * 100)}%`, 'More than the step above', s.why || '');
+    }
+    const kp = a ? b / a : 0;
+    const big = U.pct(kp, kp && kp < 0.001 ? 2 : 1);
+    if (s.target == null) return block('is-plain', big, 'continue', vs);
+    const sub = [`target ${C.targetLabel({ pct: s.target, max: s.targetMax, atLeast: s.targetAtLeast })}`, vs].filter(Boolean).join(' · ');
+    if (kp >= s.target) return block('is-met', big, 'On target', sub);
+    if (kp >= s.target * 0.8) return block('is-close', big, 'Close to target', sub);
+    const times = kp ? s.target / kp : Infinity;
+    const head = k === weak ? 'Biggest leak' : !kp ? 'No one continued' : times >= 2 ? `${Math.round(times)}× below target` : 'Below target';
+    return block(`is-below${k === weak ? ' is-weak' : ''}`, big, head, sub);
+  }
+  C.funnel = (steps, label = 'Independent measurement stages', opts = {}) => {
     const baseStep = steps.find((s) => s.kind !== 'rate' && s.n != null);
     const base = baseStep ? baseStep.n : 0;
     const weak = C.weakest(steps);
+    const verdicts = !!opts.verdicts;
     let h = '';
     let pathBase = null;
     steps.forEach((s, k) => {
       if ((s.separate || s.rescale) && s.n != null) pathBase = s.n;
       const denom = pathBase != null ? pathBase : base;
-      if (k > 0) {
+      if (k > 0 && !verdicts) {
         if (s.kind === 'rate' || s.separate || s.aside) h += `<div class="funnel-conn"><span class="conn-note">${U.icon('arrow-down')} ${U.esc(s.bridge || (s.kind === 'rate' ? 'Rate for the step above' : s.aside ? 'Not part of the step %' : 'Separate path'))}</span></div>`;
         else {
           const p = prevOf(steps, k);
@@ -295,10 +323,10 @@
         ? `<span class="awaiting-chip">${U.esc(s.note || `Awaiting ${s.src}`)}</span>`
         : rate
           ? `${U.pct(s.n)}${s.em ? `<em>${U.esc(s.em)}</em>` : ''}`
-          : `${U.fmt(s.n)}${s.aside ? `<em>${U.esc(s.em || 'events')}</em>` : !restarted && denom ? `<em>${U.pct(s.n / denom)}</em>` : ''}`;
-      h += `<div class="funnel-step${s.aside ? ' is-aside' : ''}" role="listitem"><span class="funnel-idx">${k + 1}</span><span class="funnel-name">${U.esc(s.name)}<small>${U.esc(s.src)}</small></span><div class="funnel-track${pend ? ' pending' : ''}">${pend ? '' : `<div class="funnel-fill" style="width:${w.toFixed(2)}%"></div>`}</div><span class="funnel-count">${count}</span></div>`;
+          : `${U.fmt(s.n)}${s.aside ? `<em>${U.esc(s.em || 'events')}</em>` : !verdicts && !restarted && denom ? `<em>${U.pct(s.n / denom)}</em>` : ''}`;
+      h += `<div class="funnel-step${s.aside ? ' is-aside' : ''}" role="listitem"><span class="funnel-idx">${k + 1}</span><span class="funnel-name">${U.esc(s.name)}<small>${U.esc(s.src)}</small></span><div class="funnel-track${pend ? ' pending' : ''}">${pend ? '' : `<div class="funnel-fill" style="width:${w.toFixed(2)}%"></div>`}</div><span class="funnel-count">${count}</span>${verdicts ? verdict(steps, k, weak) : ''}</div>`;
     });
-    return `<div class="funnel" role="list" aria-label="${U.esc(label)}">${h}</div>`;
+    return `<div class="funnel${verdicts ? ' has-verdicts' : ''}" role="list" aria-label="${U.esc(label)}">${h}</div>`;
   };
 
   // Executive month chart: daily bars, cumulative line, dotted minimum, optional projection.

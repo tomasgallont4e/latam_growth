@@ -187,12 +187,12 @@
     }
     return [...seen].sort((a, b) => a.localeCompare(b));
   }
-  // Market benchmarks for the % that should continue from the step above (researched 2026-11-17; vendor and agency
-  // reports, so directional). Logins have none: they are a reference, not part of the step %.
+  // Targets for the % that should continue from the step above. Clicks and Started sign-up are team targets
+  // (2026-11-17); the rest come from market benchmarks. Logins have none: they are a reference, not part of the step %.
   const STEP_TARGETS = {
-    'Clicks to the landing': { pct: 0.03, basis: 'Google Ads CTR for technology and SaaS, about 2 to 4% (WordStream, Digital Gravity)' },
+    'Clicks to the landing': { pct: 0.07, max: 0.1, basis: 'team target; the market CTR for technology ads is about 2 to 4% (WordStream)' },
     'Landing sessions': { pct: 0.85, basis: 'ad clicks that become GA4 sessions, normally 85 to 95%' },
-    'Started sign-up': { pct: 0.04, basis: 'SaaS landing page median 3.8% (Unbounce); self-serve trial pages 4 to 10%' },
+    'Started sign-up': { pct: 0.5, atLeast: true, basis: 'team target, half of the landing sessions start signing up; the SaaS landing page median is 3.8% (Unbounce)' },
     'Accounts created': { pct: 0.7, basis: 'sign-up completion after an email code; no solid benchmark, a verification gate costs 8 to 20 points' },
     'Projects created': { pct: 0.4, basis: '7-day activation, median about 41.7% and average 37.5% (Userpilot)' },
   };
@@ -210,7 +210,7 @@
     const impSrc = all ? 'Meta Ads · Google Ads · LinkedIn page' : 'Meta Ads · Google Ads';
     if (impNets.length || liImp != null) steps.push({ name: 'Impressions', src: impSrc, n: add([...impNets.map((k) => D.sum(k, impMetric, all ? null : inCountry, from, to)), liImp]) });
     else steps.push(all ? { name: 'Impressions', src: impSrc, n: null, note: 'No ad platform has reported' } : split('Impressions', impSrc));
-    steps[0].group = all ? 'Ads and LinkedIn page · bars and % of impressions' : 'Ads · bars and % of impressions';
+    steps[0].group = all ? 'Ads and LinkedIn page' : 'Ads';
     // 2. Clicks: Meta outbound + Google Ads clicks + clicks on the LinkedIn company page posts (decided
     // 2026-11-17). LinkedIn reports every click on a post, not only clicks to the landing. Never split by country.
     if (!all) steps.push(split('Clicks to the landing', 'Meta outbound · Google Ads clicks · LinkedIn page clicks'));
@@ -224,7 +224,7 @@
     // 3. Landing sessions (GA4, go.think4ever.com only)
     // Bars restart here: impressions are ~100x larger than every on-site step, so one scale would
     // flatten steps 4 to 7.
-    const onSite = { group: 'On the site · bars and % of landing sessions', rescale: true, over: 'landing sessions come from every source (organic, direct, emails), not only from ad clicks' };
+    const onSite = { group: 'On the site · bars restart at landing sessions', rescale: true, why: 'organic, direct and email land too', over: 'landing sessions come from every source (organic, direct, emails), not only from ad clicks' };
     steps.push(D.has('ga4', 'ga_exec_geo_sessions')
       ? { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: D.sum('ga4', 'ga_exec_geo_sessions', all ? null : inCountry, from, to), ...onSite }
       : { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: null, note: 'GA4 go-host sessions not synced', ...onSite });
@@ -242,7 +242,7 @@
       ? D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', from, to)
       : D.sum('posthog', 'ph_accounts_geo', inCountry, from, to);
     steps.push({ name: 'Accounts created', src: 'PostHog · first account_created or $identify · External', n: accounts, note: 'Account coverage unavailable; not zero',
-      over: 'an account created in these dates can have started signing up before them' });
+      why: 'some started before these dates', over: 'an account created in these dates can have started signing up before them' });
     // 6. Logins: unique people (portal accounts) with a signed_in in the window, internal excluded, from the PostHog
     // product usage rows. Shown in place but `aside`: they include accounts created earlier, so they are not part of
     // step 5 and never enter a step % or the weakest step. Projects compare with accounts.
@@ -253,8 +253,11 @@
     // 7. Projects created (PostHog project_created)
     if (!all) steps.push(split('Projects created', 'PostHog · project_created'));
     else steps.push({ name: 'Projects created', src: 'PostHog · project_created', n: D.has('posthog', 'ph_event') ? D.sum('posthog', 'ph_event', (r) => r.dim_value === 'project_created', from, to) : null, note: 'PostHog events not synced',
-      over: 'counts every project created in these dates, also by accounts created earlier, and an account can create several' });
-    for (const st of steps) if (STEP_TARGETS[st.name]) st.target = STEP_TARGETS[st.name].pct;
+      why: 'older accounts build too, some several', over: 'counts every project created in these dates, also by accounts created earlier, and an account can create several' });
+    for (const st of steps) {
+      const t = STEP_TARGETS[st.name];
+      if (t) Object.assign(st, { target: t.pct, targetMax: t.max, targetAtLeast: !!t.atLeast });
+    }
     return steps;
   }
   // Unique portal accounts with at least one signed_in day in the window (product usage rows, America/Bogota days).
@@ -296,6 +299,7 @@
           pct_of_previous: base && base.n > 0 && s.n != null ? s.n / base.n : null, previous_step: base ? base.name : undefined,
           above_previous_because: base && base.n != null && s.n != null && s.n > base.n ? s.over : undefined,
           target_pct_of_previous: s.target != null ? s.target : undefined,
+          target_max_pct_of_previous: s.targetMax != null ? s.targetMax : undefined,
         };
       }),
       weakest_step: weak > 0 ? { from: steps[C.prevStep(steps, weak)].name, to: steps[weak].name, continue: steps[weak].n / steps[C.prevStep(steps, weak)].n } : null,
@@ -391,8 +395,8 @@
       ['Logins', 'PostHog, unique people who signed in at least once in these dates, internal excluded. They include accounts created before these dates, so they are shown for reference and are not part of the step %.'],
       ['Projects created', 'PostHog project_created events in these dates. It can be larger than Accounts created: older accounts create projects too, and one account can create several.'],
     ];
-    const targets = Object.entries(STEP_TARGETS).map(([t, x]) => `<div><dt>${U.esc(t)} · target ${U.esc(U.pct(x.pct, 0))}</dt><dd>${U.esc(x.basis)}</dd></div>`).join('');
-    return `<details class="collapsible ov-how"><summary>${U.icon('chevron-right', 'fa-solid', 'chev')}How each step is measured</summary><div class="collapsible-body"><dl class="defs">${items.map(([t, d]) => `<div><dt>${U.esc(t)}</dt><dd>${U.esc(d)}</dd></div>`).join('')}</dl><h4 class="cf-sub">Targets per step</h4><dl class="defs">${targets}</dl><p class="card-note">Targets are the % that should continue from the step above, from market benchmarks (vendor and agency reports, so directional). HubSpot form submissions (the Early Builders program form and other site forms) are not a step: the landing has no HubSpot form. They are listed under the funnel and in the channel table. Each step comes from its own source (ad platforms, GA4, HubSpot, PostHog) and is not the same group of people moving down, so the % between steps is indicative. When a step is larger than the one above, the funnel says why instead of showing more than 100%.</p></div></details>`;
+    const targets = Object.entries(STEP_TARGETS).map(([t, x]) => `<div><dt>${U.esc(t)} · target ${U.esc(A.charts.targetLabel(x))}</dt><dd>${U.esc(x.basis)}</dd></div>`).join('');
+    return `<details class="collapsible ov-how"><summary>${U.icon('chevron-right', 'fa-solid', 'chev')}How each step is measured</summary><div class="collapsible-body"><dl class="defs">${items.map(([t, d]) => `<div><dt>${U.esc(t)}</dt><dd>${U.esc(d)}</dd></div>`).join('')}</dl><h4 class="cf-sub">Targets per step</h4><dl class="defs">${targets}</dl><p class="card-note">Targets are the % that should continue from the step above. Red is below the target, amber within 20% of it, green on target, grey a step larger than the one above. HubSpot form submissions (the Early Builders program form and other site forms) are not a step: the landing has no HubSpot form. They are listed under the funnel and in the channel table. Each step comes from its own source (ad platforms, GA4, HubSpot, PostHog) and is not the same group of people moving down, so the % between steps is indicative. When a step is larger than the one above, the funnel says why instead of showing more than 100%.</p></div></details>`;
   }
   function funnelCard(from, to) {
     const U = A.ui, C = A.charts, S = A.S;
@@ -403,8 +407,8 @@
     const st = steps[3];
     const regLine = st && st.n != null && st.withReg != null ? `<p class="card-note">Started sign-up: ${U.fmt(st.n)} people, ${U.fmt(st.withReg)} of them through the landing code (registration_started) and ${U.fmt(st.n - st.withReg)} who created the account directly (one-click sign-up or a direct link).</p>` : '';
     const weakLine = weak > 0
-      ? `Weakest step: ${steps[C.prevStep(steps, weak)].name} → ${steps[weak].name}, ${U.pct(steps[weak].n / steps[C.prevStep(steps, weak)].n, 1)} continue.`
-      : 'The weakest step appears once two consecutive steps have data.';
+      ? `Biggest leak: ${steps[C.prevStep(steps, weak)].name} → ${steps[weak].name}, ${U.pct(steps[weak].n / steps[C.prevStep(steps, weak)].n, 1)} continue${steps[weak].target != null ? ` against a target of ${C.targetLabel({ pct: steps[weak].target, max: steps[weak].targetMax, atLeast: steps[weak].targetAtLeast })}` : ''}.`
+      : 'The biggest leak appears once two consecutive steps have data.';
     const forms = country === 'all' ? formRows(from, to) : [];
     const channels = country === 'all' ? channelCtr(from, to) : '';
     const formTotal = forms.reduce((t, [, n]) => t + n, 0);
@@ -416,7 +420,7 @@
       cls: 'chart-card', title: 'Funnel · 7 steps',
       sub: `${U.win(from, to)} · ${country === 'all' ? 'All countries' : U.esc(country)} · % versus the previous step`,
       right: picker,
-      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${regLine}${howMeasured()}${channels}${formLine}${byChannel}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
+      body: C.funnel(steps, 'Funnel from impressions to projects created', { verdicts: true }) + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${regLine}${howMeasured()}${channels}${formLine}${byChannel}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
     });
   }
 

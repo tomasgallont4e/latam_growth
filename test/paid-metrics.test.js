@@ -534,10 +534,10 @@ test('Overview 7-step funnel shows % between steps, the weakest step and the cou
   assert.match(html, /Logins/);
   assert.match(html, /Product usage not synced yet/);
   assert.doesNotMatch(html, /Credits loaded/);
-  assert.match(html, /Weakest step/);
-  assert.match(html, /continue</);
-  assert.match(html, /Unique people who signed in, including accounts created earlier · not part of the step %/);
-  assert.match(html, /continue vs Accounts created</, 'projects compare with accounts, skipping logins');
+  assert.match(html, /Biggest leak/);
+  assert.match(html, /class="funnel has-verdicts"/);
+  assert.match(html, /Reference · not part of the %/);
+  assert.match(html, /vs Accounts created<\/small>/, 'projects compare with accounts, skipping logins');
   assert.match(html, /id="goal-country"/);
   A.S.overviewCountry = 'Colombia';
   const country = A.views.overview.render();
@@ -1860,7 +1860,7 @@ test('the assistant reads the funnel card as drawn: window, country, step %, wea
   assert.equal(f.steps[0].value, 15000, 'Nov 5 is outside the weekly window');
   assert.equal(f.steps[1].pct_of_previous, 250 / 15000);
   assert.equal(f.steps[1].previous_step, 'Impressions');
-  assert.ok(f.weakest_step && html.includes(`Weakest step: ${f.weakest_step.from} → ${f.weakest_step.to}`), 'same weakest step as the card');
+  assert.ok(f.weakest_step && html.includes(`Biggest leak: ${f.weakest_step.from} → ${f.weakest_step.to}`), 'same weakest step as the card');
   assert.deepEqual(f.channels.map((c) => [c.channel, c.impressions, c.clicks]), [['Meta Ads', 10000, 100], ['Google Ads', 5000, 150]]);
   assert.deepEqual(f.forms, [{ form: 'Early Builders Colombia', submissions: 1 }]);
   assert.deepEqual(f.by_channel.filter((r) => r.accounts).map((r) => [r.channel, r.accounts]), [['Gmail ads · Google Ads', 4], ['No UTM', 2]]);
@@ -1991,7 +1991,7 @@ test('PostHog builders are the first account_verified per person, by channel, in
 });
 
 
-test('each funnel step shows its market target next to the continue %', () => {
+test('each funnel step shows its % large on the right with a verdict against its target', () => {
   const A = dashboard();
   A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
   const d = '2026-11-10';
@@ -2000,11 +2000,13 @@ test('each funnel step shows its market target next to the continue %', () => {
     { source: 'ga4', metric: 'ga_exec_geo_sessions', value: 300, date: d, dim: 'country', dim_value: 'Colombia' },
   );
   const html = A.views.overview.render();
-  assert.match(html, /4\.00% continue<\/span><span class="target is-met">target 3\.0%<\/span>/, 'clicks 4% beats the 3% target');
-  assert.match(html, /75\.0% continue<\/span><span class="target is-below">target 85%<\/span>/, 'sessions 75% are below the 85% target');
+  assert.match(html, /<div class="funnel-verdict is-below is-weak"><span class="fv-text"><b>Biggest leak<\/b><small>target 7–10%<\/small><\/span><span class="fv-pct">4\.0%<\/span>/, 'clicks 4% are under the 7–10% target');
+  assert.match(html, /<div class="funnel-verdict is-close"><span class="fv-text"><b>Close to target<\/b><small>target 85%<\/small><\/span><span class="fv-pct">75\.0%<\/span>/, 'sessions 75% are within 20% of 85%');
+  assert.match(html, /Started sign-up · target at least 50%/);
   assert.match(html, /Targets per step/);
   const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
-  assert.equal(f.steps[1].target_pct_of_previous, 0.03);
+  assert.equal(f.steps[1].target_pct_of_previous, 0.07);
+  assert.equal(f.steps[1].target_max_pct_of_previous, 0.1);
   assert.equal(f.steps[5].target_pct_of_previous, undefined, 'logins have no target');
 });
 
@@ -2020,4 +2022,21 @@ test('the assistant gets the previous window of the same length and the ad spend
   assert.equal(f.previous_window.window, 'Nov 1 – Nov 7');
   assert.equal(f.previous_window.steps[0].value, 400);
   assert.deepEqual(f.spend, [{ platform: 'Meta Ads', spend: 50, previous_spend: 20 }]);
+});
+
+
+test('a step larger than the one above is grey with the multiple, a met step is green, a missing step says no data', () => {
+  const A = dashboard();
+  const C = A.charts;
+  const html = C.funnel([
+    { name: 'Impressions', src: 'a', n: 1000 },
+    { name: 'Clicks to the landing', src: 'b', n: 100, target: 0.07, targetMax: 0.1 },
+    { name: 'Landing sessions', src: 'c', n: 180, why: 'organic too' },
+    { name: 'Started sign-up', src: 'd', n: null },
+  ], 'x', { verdicts: true });
+  assert.match(html, /funnel-verdict is-met"><span class="fv-text"><b>On target<\/b><small>target 7–10%<\/small><\/span><span class="fv-pct">10\.0%/);
+  assert.match(html, /funnel-verdict is-over"><span class="fv-text"><b>More than the step above<\/b><small>organic too<\/small><\/span><span class="fv-pct">1\.8×/);
+  assert.match(html, /funnel-verdict is-empty"><span class="fv-text"><b>No data yet<\/b><small>not zero/);
+  assert.doesNotMatch(html, /drop-off|funnel-conn/, 'verdicts replace the connector lines');
+  assert.doesNotMatch(C.funnel([{ name: 'A', src: 'a', n: 10 }, { name: 'B', src: 'b', n: 5 }], 'y'), /funnel-verdict/, 'other funnels keep their layout');
 });
