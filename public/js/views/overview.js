@@ -202,13 +202,15 @@
     if (impNets.length || liImp != null) steps.push({ name: 'Impressions', src: impSrc, n: add([...impNets.map((k) => D.sum(k, impMetric, all ? null : inCountry, from, to)), liImp]) });
     else steps.push(all ? { name: 'Impressions', src: impSrc, n: null, note: 'No ad platform has reported' } : split('Impressions', impSrc));
     steps[0].group = all ? 'Ads and LinkedIn page · bars and % of impressions' : 'Ads · bars and % of impressions';
-    // 2. Clicks to the landing (Meta outbound + Google Ads clicks); never split by country
-    if (!all) steps.push(split('Clicks to the landing', 'Meta outbound · Google Ads clicks'));
+    // 2. Clicks: Meta outbound + Google Ads clicks + clicks on the LinkedIn company page posts (decided
+    // 2026-11-17). LinkedIn reports every click on a post, not only clicks to the landing. Never split by country.
+    if (!all) steps.push(split('Clicks to the landing', 'Meta outbound · Google Ads clicks · LinkedIn page clicks'));
     else {
       const parts = [];
       if (D.has('meta', 'ad_outbound_clicks')) parts.push(D.sum('meta', 'ad_outbound_clicks', null, from, to));
       if (D.has('google_ads', 'ad_clicks')) parts.push(D.sum('google_ads', 'ad_clicks', null, from, to));
-      steps.push({ name: 'Clicks to the landing', src: 'Meta outbound · Google Ads clicks', n: parts.length ? add(parts) : null, note: 'No outbound clicks reported' });
+      if (D.has('linkedin', 'post_clicks')) parts.push(D.sum('linkedin', 'post_clicks', null, from, to));
+      steps.push({ name: 'Clicks to the landing', src: 'Meta outbound · Google Ads clicks · LinkedIn page clicks', n: parts.length ? add(parts) : null, note: 'No outbound clicks reported' });
     }
     // 3. Landing sessions (GA4, go.think4ever.com only)
     // Bars restart here: impressions are ~100x larger than every on-site step, so one scale would
@@ -272,9 +274,8 @@
       by_channel: byChannel ? byChannel.rows.map((r) => ({ channel: r.label, group: r.group, forms: r.forms, accounts: r.accounts })) : null,
     };
   };
-  // Step 1 → 2 per channel, from the same metrics and window as the funnel: the impressions add up to step 1.
-  // LinkedIn is the organic company page (no LinkedIn Ads). Its post clicks are content clicks, not clicks to the
-  // landing, so they are not part of step 2.
+  // Step 1 → 2 per channel, from the same metrics and window as the funnel: the rows add up to steps 1 and 2.
+  // LinkedIn is the organic company page (no LinkedIn Ads); its clicks are every click on a post.
   function channelRows(from, to) {
     const D = A.D;
     return [
@@ -293,12 +294,12 @@
     const paid = rows.filter((r) => !r.organic);
     const best = Math.max(0, ...paid.map((r) => r.ctr || 0));
     const table = U.table([
-      { t: 'Channel', f: (r) => (r.organic ? `${U.esc(r.name)}<br><small class="text-muted">Organic posts · impressions count in step 1, clicks do not count in step 2</small>` : U.esc(r.name)) },
+      { t: 'Channel', f: (r) => (r.organic ? `${U.esc(r.name)}<br><small class="text-muted">Organic posts · every click on a post, not only clicks to the landing</small>` : U.esc(r.name)) },
       { t: 'Impressions', num: 1, f: (r) => U.fmt(r.impressions) },
       { t: 'Clicks to the landing', num: 1, f: (r) => (r.clicks == null ? '<span class="text-muted">Pending</span>' : `${U.fmt(r.clicks)} <small class="text-muted">${r.kind}</small>`) },
       { t: 'Impressions → clicks', num: 1, f: (r) => (r.ctr == null ? '–' : !r.organic && r.ctr === best && paid.length > 1 && best > 0 ? `<b>${U.pct(r.ctr, 2)}</b>` : U.pct(r.ctr, 2)) },
     ], rows);
-    const note = rows.some((r) => r.organic) ? '<p class="card-note">Step 1 adds up the three rows. Step 2 adds up only Meta Ads and Google Ads: LinkedIn is the organic company page, and a click on a post is not necessarily a click to the landing.</p>' : '';
+    const note = rows.some((r) => r.organic) ? '<p class="card-note">Steps 1 and 2 add up the three rows. LinkedIn is the organic company page: it reports every click on a post, so its clicks can include clicks that do not open the landing.</p>' : '';
     return `<div class="ov-channel-ctr"><h4 class="cf-sub">Impressions → clicks by channel</h4>${table}${note}</div>`;
   }
   // Steps 4 and 5 by channel (public/js/channels.js, the rule of the Early Builders dashboard): forms from the
@@ -349,7 +350,7 @@
     const U = A.ui;
     const items = [
       ['Impressions', 'Meta Ads and Google Ads, plus the posts of the LinkedIn company page (organic). Ads are campaign traffic; the LinkedIn page is general.'],
-      ['Clicks to the landing', 'Meta outbound clicks and Google Ads clicks. Paid only: a click on a LinkedIn post is not a click to the landing.'],
+      ['Clicks to the landing', 'Meta outbound clicks, Google Ads clicks and the clicks on the LinkedIn company page posts. LinkedIn reports every click on a post, so its part can include clicks that do not open the landing.'],
       ['Landing sessions', 'GA4 sessions on go.think4ever.com from every source: ads, organic, direct and emails.'],
       ['Form submissions', 'HubSpot contacts that submitted a form on the site (Early Builders, Registro LATAM). The landing page no longer has a form, so this is the Developer Network registration and the other site forms; internal and test contacts are excluded.'],
       ['Accounts created', 'PostHog, the first account_created or $identify of each person, External only. It can be larger than Form submissions: one-click sign-up and the Developer Network emails create accounts without a form.'],
