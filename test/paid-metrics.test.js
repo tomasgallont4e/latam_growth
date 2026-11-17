@@ -2000,13 +2000,13 @@ test('each funnel step shows its % large on the right with a verdict against its
     { source: 'ga4', metric: 'ga_exec_geo_sessions', value: 300, date: d, dim: 'country', dim_value: 'Colombia' },
   );
   const html = A.views.overview.render();
-  assert.match(html, /<div class="funnel-verdict is-below is-weak"><span class="fv-text"><b>Biggest leak<\/b><small>target 7–10%<\/small><\/span><span class="fv-pct">4\.0%<\/span>/, 'clicks 4% are under the 7–10% target');
+  assert.match(html, /<div class="funnel-verdict is-below is-weak"><span class="fv-text"><b>Biggest leak<\/b><small>target 10%<\/small><\/span><span class="fv-pct">4\.0%<\/span>/, 'clicks 4% are under the 10% target');
   assert.match(html, /<div class="funnel-verdict is-close"><span class="fv-text"><b>Close to target<\/b><small>target 85%<\/small><\/span><span class="fv-pct">75\.0%<\/span>/, 'sessions 75% are within 20% of 85%');
   assert.match(html, /Started sign-up · target at least 50%/);
   assert.match(html, /Targets per step/);
   const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
-  assert.equal(f.steps[1].target_pct_of_previous, 0.07);
-  assert.equal(f.steps[1].target_max_pct_of_previous, 0.1);
+  assert.equal(f.steps[1].target_pct_of_previous, 0.1);
+  assert.equal(f.steps[1].target_max_pct_of_previous, undefined);
   assert.equal(f.steps[5].target_pct_of_previous, undefined, 'logins have no target');
 });
 
