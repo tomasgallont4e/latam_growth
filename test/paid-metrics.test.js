@@ -235,6 +235,7 @@ test('Meta sync paginates link clicks and keeps country facts separate from camp
     const u = new URL(url);
     if (u.searchParams.get('breakdowns') === 'country') return response({ data: [{ country: 'CO', date_start: date, spend: '60', impressions: '6000', inline_link_clicks: '50' }, { country: 'CO', date_start: date, spend: '40', impressions: '4000', inline_link_clicks: '30' }] });
     if (u.searchParams.has('after')) return response({ data: [{ campaign_name: 'Second', date_start: date, spend: '0', clicks: '20' }] });
+    if (u.searchParams.get('fields') === 'currency') return response({ currency: 'USD' });
     assert.match(u.searchParams.get('fields'), /inline_link_clicks/);
     return response({ data: [{ campaign_name: 'First', date_start: date, spend: '100', impressions: '10000', clicks: '1000', inline_link_clicks: '80' }], paging: { next: 'https://graph.facebook.com/test?after=next' } });
   });
