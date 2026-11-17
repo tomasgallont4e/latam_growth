@@ -131,7 +131,7 @@
     rerender();
     try {
       const result = await A.api('api/assistant/ask', { method: 'POST', body: JSON.stringify({
-        mode: 'insights', question: 'Write the findings for the 7-step funnel card exactly as the page shows it: the weakest step, how each ad channel turns impressions into clicks, which forms bring the submissions and where the accounts created come from. Each finding must be understandable on its own.', context: snapshot,
+        mode: 'insights', question: 'Write the findings for the 7-step funnel card exactly as the page shows it: the weakest step, how each ad channel turns impressions into clicks, which forms bring the submissions and where the accounts created come from. Each finding must be understandable on its own. Finish the analysis by giving a high level suggestion on how the product should be managed in relation to how the funnel is doing.', context: snapshot,
       }) });
       if (sequence !== state.insightSeq) return;
       if (JSON.stringify(context()) !== key) {
