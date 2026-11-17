@@ -345,25 +345,20 @@
   }
   function channelTable(from, to, steps) {
     const U = A.ui, sp = channelSplit(from, to);
-    const sum = (rows, f) => rows.reduce((t, r) => t + (r[f] || 0), 0);
-    const ready = (f) => (f === 'builders' ? sp.buildersReady : f === 'accounts' ? sp.accountsReady : true);
-    const groupRow = (group, label) => { const rs = sp.rows.filter((r) => r.group === group); return { label, subtotal: true, forms: sum(rs, 'forms'), accounts: ready('accounts') ? sum(rs, 'accounts') : null, builders: ready('builders') ? sum(rs, 'builders') : null }; };
-    const rows = [
-      groupRow('program', 'Developer Network · Early Builders program'), ...sp.rows.filter((r) => r.group === 'program'),
-      groupRow('general', 'General traffic'), ...sp.rows.filter((r) => r.group === 'general'),
-      ...sp.rows.filter((r) => r.group === 'test'),
-    ];
+    const sum = (rs, f) => rs.reduce((t, r) => t + (r[f] || 0), 0);
+    const group = (key, label) => {
+      const rs = sp.rows.filter((r) => r.group === key);
+      return { label, forms: sum(rs, 'forms'), builders: sp.buildersReady ? sum(rs, 'builders') : null, accounts: sp.accountsReady ? sum(rs, 'accounts') : null };
+    };
+    const rows = [group('program', 'Campaigns'), group('general', 'General traffic')];
     const n = (v) => (v == null ? '<span class="kpi-awaiting">Pending</span>' : U.fmt(v));
-    const forms = (r) => `<small class="text-muted">${U.fmt(r.forms)} form${r.forms === 1 ? '' : 's'}</small>`;
-    const gmailNote = (r) => (r.key === 'gmail' && sp.gmail && sp.gmail.spend ? ` · Google Ads ${U.money(sp.gmail.spend)}, ${U.fmt(sp.gmail.clicks)} clicks${r.builders ? ` · ${U.money(sp.gmail.spend / r.builders)} per builder` : ''}` : '');
     const table = U.table([
-      { t: 'Channel', f: (r) => (r.subtotal ? `<b>${U.esc(r.label)}</b> ${forms(r)}` : `${U.esc(r.label)} ${forms(r)}<br><small class="text-muted">${U.esc(r.rule + gmailNote(r))}</small>`) },
-      { t: 'Builders (verified)', num: 1, f: (r) => (r.subtotal ? `<b>${n(r.builders)}</b>` : n(r.builders)) },
-      { t: 'Accounts created', num: 1, f: (r) => (r.subtotal ? `<b>${n(r.accounts)}</b>` : n(r.accounts)) },
-    ], rows, (r) => (r.subtotal ? 'is-subtotal' : r.group === 'test' ? 'muted' : ''));
-    const accTotal = sp.accountsReady ? sum(sp.rows, 'accounts') : null;
-    const gap = steps[4] && steps[4].n != null && accTotal != null && accTotal !== steps[4].n ? ` The channels cover ${U.fmt(accTotal)} of the ${U.fmt(steps[4].n)} accounts in step 5; the rest arrived before the channel was synced.` : '';
-    return `<div class="ov-by-channel"><h4 class="cf-sub">Builders by channel</h4>${table}<p class="card-note">Builders = people who verified their account (first account_verified, internal excluded), the same definition as the Early Builders dashboard; Accounts created is step 5 and includes accounts not verified yet. Each person counts once, by the UTMs of their first visit. The small number next to each channel is HubSpot form submissions, a separate path. Early Builders counts since Oct 1: set From to 10/01/2026 to compare its total.${sp.internalBuilders ? ` ${U.fmt(sp.internalBuilders)} more verified builder${sp.internalBuilders === 1 ? ' is' : 's are'} internal (think4ever, moadbus or t4e in the email, company or name) and left out here; Early Builders only leaves out @think4ever.com and the think4ever or moadbus company.` : ''}${sp.buildersReady ? '' : ' Builders by channel arrive with the next PostHog sync; Pending is not zero.'}${U.esc(gap)}</p></div>`;
+      { t: '', f: (r) => `<b>${U.esc(r.label)}</b> <small class="text-muted">${U.fmt(r.forms)} form${r.forms === 1 ? '' : 's'}</small>` },
+      { t: 'Builders (verified)', num: 1, f: (r) => `<b>${n(r.builders)}</b>` },
+      { t: 'Accounts created', num: 1, f: (r) => n(r.accounts) },
+    ], rows);
+    const internal = sp.internalBuilders ? ` ${U.fmt(sp.internalBuilders)} internal builder${sp.internalBuilders === 1 ? '' : 's'} left out.` : '';
+    return `<div class="ov-by-channel"><h4 class="cf-sub">Builders · campaigns vs general traffic</h4>${table}<p class="card-note">Campaigns = the Developer Network program links (Gmail ads, LinkedIn paid, Referrals and HubSpot emails, builder links). Builders = verified accounts, as in Early Builders.${U.esc(internal)}${sp.buildersReady ? '' : ' Pending is not zero.'}</p></div>`;
   }
   // One line per step: where the number comes from and what it counts, so a step larger than the one above reads as expected.
   function howMeasured() {

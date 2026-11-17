@@ -1815,7 +1815,7 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
     { kind: 'form_signup', date: d, form: 'T4E – Early Builders Colombia', utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'early_builders_co_202611' },
     { kind: 'form_signup', date: d, form: 'T4E – Registro LATAM' },
   );
-  assert.match(A.views.overview.render(), /Builders by channel arrive with the next PostHog sync/);
+  assert.match(A.views.overview.render(), /Pending is not zero/);
   A.S.data.snapshots.push(
     { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
     { source: 'posthog', key: 'account_origin_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
@@ -1825,11 +1825,9 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
     ...[['gmail', 5], ['referral', 3], ['none', 2]].map(([v, n]) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n })),
   );
   const html = A.views.overview.render();
-  assert.match(html, /<b>Developer Network · Early Builders program<\/b> <small class="text-muted">2 forms<\/small><\/td><td class="td-num"><b><span class="kpi-awaiting">Pending<\/span><\/b><\/td><td class="td-num"><b>8<\/b>/);
-  assert.match(html, /<b>General traffic<\/b> <small class="text-muted">1 form<\/small><\/td><td class="td-num"><b><span class="kpi-awaiting">Pending<\/span><\/b><\/td><td class="td-num"><b>2<\/b>/);
-  assert.match(html, /Gmail ads · Google Ads <small class="text-muted">1 form<\/small><br><small class="text-muted">google \/ cpc \/ early_builders_co_202611 · piece gmail_promo_01<\/small><\/td><td class="td-num"><span class="kpi-awaiting">Pending<\/span><\/td><td class="td-num">5<\/td>/);
-  assert.match(html, /Builders by channel arrive with the next PostHog sync/);
-  assert.doesNotMatch(html, /The channels cover/, 'channels match step 5');
+  assert.match(html, /<b>Campaigns<\/b> <small class="text-muted">2 forms<\/small><\/td><td class="td-num"><b><span class="kpi-awaiting">Pending<\/span><\/b><\/td><td class="td-num">8<\/td>/);
+  assert.match(html, /<b>General traffic<\/b> <small class="text-muted">1 form<\/small><\/td><td class="td-num"><b><span class="kpi-awaiting">Pending<\/span><\/b><\/td><td class="td-num">2<\/td>/);
+  assert.doesNotMatch(html, /Gmail ads · Google Ads <small/, 'no per-channel rows');
   assert.match(html, /How each step is measured/);
   assert.doesNotMatch(html, /<span class="funnel-name">Form submissions/, 'HubSpot forms are not a funnel step');
   assert.match(html, /HubSpot form submissions: <b>3<\/b>/);
@@ -1968,12 +1966,10 @@ test('builders by channel are verified accounts, like Early Builders; forms sit 
   );
   A.S.data.events.push({ kind: 'form_signup', date: d, form: 'T4E – Early Builders Colombia', utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'early_builders_co_202611' });
   const html = A.views.overview.render();
-  assert.match(html, /<h4 class="cf-sub">Builders by channel<\/h4>/);
-  assert.match(html, /<b>Developer Network · Early Builders program<\/b> <small class="text-muted">1 form<\/small><\/td><td class="td-num"><b>17<\/b><\/td><td class="td-num"><b>19<\/b>/);
-  assert.match(html, /<b>General traffic<\/b> <small class="text-muted">0 forms<\/small><\/td><td class="td-num"><b>10<\/b><\/td><td class="td-num"><b>16<\/b>/);
-  assert.match(html, /Google Ads \$490\.00, 1,044 clicks · \$35\.00 per builder/);
-  assert.match(html, /same definition as the Early Builders dashboard/);
-  assert.match(html, /9 more verified builders are internal \(think4ever, moadbus or t4e in the email, company or name\) and left out here/);
+  assert.match(html, /<h4 class="cf-sub">Builders · campaigns vs general traffic<\/h4>/);
+  assert.match(html, /<b>Campaigns<\/b> <small class="text-muted">1 form<\/small><\/td><td class="td-num"><b>17<\/b><\/td><td class="td-num">19<\/td>/);
+  assert.match(html, /<b>General traffic<\/b> <small class="text-muted">0 forms<\/small><\/td><td class="td-num"><b>10<\/b><\/td><td class="td-num">16<\/td>/);
+  assert.match(html, /9 internal builders left out\./);
 });
 
 test('PostHog builders are the first account_verified per person, by channel, internal excluded', async (t) => {
