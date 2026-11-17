@@ -393,7 +393,7 @@ test('Executive cost per sign-up stays pending until every paid channel has repo
   assert.equal(partialWithZeroSignups.view.cards.cps.value, null);
 });
 
-test('Executive month sign-ups keep outside LATAM off the goal number and October has no goal', async () => {
+test('Executive month sign-ups keep outside LATAM and no-country accounts off the goal number and October has no goal', async () => {
   const data = await build(coveredMonth([
     { source: 'posthog', metric: 'ph_exec_accounts', date: '2026-10-02', dim: 'account_type', dim_value: 'External', value: 8 },
     { source: 'posthog', metric: 'ph_exec_accounts_geo', date: '2026-10-02', dim: 'country', dim_value: 'Colombia', value: 2 },
@@ -403,19 +403,22 @@ test('Executive month sign-ups keep outside LATAM off the goal number and Octobe
     { source: 'ga4', metric: 'ga_exec_form_starts', date: '2026-10-02', value: 4 },
   ], { target: [{ month: '2026-10', country: 'LATAM', metric_key: 'platform_signups', target_value: 50000, proposal: true }] }), '2026-10', new Date('2026-10-30T17:00:00.000Z'));
   assert.equal(data.monthTotals.platform_signups, 8);
-  assert.equal(data.view.cards.signups.value, 3);
+  assert.equal(data.view.cards.signups.value, 2);
   assert.equal(data.view.cards.signups.outside, 5);
+  assert.equal(data.view.cards.signups.noCountry, 1);
+  assert.ok(data.view.cards.signups.lines.includes('+1 without country (no identify)'));
   assert.equal(data.view.cards.signups.goal, null);
   assert.equal(data.view.cards.signups.pace, null);
   assert.equal(data.view.cards.sinceLaunch.value, 8);
-  assert.equal(data.view.cards.sinceLaunch.latam, 3);
+  assert.equal(data.view.cards.sinceLaunch.latam, 2);
   assert.equal(data.view.cards.sinceLaunch.outside, 5);
+  assert.equal(data.view.cards.sinceLaunch.noCountry, 1);
   assert.equal(data.view.funnel.steps.find((step) => step.id === 'form_start').value, 4);
   assert.equal(data.view.funnel.steps.find((step) => step.id === 'impressions').status, 'pending');
   assert.match(data.view.chart.note, /No goal for October 2026/);
   assert.equal(data.view.countries.rows[0].country, 'United States');
   assert.equal(data.view.countries.rows.some((row) => row.country === 'United States'), true);
-  assert.ok(data.view.changed.phrases[0].startsWith('External sign-ups:'));
+  assert.ok(data.view.changed.phrases[0].startsWith('LATAM sign-ups:'));
   assert.match(data.view.changed.phrases.join(' '), /Ad spend not compared: Meta ad account access pending/);
 });
 
