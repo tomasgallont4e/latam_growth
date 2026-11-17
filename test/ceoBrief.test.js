@@ -92,7 +92,7 @@ test('strip: spend incomplete is flagged and markets are ranked', () => {
     countries: [{ country: 'Peru', signups: 2, pace: 'Trailing' }, { country: 'Colombia', signups: 8, pace: 'Leading' }, { country: 'Chile', signups: 0 }],
   });
   assert.equal(m.strip[1].value, 'US$120.50');
-  assert.match(m.strip[1].sub, /Cost per account US\$12\.05 · paid spend incomplete/);
+  assert.match(m.strip[1].sub, /Cost per LATAM account US\$12\.05 · paid spend incomplete/);
   assert.equal(m.strip[2].value, 'Colombia 8');
   assert.ok(m.risks.some((r) => /Paid spend is incomplete/.test(r)));
   assert.ok(m.risks.some((r) => /1 market\(s\) trail their plan: Peru/.test(r)));

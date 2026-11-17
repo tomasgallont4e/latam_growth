@@ -1026,7 +1026,7 @@ test('PostHog product usage failure is pending, not zero', async (t) => {
   assert.match(head.rows[0].reason, /query failed/);
 });
 
-test('Executive PostHog account country rows use event GeoIP on external first identify only', async (t) => {
+test('Executive PostHog accounts use the Overview population; country and host come from the first identify only', async (t) => {
   env(t, {
     POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test',
     POSTHOG_EXECUTIVE_HOSTS: 'portal.think4ever.com,think4ever.com,www.think4ever.com',
@@ -1075,8 +1075,11 @@ test('Executive PostHog account country rows use event GeoIP on external first i
   assert.equal(coverage.rows[0].excluded_host_accounts, 3);
   assert.deepEqual(coverage.rows[0].allowed_hosts, ['portal.think4ever.com', 'think4ever.com', 'www.think4ever.com']);
   assert.deepEqual(coverage.rows[0].excluded_hosts, [{ host: 'cell-ssm-use1-0006.us.portal.think4ever.com', external_accounts: 3 }]);
-  assert.match(query.query.query, /event = '\$identify'/);
-  assert.match(query.query.query, /argMin\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name/);
+  // Same population as ph_accounts: first account_created or $identify per person. Country and host only
+  // from $identify; an account with no identify (backend account_created) counts on the portal host.
+  assert.match(query.query.query, /event IN \('\$identify', 'account_created'\)/);
+  assert.match(query.query.query, /argMinIf\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name[\s\S]*event = '\$identify'\) AS country/);
+  assert.match(query.query.query, /if\(countIf\(event = '\$identify'\) > 0, argMinIf\([\s\S]*'portal\.think4ever\.com'\) AS first_host/);
   assert.equal((query.query.query.match(/tuple\(timestamp, uuid\)/g) || []).length, 3);
   assert.match(query.query.query, /LIMIT 5001$/);
   assert.equal(query.query.filters.filterTestAccounts, true);

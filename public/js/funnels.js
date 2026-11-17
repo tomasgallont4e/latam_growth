@@ -49,7 +49,7 @@
       ? `Ordered persons · ${U.win(A.S.from, A.S.to)} · full selected range, not split into ${A.D.grainName().toLowerCase()} cohorts · Landing → CTA → registration → Identify ($identify) → Proyecto creado (clic) · click proxy, not confirmed creation · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`
       : state.path === 'marketing_project'
         ? `Ordered persons · ${U.win(A.S.from, A.S.to)} · saved PostHog steps, action IDs and filters are reused · Marketing page → CTA → registration → Registration Finished → Login → Project View/Project Created · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`
-        : `PostHog: ${U.win(A.S.from, A.S.to)} · full selected-range funnel, not split into ${A.D.grainName().toLowerCase()} cohorts · registration_started is the step before account creation (first identify) · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`;
+        : `PostHog: ${U.win(A.S.from, A.S.to)} · full selected-range funnel, not split into ${A.D.grainName().toLowerCase()} cohorts · registration_started is the step before account creation (first account_created or identify) · ${A.S.exInt ? 'internal/test filter on' : 'internal/test filter off'}`;
     return U.card({ cls: 'chart-card', title: 'Funnels by platform', sub: state.platform === 'posthog' ? posthogSub : `Selected-range activity totals · not split into ${A.D.grainName().toLowerCase()} buckets · each platform keeps its own definitions`, body: `${controls}<div data-platform-funnel>${body()}</div>` });
   }
   function summary() {
