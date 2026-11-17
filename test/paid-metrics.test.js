@@ -410,7 +410,7 @@ test('audited 4 CRM + 34 PostHog case never claims 38 verified accounts or 850% 
   assert.equal(A.D.ga().rate, 508 / 1752);
   const conversion = A.views.conversion.render(), overview = A.views.overview.render();
   assert.match(conversion, /29\.0%/);
-  assert.match(overview, /LATAM 500K goal · .*Monthly · .*sign-ups once per person \(first \$identify/);
+  assert.match(overview, /LATAM 500K goal · .*Monthly · .*sign-ups once per person \(first account_created or \$identify/);
   assert.doesNotMatch(conversion + overview, /850|72\.1%|35\.6%|38 sign-ups|Direct Platform Sign-ups/);
   assert.doesNotMatch(conversion, /Weakest step|drop-off<|continue</);
   A.S.exInt = false;
@@ -1046,7 +1046,9 @@ test('Executive PostHog account country rows use event GeoIP on external first i
 
   const load = await connectors.posthog();
   const accountQuery = requests.find((r) => r.query.query.includes("event = '$identify'") && !r.query.query.includes('first_host'));
-  assert.match(accountQuery.query.query, /argMin\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name/);
+  assert.match(accountQuery.query.query, /argMinIf\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name/);
+  assert.match(accountQuery.query.query, /event IN \('\$identify', 'account_created'\)/, 'one-click sign-ups without $identify are counted');
+  assert.match(accountQuery.query.query, /tuple\(timestamp, uuid\), event = '\$identify'\) AS country/, 'country comes from the first $identify only');
   assert.match(accountQuery.query.query, /person\.properties\.country/);
   const executiveTotal = load.metrics.find((r) => r.metric === 'ph_exec_accounts');
   const executiveGeo = load.metrics.find((r) => r.metric === 'ph_exec_accounts_geo');
@@ -1222,7 +1224,7 @@ test('Overview sign-up goal stays on first identify and outcomes are separate', 
   assert.match(html, /LATAM 500K goal/);
   assert.match(html, /sign-ups once per person/);
   assert.match(html, /data-go="product"/);
-  assert.match(html, /sign-ups once per person \(first \$identify/);
+  assert.match(html, /sign-ups once per person \(first account_created or \$identify/);
   assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel/);
 });
 

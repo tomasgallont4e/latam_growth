@@ -100,7 +100,7 @@
     const through = p.to ? `Through ${U.dshort(p.to)}. ` : '';
     const fitNote = fit ? ' Scaled to the actual: the required pace line leaves the top of the chart and the goal is off the scale.' : '';
     const focusNote = focus ? ` Highlighted: ${U.win(focus.from, focus.to)}, the dates in From/To; the other days of the month are dimmed.` : '';
-    return `${head}${chart}<p class="card-note">${U.esc(through)}Bars: cumulative External accounts created this month (first $identify, internal always excluded). Dashed line: required pace = goal × day ÷ days in month. Days without data yet are empty.${U.esc(fitNote)}${U.esc(focusNote)}</p>`;
+    return `${head}${chart}<p class="card-note">${U.esc(through)}Bars: cumulative External accounts created this month (first account_created or $identify, internal always excluded). Dashed line: required pace = goal × day ÷ days in month. Days without data yet are empty.${U.esc(fitNote)}${U.esc(focusNote)}</p>`;
   };
 
   // 500K goal hero for the global Month: Accounts created vs goal, LATAM share and pace (D.goalAccounts /
@@ -122,7 +122,7 @@
     const cumOk = loaded && g.cumulative != null;
     const cumBlock = `<div class="acct-hero-cum"><span class="acct-hero-label">Cumulative since launch</span><div class="acct-hero-nums">${cumOk ? `<span class="acct-hero-actual">${U.fmt(g.cumulative)}</span>` : '<span class="acct-hero-actual"><span class="kpi-awaiting">Pending</span></span>'}</div><small class="acct-hero-hint">${cumOk ? `of which LATAM: ${U.fmt(g.cumulativeLatam)} (${U.esc(U.pct(g.cumulative ? g.cumulativeLatam / g.cumulative : 0, 1))}) · ${U.esc(U.win(g.cumulativeFrom, g.to))}` : 'Needs account coverage for every month since launch; not zero.'}</small></div>`;
     // Accounts created for the top-bar Group by period, always inside the selected Month's dates
-    // (memory #141 population: External first $identify, all hosts, internal always excluded).
+    // (memory #141 population: External first account_created or $identify, all hosts, internal always excluded).
     // Ends at To when To is in the Month (same window as the 7-step funnel), else at the Month's last day.
     // Dates typed in From/To win: the block then counts exactly From -> To (the same window and number as
     // step 5 of the 7-step funnel) and leads the card; the Month total moves to second place.
@@ -168,7 +168,7 @@
     const progress = `<div class="goal-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(width)}" aria-label="${U.esc(mName)} percent of goal"><i style="width:${width.toFixed(1)}%"></i></div>`;
     return U.card({
       cls: 'acct-hero-card', title: `LATAM 500K goal · ${mName}`,
-      sub: 'Monthly · External accounts created, sign-ups once per person (first $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota',
+      sub: 'Monthly · External accounts created, sign-ups once per person (first account_created or $identify, all hosts, all countries) · internal accounts always excluded · America/Bogota',
       right: `<button class="btn btn-secondary btn-sm" type="button" data-go="targets">${U.icon('bullseye')} View targets</button>`,
       body: `<div class="acct-hero"><div class="acct-hero-main"><div class="acct-hero-top${byRange ? ' is-range' : ''}"><div class="acct-hero-now"><span class="acct-hero-label">This month · Accounts created · ${U.esc(mName)}</span><div class="acct-hero-nums">${nums}</div></div>${periodBlock}${cumBlock}</div>${progress}<div class="acct-hero-foot">${foot}</div></div><dl class="acct-hero-side">${side}</dl><div class="acct-hero-trend"><div class="acct-hero-trend-head"><h4 class="cf-sub">Sign-ups vs goal · ${U.esc(mName)}</h4>${scaleToggle}</div>${A.goalPaceChart(month, { head: false, fit, focus: byRange ? { from: pw.from, to: pw.to } : null })}</div></div>${historyPanel}`,
     });
@@ -220,12 +220,12 @@
       const crm = D.crmTotal(from, to);
       steps.push({ name: 'Form submissions', src: 'HubSpot · CRM contacts', n: crm == null ? null : crm, note: 'HubSpot has not reported' });
     }
-    // 5. Accounts created (memory #134: External first $identify, all hosts, internal excluded)
+    // 5. Accounts created (memory #134: External first account_created or $identify, all hosts, internal excluded)
     const covered = D.covered('posthog', 'account_coverage', from, to);
     const accounts = !covered ? null : all
       ? D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', from, to)
       : D.sum('posthog', 'ph_accounts_geo', inCountry, from, to);
-    steps.push({ name: 'Accounts created', src: 'PostHog · first $identify · External', n: accounts, note: 'Account coverage unavailable; not zero' });
+    steps.push({ name: 'Accounts created', src: 'PostHog · first account_created or $identify · External', n: accounts, note: 'Account coverage unavailable; not zero' });
     // 6. Logins (PostHog signed_in events; entries to the platform; events, not people)
     const loginsSynced = metricsList().some((r) => r.source === 'posthog' && r.metric === 'ph_event' && r.dim_value === 'signed_in');
     // Shown in place but `aside`: login events include returning accounts, so they are not a subset of
@@ -284,13 +284,19 @@
     const formRows = Object.entries(byForm).sort((a, b) => b[1] - a[1]);
     const channels = country === 'all' ? channelCtr(from, to) : '';
     const formLine = formRows.length ? `<p class="card-note ov-forms-by-form">Form submissions by form: ${formRows.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Early Builders is the Developer Network registration; Landing Signup is the general sign-up.</p>` : '';
+    // Accounts created split by the HubSpot form matched to the account's email (HMAC; no identifiers
+    // stored): Developer Network (Early Builders form), landing sign-up form, or no form matched.
+    const originOk = country === 'all' && A.D.covered('posthog', 'account_origin_coverage', from, to);
+    const originRows = originOk ? ['Developer Network form', 'Landing sign-up form', 'No form matched']
+      .map((name) => [name, A.D.sum('posthog', 'ph_accounts_origin', (r) => r.dim === 'origin' && r.dim_value === name, from, to)]) : [];
+    const originLine = originRows.some(([, n]) => n > 0) ? `<p class="card-note ov-accounts-by-origin">Accounts created by origin: ${originRows.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Matched by the email used on the HubSpot form; an account with no form came straight to the product or signed up in one click.</p>` : '';
     const picker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country"><option value="all"${country === 'all' ? ' selected' : ''}>All countries</option>${options.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
     const note = `<p class="card-note">Each step comes from its own source and is not linked person by person, so the % between steps is indicative. Accounts created is the same number as the 500K goal (External, internal excluded). Logins count signed_in events, not people, and include returning accounts, so they are shown for reference and Projects created is compared with Accounts created. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
     return U.card({
       cls: 'chart-card', title: 'Funnel · 7 steps',
       sub: `${U.win(from, to)} · ${country === 'all' ? 'All countries' : U.esc(country)} · % versus the previous step`,
       right: picker,
-      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${channels}${formLine}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
+      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${channels}${formLine}${originLine}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
     });
   }
 
@@ -307,7 +313,7 @@
       { label: 'Engagement rate', source: 'GA4', cur: a && a.rate, prev: b && b.rate, format: U.pct, delta: U.deltaPoints },
       { label: 'HubSpot sessions', source: 'HubSpot', cur: D.has('hubspot', 'sessions') ? D.sessions(cur.from, cur.to) : null, prev: D.has('hubspot', 'sessions') ? D.sessions(prev.from, prev.to) : null, format: U.fmt, delta: U.delta },
       { label: 'CRM contacts', source: 'HubSpot', cur: D.crmTotal(cur.from, cur.to), prev: D.crmTotal(prev.from, prev.to), format: U.fmt, delta: U.delta },
-      { label: 'Accounts created (PostHog first $identify)', source: 'PostHog', cur: D.accounts(cur.from, cur.to), prev: D.accounts(prev.from, prev.to), format: U.fmt, delta: U.delta },
+      { label: 'Accounts created (PostHog first account_created or $identify)', source: 'PostHog', cur: D.accounts(cur.from, cur.to), prev: D.accounts(prev.from, prev.to), format: U.fmt, delta: U.delta },
       { label: 'Registration starts', source: 'PostHog', cur: D.registrations(cur.from, cur.to), prev: D.registrations(prev.from, prev.to), format: U.fmt, delta: U.delta },
     ].filter((x) => x.cur != null || x.prev != null);
     const tiles = fields.map((x) => U.kpi({ label: x.label, source: x.source, value: x.format(x.cur), delta: x.delta(x.cur, x.prev), compare: `${prev.label}: ${x.format(x.prev)}` }));
