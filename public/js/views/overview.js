@@ -213,7 +213,7 @@
     // 3. Landing sessions (GA4, go.think4ever.com only)
     // Bars restart here: impressions are ~100x larger than every on-site step, so one scale would
     // flatten steps 4 to 7.
-    const onSite = { group: 'On the site · bars and % of landing sessions', rescale: true };
+    const onSite = { group: 'On the site · bars and % of landing sessions', rescale: true, over: 'landing sessions come from every source (organic, direct, emails), not only from ad clicks' };
     steps.push(D.has('ga4', 'ga_exec_geo_sessions')
       ? { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: D.sum('ga4', 'ga_exec_geo_sessions', all ? null : inCountry, from, to), ...onSite }
       : { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: null, note: 'GA4 go-host sessions not synced', ...onSite });
@@ -228,7 +228,8 @@
     const accounts = !covered ? null : all
       ? D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', from, to)
       : D.sum('posthog', 'ph_accounts_geo', inCountry, from, to);
-    steps.push({ name: 'Accounts created', src: 'PostHog · first account_created or $identify · External', n: accounts, note: 'Account coverage unavailable; not zero' });
+    steps.push({ name: 'Accounts created', src: 'PostHog · first account_created or $identify · External', n: accounts, note: 'Account coverage unavailable; not zero',
+      over: 'includes accounts that never submitted a form: one-click sign-up, Developer Network emails and people who go straight to the platform' });
     // 6. Logins (PostHog signed_in events; entries to the platform; events, not people)
     const loginsSynced = metricsList().some((r) => r.source === 'posthog' && r.metric === 'ph_event' && r.dim_value === 'signed_in');
     // Shown in place but `aside`: login events include returning accounts, so they are not a subset of
@@ -239,7 +240,8 @@
     else steps.push({ name: 'Logins', src: 'PostHog · signed_in (events)', n: D.sum('posthog', 'ph_event', (r) => r.dim_value === 'signed_in', from, to), ...loginsAside });
     // 7. Projects created (PostHog project_created)
     if (!all) steps.push(split('Projects created', 'PostHog · project_created'));
-    else steps.push({ name: 'Projects created', src: 'PostHog · project_created', n: D.has('posthog', 'ph_event') ? D.sum('posthog', 'ph_event', (r) => r.dim_value === 'project_created', from, to) : null, note: 'PostHog events not synced' });
+    else steps.push({ name: 'Projects created', src: 'PostHog · project_created', n: D.has('posthog', 'ph_event') ? D.sum('posthog', 'ph_event', (r) => r.dim_value === 'project_created', from, to) : null, note: 'PostHog events not synced',
+      over: 'counts every project created in these dates, also by accounts created earlier, and an account can create several' });
     return steps;
   }
   const pageCountry = () => (countryOptions().includes(A.S.overviewCountry) ? A.S.overviewCountry : 'all');
@@ -251,7 +253,7 @@
     const weak = C.weakest(steps);
     const prevOf = (i) => (i > 0 && !steps[i].aside ? C.prevStep(steps, i) : -1);
     const all = country === 'all';
-    const origins = all ? originRows(w.from, w.to) : null;
+    const byChannel = all ? channelSplit(w.from, w.to) : null;
     return {
       from: w.from, to: w.to, window: U.win(w.from, w.to),
       set_by: w.mode === 'range' ? 'From/To' : `Group by ${A.D.grainName()}`,
@@ -261,12 +263,13 @@
         return {
           step: s.name, source: s.src, value: s.n == null ? null : Number(s.n), counts: s.aside ? 'events' : undefined, note: s.n == null ? s.note : undefined,
           pct_of_previous: base && base.n > 0 && s.n != null ? s.n / base.n : null, previous_step: base ? base.name : undefined,
+          above_previous_because: base && base.n != null && s.n != null && s.n > base.n ? s.over : undefined,
         };
       }),
       weakest_step: weak > 0 ? { from: steps[C.prevStep(steps, weak)].name, to: steps[weak].name, continue: steps[weak].n / steps[C.prevStep(steps, weak)].n } : null,
       channels: all ? channelRows(w.from, w.to).map((r) => ({ channel: r.name, impressions: r.impressions, clicks: r.clicks, clicks_kind: r.kind, impressions_to_clicks: r.ctr, organic: !!r.organic })) : [],
       forms: all ? formRows(w.from, w.to).map(([form, n]) => ({ form, submissions: n })) : [],
-      accounts_by_origin: origins ? origins.map((r) => ({ origin: r.name, rule: r.rule, accounts: r.n })) : null,
+      by_channel: byChannel ? byChannel.rows.map((r) => ({ channel: r.label, group: r.group, forms: r.forms, accounts: r.accounts })) : null,
     };
   };
   // Step 1 → 2 per channel, from the same metrics and window as the funnel: the impressions add up to step 1.
@@ -298,18 +301,19 @@
     const note = rows.some((r) => r.organic) ? '<p class="card-note">Step 1 adds up the three rows. Step 2 adds up only Meta Ads and Google Ads: LinkedIn is the organic company page, and a click on a post is not necessarily a click to the landing.</p>' : '';
     return `<div class="ov-channel-ctr"><h4 class="cf-sub">Impressions → clicks by channel</h4>${table}${note}</div>`;
   }
-  // Step 5 split by origin: the person's first-touch UTMs (utm_*_first in PostHog), one group per account,
-  // computed by the connector from the same rows as Accounts created, so the groups add up to step 5.
-  const ORIGINS = [
-    ['Google Ads', 'google / cpc'],
-    ['Developer Network', 'HubSpot emails and activation bot · hs_email, hs_automation, hubspot / email'],
-    ['Other paid / other UTM', 'Meta and any other tagged visit'],
-    ['No UTM', 'no first-touch source, medium or campaign'],
-  ];
-  function originRows(from, to) {
-    const D = A.D;
-    if (!D.covered('posthog', 'account_origin_coverage', from, to)) return null;
-    return ORIGINS.map(([name, rule]) => ({ name, rule, n: D.sum('posthog', 'ph_accounts_origin', (r) => r.dim === 'origin' && r.dim_value === name, from, to) }));
+  // Steps 4 and 5 by channel (public/js/channels.js, the rule of the Early Builders dashboard): forms from the
+  // HubSpot first-touch UTMs of each submission, accounts from the PostHog person first-touch UTMs (classified
+  // by the connector from the same rows as step 5). Each row counts once, so the columns add up to the steps.
+  function channelSplit(from, to) {
+    const D = A.D, CH = A.channels;
+    const forms = {};
+    for (const e of D.forms(from, to)) { const k = CH.classify(CH.formUtm(e)); forms[k] = (forms[k] || 0) + 1; }
+    const accountsReady = !!D.covered('posthog', 'account_origin_coverage', from, to);
+    const rows = CH.CHANNELS.map((c) => ({
+      key: c.key, label: c.label, rule: c.rule, group: c.group, forms: forms[c.key] || 0,
+      accounts: accountsReady ? D.sum('posthog', 'ph_accounts_origin', (r) => r.dim === 'origin' && r.dim_value === c.key, from, to) : null,
+    })).filter((r) => r.group !== 'test' || r.forms || r.accounts);
+    return { rows, accountsReady };
   }
   // Form submissions split by HubSpot form, so Developer Network registrations (the Early Builders form)
   // read apart from the landing sign-up form. Same window and test filter as step 4.
@@ -321,19 +325,38 @@
     }
     return Object.entries(byForm).sort((a, b) => b[1] - a[1]);
   }
-  function originTable(from, to, accounts) {
-    const U = A.ui;
-    const head = '<h4 class="cf-sub">Accounts created by origin</h4>';
-    const rows = originRows(from, to);
-    if (!rows) return `<div class="ov-accounts-by-origin">${head}<p class="card-note"><span class="kpi-awaiting">Pending</span> The origin split arrives with the next PostHog sync; not zero.</p></div>`;
-    const total = rows.reduce((t, r) => t + r.n, 0);
+  function channelTable(from, to, steps) {
+    const U = A.ui, sp = channelSplit(from, to);
+    const sum = (rows, f) => rows.reduce((t, r) => t + (r[f] || 0), 0);
+    const groupRow = (group, label) => { const rs = sp.rows.filter((r) => r.group === group); return { label, subtotal: true, forms: sum(rs, 'forms'), accounts: sp.accountsReady ? sum(rs, 'accounts') : null }; };
+    const rows = [
+      groupRow('campaign', 'Campaigns · the three official links'), ...sp.rows.filter((r) => r.group === 'campaign'),
+      groupRow('general', 'General traffic'), ...sp.rows.filter((r) => r.group === 'general'),
+      ...sp.rows.filter((r) => r.group === 'test'),
+    ];
+    const n = (v) => (v == null ? '<span class="kpi-awaiting">Pending</span>' : U.fmt(v));
     const table = U.table([
-      { t: 'Origin', f: (r) => `${U.esc(r.name)}<br><small class="text-muted">${U.esc(r.rule)}</small>` },
-      { t: 'Accounts created', num: 1, f: (r) => U.fmt(r.n) },
-      { t: 'Share', num: 1, f: (r) => (total ? U.pct(r.n / total, 0) : '–') },
-    ], rows);
-    const check = accounts != null && accounts !== total ? ` The split covers ${U.fmt(total)} of the ${U.fmt(accounts)} accounts in step 5 because the origin arrived with a later sync.` : '';
-    return `<div class="ov-accounts-by-origin">${head}${table}<p class="card-note">Each account counts once, by the UTMs of its first visit stored on the PostHog person (utm_source_first, utm_medium_first, utm_campaign_first). No UTM means all three are empty.${U.esc(check)}</p></div>`;
+      { t: 'Channel', f: (r) => (r.subtotal ? `<b>${U.esc(r.label)}</b>` : `${U.esc(r.label)}<br><small class="text-muted">${U.esc(r.rule)}</small>`) },
+      { t: 'Form submissions', num: 1, f: (r) => (r.subtotal ? `<b>${n(r.forms)}</b>` : n(r.forms)) },
+      { t: 'Accounts created', num: 1, f: (r) => (r.subtotal ? `<b>${n(r.accounts)}</b>` : n(r.accounts)) },
+    ], rows, (r) => (r.subtotal ? 'is-subtotal' : r.group === 'test' ? 'muted' : ''));
+    const formsTotal = sum(sp.rows, 'forms'), accTotal = sp.accountsReady ? sum(sp.rows, 'accounts') : null;
+    const gap = steps[4] && steps[4].n != null && accTotal != null && accTotal !== steps[4].n ? ` The channels cover ${U.fmt(accTotal)} of the ${U.fmt(steps[4].n)} accounts in step 5; the rest arrived before the channel was synced.` : '';
+    return `<div class="ov-by-channel"><h4 class="cf-sub">Form submissions and accounts by channel</h4>${table}<p class="card-note">Same channels and rules as the Early Builders dashboard: the three official links match on utm_source, utm_medium and utm_campaign, and the Developer Network emails sent from HubSpot count with Referrals. Each row counts once, by its first-touch UTMs: forms by the HubSpot submission (${U.fmt(formsTotal)}, step 4) and accounts by the PostHog person (step 5).${sp.accountsReady ? '' : ' Accounts by channel arrive with the next PostHog sync; Pending is not zero.'}${U.esc(gap)}</p></div>`;
+  }
+  // One line per step: where the number comes from and what it counts, so a step larger than the one above reads as expected.
+  function howMeasured() {
+    const U = A.ui;
+    const items = [
+      ['Impressions', 'Meta Ads and Google Ads, plus the posts of the LinkedIn company page (organic). Ads are campaign traffic; the LinkedIn page is general.'],
+      ['Clicks to the landing', 'Meta outbound clicks and Google Ads clicks. Paid only: a click on a LinkedIn post is not a click to the landing.'],
+      ['Landing sessions', 'GA4 sessions on go.think4ever.com from every source: ads, organic, direct and emails.'],
+      ['Form submissions', 'HubSpot contacts that submitted a form on the site (Early Builders, Registro LATAM). The landing page no longer has a form, so this is the Developer Network registration and the other site forms; internal and test contacts are excluded.'],
+      ['Accounts created', 'PostHog, the first account_created or $identify of each person, External only. It can be larger than Form submissions: one-click sign-up and the Developer Network emails create accounts without a form.'],
+      ['Logins', 'PostHog signed_in events, not people. They include accounts created before these dates, so they are shown for reference and are not part of the step %.'],
+      ['Projects created', 'PostHog project_created events in these dates. It can be larger than Accounts created: older accounts create projects too, and one account can create several.'],
+    ];
+    return `<details class="collapsible ov-how"><summary>${U.icon('chevron-right', 'fa-solid', 'chev')}How each step is measured</summary><div class="collapsible-body"><dl class="defs">${items.map(([t, d]) => `<div><dt>${U.esc(t)}</dt><dd>${U.esc(d)}</dd></div>`).join('')}</dl><p class="card-note">Each step comes from its own source (ad platforms, GA4, HubSpot, PostHog) and is not the same group of people moving down, so the % between steps is indicative. When a step is larger than the one above, the funnel says why instead of showing more than 100%.</p></div></details>`;
   }
   function funnelCard(from, to) {
     const U = A.ui, C = A.charts, S = A.S;
@@ -347,14 +370,14 @@
     const forms = country === 'all' ? formRows(from, to) : [];
     const channels = country === 'all' ? channelCtr(from, to) : '';
     const formLine = forms.length ? `<p class="card-note ov-forms-by-form">Form submissions by form: ${forms.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Early Builders is the Developer Network registration; Landing Signup is the general sign-up.</p>` : '';
-    const origins = country === 'all' ? originTable(from, to, steps[4] && steps[4].n) : '';
+    const byChannel = country === 'all' ? channelTable(from, to, steps) : '';
     const picker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country"><option value="all"${country === 'all' ? ' selected' : ''}>All countries</option>${options.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
-    const note = `<p class="card-note">Each step comes from its own source and is not linked person by person, so the % between steps is indicative. Accounts created is the same number as the 500K goal (External, internal excluded). Logins count signed_in events, not people, and include returning accounts, so they are shown for reference and Projects created is compared with Accounts created. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
+    const note = `<p class="card-note">Accounts created is the same number as the 500K goal (External, internal excluded). Open "How each step is measured" for what each number counts. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
     return U.card({
       cls: 'chart-card', title: 'Funnel · 7 steps',
       sub: `${U.win(from, to)} · ${country === 'all' ? 'All countries' : U.esc(country)} · % versus the previous step`,
       right: picker,
-      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${channels}${formLine}${origins}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
+      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${howMeasured()}${channels}${formLine}${byChannel}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
     });
   }
 

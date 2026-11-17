@@ -120,7 +120,7 @@ function dashboard(stored = {}, hash = '') {
     },
   } });
   App.testLoad = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
-  for (const file of ['paid.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'aggregate.js', 'assistant.js', 'regions.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/form.js', 'views/acquisition.js', 'app.js']) {
+  for (const file of ['paid.js', 'channels.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'aggregate.js', 'assistant.js', 'regions.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/form.js', 'views/acquisition.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
   }
   App.S.from = '2026-10-01'; App.S.to = '2026-10-28';
@@ -1756,34 +1756,39 @@ test('Overview groups by week by default and splits impressions to clicks by ad 
   assert.equal(fed.steps[1].value, 140, 'and to the funnel clicks');
 });
 
-test('account origin puts each account in one group from its first-touch UTMs', () => {
-  const { accountOrigin, ACCOUNT_ORIGINS } = require('../lib/connectors');
-  assert.equal(accountOrigin({ source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611' }), 'Google Ads');
-  assert.equal(accountOrigin({ source: 'Google', medium: 'CPC', campaign: '(not set)' }), 'Google Ads');
-  for (const source of ['hs_email', 'hs_automation', 'hubspot']) assert.equal(accountOrigin({ source, medium: 'email', campaign: 'x' }), 'Developer Network');
-  assert.equal(accountOrigin({ source: 'hubspot', medium: 'social', campaign: 'x' }), 'Other paid / other UTM');
-  assert.equal(accountOrigin({ source: 'facebook', medium: 'paid_social', campaign: 'eb' }), 'Other paid / other UTM');
-  assert.equal(accountOrigin({ source: '(not set)', medium: '(not set)', campaign: '(not set)' }), 'No UTM');
-  assert.equal(accountOrigin({ source: '', medium: '', campaign: 'spring' }), 'Other paid / other UTM', 'a campaign alone is still a UTM');
-  assert.deepEqual(ACCOUNT_ORIGINS, ['Google Ads', 'Developer Network', 'Other paid / other UTM', 'No UTM']);
+test('channels follow the Early Builders rule: exact source, medium and campaign, HubSpot emails with Referrals', () => {
+  const { classify, formUtm } = require('../public/js/channels');
+  assert.equal(classify({ source: 'equipo', medium: 'referral', campaign: 'developer-network' }), 'referral');
+  assert.equal(classify({ source: 'Google', medium: 'CPC', campaign: 'early_builders_co_202611', content: 'gmail_promo_02' }), 'gmail', 'a new piece keeps its channel');
+  assert.equal(classify({ source: 'linkedin', medium: 'paid_social', campaign: 'early_builders_co_202611' }), 'linkedin');
+  assert.equal(classify({ source: 'linkedin', medium: 'cpc', campaign: 'early_builders_co_202611' }), 'other', 'same campaign, other medium');
+  assert.equal(classify({ source: 'google', medium: 'cpc', campaign: 'brand_search' }), 'other', 'google / cpc outside the program campaign');
+  for (const source of ['hs_email', 'hs_automation', 'hubspot']) assert.equal(classify({ source, medium: 'email', campaign: 'dn_welcome' }), 'referral');
+  assert.equal(classify({ source: 'hubspot', medium: 'social' }), 'other');
+  assert.equal(classify({ source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611', content: 'prueba-01' }), 'test');
+  assert.equal(classify({ source: '(not set)', medium: '', campaign: null }), 'none');
+  assert.deepEqual(formUtm({ first_utm_source: 'equipo', first_utm_medium: 'referral', first_utm_campaign: 'developer-network', utm_source: 'google' }).source, 'equipo', 'first touch wins');
+  assert.equal(formUtm({ utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'x' }).source, 'google', 'falls back to the submission UTMs');
 });
 
-test('PostHog accounts by origin come from the same rows as Accounts created and add up to it', async (t) => {
+test('PostHog accounts by channel come from the same rows as Accounts created and add up to it', async (t) => {
   env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test', POSTHOG_PROJECT_CREATED_ENABLED: '0' });
   const { connectors } = require('../lib/connectors');
   t.mock.method(console, 'warn', () => {});
   let accountSql = '';
   t.mock.method(global, 'fetch', async (url, opts) => {
     const sql = JSON.parse(opts.body).query.query;
-    if (sql.includes("event IN ('$identify', 'account_created')") && sql.includes('count() AS n, source, medium, campaign')) {
+    if (sql.includes("event IN ('$identify', 'account_created')") && sql.includes('count() AS n, source, medium, campaign, content')) {
       accountSql = sql;
       return response({ results: [
-        [date, 'External', 'Colombia', 5, 'google', 'cpc', 'early_builders_co_202611'],
-        [date, 'External', '', 2, 'hs_automation', 'email', 'dn_activation'],
-        [date, 'Unknown', '', 1, 'hs_email', 'email', 'dn_welcome'],
-        [date, 'External', 'Mexico', 3, '(not set)', '(not set)', '(not set)'],
-        [date, 'External', 'Chile', 1, 'facebook', 'paid_social', 'eb'],
-        [date, 'Internal', 'Colombia', 4, 'google', 'cpc', 'x'],
+        [date, 'External', 'Colombia', 5, 'google', 'cpc', 'early_builders_co_202611', 'gmail_promo_01'],
+        [date, 'External', '', 2, 'hs_automation', 'email', 'dn_activation', 'a'],
+        [date, 'Unknown', '', 1, 'equipo', 'referral', 'developer-network', '(not set)'],
+        [date, 'External', 'Mexico', 3, '(not set)', '(not set)', '(not set)', '(not set)'],
+        [date, 'External', 'Chile', 1, 'facebook', 'paid_social', 'eb', 'x'],
+        [date, 'External', 'Chile', 1, 'linkedin', 'paid_social', 'early_builders_co_202611', 'sponsored_msg_01'],
+        [date, 'External', 'Peru', 1, 'qa', 'test', 'x', ''],
+        [date, 'Internal', 'Colombia', 4, 'google', 'cpc', 'early_builders_co_202611', ''],
       ] });
     }
     return response({ results: [] });
@@ -1791,35 +1796,42 @@ test('PostHog accounts by origin come from the same rows as Accounts created and
   const load = await connectors.posthog();
   assert.match(accountSql, /utm_source_first/);
   const sum = (metric, f = () => true) => load.metrics.filter((r) => r.metric === metric && f(r)).reduce((n, r) => n + r.value, 0);
-  const origin = (name) => sum('ph_accounts_origin', (r) => r.dim_value === name);
-  assert.equal(origin('Google Ads'), 5);
-  assert.equal(origin('Developer Network'), 3);
-  assert.equal(origin('No UTM'), 3);
-  assert.equal(origin('Other paid / other UTM'), 1);
-  assert.equal(sum('ph_accounts_origin'), sum('ph_accounts', (r) => r.dim_value !== 'Internal'), 'groups add up to step 5');
-  const cov = load.snapshots.find((s) => s.key === 'account_origin_coverage');
-  assert.equal(cov.rows[0].available, true);
+  const ch = (key) => sum('ph_accounts_origin', (r) => r.dim_value === key);
+  assert.deepEqual(['referral', 'gmail', 'linkedin', 'other', 'none', 'test'].map(ch), [3, 5, 1, 1, 3, 1]);
+  assert.equal(sum('ph_accounts_origin'), sum('ph_accounts', (r) => r.dim_value !== 'Internal'), 'channels add up to step 5');
+  assert.equal(load.snapshots.find((s) => s.key === 'account_origin_coverage').rows[0].available, true);
 });
 
-test('Overview funnel shows accounts created by origin, and Pending before the origin sync', () => {
+test('Overview funnel splits forms and accounts by channel into campaigns and general traffic, Pending before the sync', () => {
   const A = dashboard();
   A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
-  assert.match(A.views.overview.render(), /Accounts created by origin<\/h4><p class="card-note"><span class="kpi-awaiting">Pending/);
   const d = '2026-11-10';
+  A.S.data.events.push(
+    { kind: 'form_signup', date: d, form: 'T4E – Early Builders Colombia', first_utm_source: 'equipo', first_utm_medium: 'referral', first_utm_campaign: 'developer-network' },
+    { kind: 'form_signup', date: d, form: 'T4E – Early Builders Colombia', utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'early_builders_co_202611' },
+    { kind: 'form_signup', date: d, form: 'T4E – Registro LATAM' },
+  );
+  assert.match(A.views.overview.render(), /Accounts by channel arrive with the next PostHog sync/);
   A.S.data.snapshots.push(
     { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
     { source: 'posthog', key: 'account_origin_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
   );
   A.S.data.metrics.push(
     { source: 'posthog', metric: 'ph_accounts', date: d, dim: 'account_type', dim_value: 'External', value: 10 },
-    ...[['Google Ads', 5], ['Developer Network', 3], ['No UTM', 2]].map(([v, n]) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n })),
+    ...[['gmail', 5], ['referral', 3], ['none', 2]].map(([v, n]) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n })),
   );
   const html = A.views.overview.render();
-  assert.match(html, /Google Ads<br><small class="text-muted">google \/ cpc<\/small><\/td><td class="td-num">5<\/td><td class="td-num">50%/);
-  assert.match(html, /Developer Network<br>.*?<td class="td-num">3<\/td>/);
-  assert.match(html, /Other paid \/ other UTM<br>.*?<td class="td-num">0<\/td>/);
-  assert.doesNotMatch(html, /The split covers/, 'groups match step 5');
-  assert.doesNotMatch(html, /Developer Network form|No form matched/);
+  assert.match(html, /<b>Campaigns · the three official links<\/b><\/td><td class="td-num"><b>2<\/b><\/td><td class="td-num"><b>8<\/b>/);
+  assert.match(html, /<b>General traffic<\/b><\/td><td class="td-num"><b>1<\/b><\/td><td class="td-num"><b>2<\/b>/);
+  assert.match(html, /Gmail ads<br><small class="text-muted">google \/ cpc \/ early_builders_co_202611<\/small><\/td><td class="td-num">1<\/td><td class="td-num">5<\/td>/);
+  assert.doesNotMatch(html, /The channels cover/, 'channels match step 5');
+  assert.match(html, /How each step is measured/);
+  assert.match(html, /10 vs 3 · <\/span>|10 vs 3<\/span>/, 'step 5 above step 4 shows both numbers');
+  assert.match(html, /More than the step above: includes accounts that never submitted a form/);
+  assert.doesNotMatch(html, /333\.3% continue/);
+  const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
+  assert.match(f.steps[4].above_previous_because, /never submitted a form/);
+  assert.deepEqual(f.by_channel.map((r) => [r.channel, r.group, r.forms, r.accounts]).slice(0, 3), [['Referrals · Developer Network', 'campaign', 1, 3], ['Gmail ads', 'campaign', 1, 5], ['LinkedIn paid', 'campaign', 0, 0]]);
 });
 
 test('the assistant reads the funnel card as drawn: window, country, step %, weakest step and its tables', () => {
@@ -1835,8 +1847,8 @@ test('the assistant reads the funnel card as drawn: window, country, step %, wea
     { source: 'google_ads', metric: 'ad_impressions', value: 5000, date: d }, { source: 'google_ads', metric: 'ad_clicks', value: 150, date: d },
     { source: 'meta', metric: 'ad_impressions', value: 99999, date: '2026-11-05' },
     { source: 'posthog', metric: 'ph_accounts', date: d, dim: 'account_type', dim_value: 'External', value: 6 },
-    { source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: 'Google Ads', value: 4 },
-    { source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: 'No UTM', value: 2 },
+    { source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: 'gmail', value: 4 },
+    { source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: 'none', value: 2 },
   );
   A.S.data.events.push({ kind: 'form_signup', date: d, form: 'T4E – Early Builders Colombia' });
   const html = A.views.overview.render();
@@ -1850,7 +1862,7 @@ test('the assistant reads the funnel card as drawn: window, country, step %, wea
   assert.ok(f.weakest_step && html.includes(`Weakest step: ${f.weakest_step.from} → ${f.weakest_step.to}`), 'same weakest step as the card');
   assert.deepEqual(f.channels.map((c) => [c.channel, c.impressions, c.clicks]), [['Meta Ads', 10000, 100], ['Google Ads', 5000, 150]]);
   assert.deepEqual(f.forms, [{ form: 'Early Builders Colombia', submissions: 1 }]);
-  assert.deepEqual(f.accounts_by_origin.filter((r) => r.accounts).map((r) => [r.origin, r.accounts]), [['Google Ads', 4], ['No UTM', 2]]);
+  assert.deepEqual(f.by_channel.filter((r) => r.accounts).map((r) => [r.channel, r.accounts]), [['Gmail ads', 4], ['No UTM', 2]]);
   A.S.data.metrics.push({ source: 'posthog', metric: 'ph_accounts_geo', date: d, dim: 'country', dim_value: 'Colombia', value: 3 });
   A.S.overviewCountry = 'Colombia';
   const c = JSON.parse(JSON.stringify(A.overviewFunnel()));

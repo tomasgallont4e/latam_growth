@@ -255,7 +255,7 @@
       const p = prevOf(steps, k);
       if (p < 0 || steps[k].aside || steps[k].kind === 'rate' || steps[k].separate || steps[p].kind === 'rate') continue;
       const a = steps[p].n, b = steps[k].n;
-      if (a == null || b == null || !a) continue;
+      if (a == null || b == null || !a || b > a) continue;
       if (b / a < wv) { wv = b / a; worst = k; }
     }
     return worst;
@@ -276,7 +276,10 @@
           const a = steps[p].n, b = s.n;
           const vs = p === k - 1 ? '' : ` vs ${steps[p].name}`;
           if (a == null || b == null) h += `<div class="funnel-conn pending"><span class="keep">${U.icon('arrow-down')} –</span><span class="conn-note">Step-to-step % appears once ${U.esc(b == null ? s.src : steps[p].src)} sends data</span></div>`;
-          else {
+          else if (a && b > a) {
+            // A step larger than the one above is a different group, not a conversion above 100%.
+            h += `<div class="funnel-conn is-over"><span class="keep">${U.icon('arrow-down')} ${U.fmt(b)} vs ${U.fmt(a)}${U.esc(vs)}</span><span class="conn-note">More than the step above: ${U.esc(s.over || 'a different source, not a subset of the step above')}</span></div>`;
+          } else {
             const kp = a ? b / a : 0;
             h += `<div class="funnel-conn${k === weak ? ' weakest' : ''}"><span class="keep">${U.icon('arrow-down')} ${U.pct(kp)} continue${U.esc(vs)}</span><span class="drop">${U.pct(Math.max(0, 1 - kp))} drop-off</span>${k === weak ? `<span class="weak-badge">${U.icon('triangle-exclamation')} Weakest step</span>` : ''}</div>`;
           }
