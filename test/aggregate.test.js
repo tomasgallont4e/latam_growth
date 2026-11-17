@@ -125,7 +125,7 @@ test('source/channel dimensions are kept independent, with no joins by shared la
 test('assistant receives the aggregate funnel and channel comparison, sanitized and bounded', async () => {
   const summary = agg.summarize(agg.build(sample()));
   summary.acquisition.sources.ga4.channels.push({ channel: 'leak@example.com', sessions: 1 });
-  const safe = cleanRequest({ mode: 'insights', question: 'Which funnel step is next?', context: { period: { from, to }, executive_funnel: summary } });
+  const safe = cleanRequest({ mode: 'question', question: 'Which funnel step is next?', context: { period: { from, to }, executive_funnel: summary } });
   const funnel = safe.context.executive_funnel;
   assert.equal(funnel.product_funnel, undefined, 'the saved PostHog funnel does not reach the model');
   assert.equal(cleanExecutive(summary).product_funnel.steps.length, 6);
@@ -135,7 +135,7 @@ test('assistant receives the aggregate funnel and channel comparison, sanitized 
   assert.equal(funnel.acquisition.sources.hubspot.totals.contacts, null);
   assert.equal(funnel.acquisition.sources.ga4.channels.some((c) => /@/.test(c.channel)), false);
   let sent;
-  await ask({ mode: 'insights', question: 'Which funnel step is next?', context: { executive_funnel: summary } }, {
+  await ask({ mode: 'question', question: 'Which funnel step is next?', context: { executive_funnel: summary } }, {
     apiKey: 'test-secret', fetchImpl: async (url, options) => { sent = JSON.parse(options.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }; },
   });
   assert.match(sent.system, /executive_funnel/);

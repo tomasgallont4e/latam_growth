@@ -123,9 +123,11 @@ test('assistant forwards only bounded aggregate dashboard data to Anthropic', as
   };
   const safe = cleanRequest(body);
   assert.equal(JSON.stringify(safe).includes('private@example.com'), false);
-  assert.equal(safe.context.kpis.ga4_sessions, 1000);
-  assert.equal(safe.context.ga4_channels[0].channel, 'Organic Search');
-  assert.equal(safe.context.hubspot_channels[0].sessions, 70);
+  assert.deepEqual(Object.keys(safe.context), ['internal_tests_excluded', 'overview_funnel'], 'automatic findings read only the funnel card');
+  const asked = cleanRequest({ ...body, mode: 'question' });
+  assert.equal(asked.context.kpis.ga4_sessions, 1000);
+  assert.equal(asked.context.ga4_channels[0].channel, 'Organic Search');
+  assert.equal(asked.context.hubspot_channels[0].sessions, 70);
 
   let request;
   const result = await ask(body, {
@@ -151,7 +153,7 @@ test('assistant forwards only bounded aggregate dashboard data to Anthropic', as
   assert.equal(request.options.headers['content-type'], 'application/json');
   assert.equal(payload.model, 'claude-sonnet-5-5');
   assert.match(payload.system, /first \$identify per person/i);
-  assert.match(payload.system, /Do not simply list every metric/i);
+  assert.match(payload.system, /Each finding must make sense on its own/);
   assert.match(payload.messages[0].content, /¿Qué canal trajo más sesiones\?/);
   assert.doesNotMatch(payload.messages[0].content, /private@example\.com|raw_events/);
 });
@@ -250,4 +252,41 @@ test('the assistant reviews the 7-step Overview funnel and never receives the sa
   assert.match(sent.system, /The funnel to review is overview_funnel/);
   assert.match(sent.messages[0].content, /"Clicks to the landing"/);
   assert.doesNotMatch(sent.messages[0].content, /Sign-up \(\$identify\)|leak@example/);
+});
+
+test('automatic findings get only the funnel card with its tables, and the prompt asks for self-contained findings', async () => {
+  const overview_funnel = {
+    from: '2026-11-11', to: '2026-11-17', window: 'Nov 11 – Nov 17', set_by: 'Group by Weekly', country: 'All countries',
+    steps: [{ step: 'Impressions', source: 'Meta Ads · Google Ads', value: 15000 }, { step: 'Clicks to the landing', source: 'Meta outbound · Google Ads clicks', value: 250, pct_of_previous: 250 / 15000, previous_step: 'Impressions' }],
+    weakest_step: { from: 'Impressions', to: 'Clicks to the landing', continue: 250 / 15000 },
+    channels: [{ channel: 'Meta Ads', impressions: 10000, clicks: 100, clicks_kind: 'outbound clicks', impressions_to_clicks: 0.01 }],
+    forms: [{ form: 'Early Builders Colombia', submissions: 22 }, { form: 'leak@example.com', submissions: 1 }],
+    accounts_by_origin: [{ origin: 'Google Ads', rule: 'google / cpc', accounts: 16 }],
+  };
+  const body = { mode: 'insights', question: 'Write the findings', context: { overview_funnel, kpis: { ga4_sessions: 999 }, ga4_channels: [{ channel: 'Organic Search', sessions: 1 }] } };
+  const safe = cleanRequest(body).context;
+  assert.deepEqual(Object.keys(safe), ['internal_tests_excluded', 'overview_funnel']);
+  assert.equal(safe.overview_funnel.window, 'Nov 11 – Nov 17');
+  assert.equal(safe.overview_funnel.weakest_step.to, 'Clicks to the landing');
+  assert.equal(safe.overview_funnel.channels[0].impressions_to_clicks, 0.01);
+  assert.deepEqual(safe.overview_funnel.forms.map((r) => r.form), ['Early Builders Colombia']);
+  assert.equal(safe.overview_funnel.accounts_by_origin[0].accounts, 16);
+  let sent;
+  await ask(body, { apiKey: 'test-secret', fetchImpl: async (url, options) => { sent = JSON.parse(options.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }; } });
+  assert.match(sent.system, /Each finding must make sense on its own/);
+  assert.match(sent.system, /Never write internal names such as overview_funnel/);
+  assert.match(sent.system, /never compare with another period/);
+  assert.doesNotMatch(sent.messages[0].content, /ga4_sessions|Organic Search/);
+});
+
+test('the findings label shows the funnel window and country, not From/To', async () => {
+  const App = clientAssistant();
+  App.S.tab = 'overview';
+  App.assistant.state.ready = true;
+  App.overviewFunnel = () => ({ from: '2026-10-23', to: '2026-10-29', window: 'Oct 23 – Oct 29', set_by: 'Group by Weekly', country: 'All countries', steps: [] });
+  App.api = async () => ({ answer: '## Takeaway\nOk' });
+  await App.assistant.generateInsights(true);
+  const html = App.assistant.render();
+  assert.match(html, /Funnel window · Oct 23 – Oct 29 · All countries · Group by Weekly/);
+  assert.doesNotMatch(html, /Selected period · 2026-10-01 to 2026-10-29/);
 });

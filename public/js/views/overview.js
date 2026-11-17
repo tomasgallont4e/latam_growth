@@ -239,15 +239,37 @@
     else steps.push({ name: 'Projects created', src: 'PostHog · project_created', n: D.has('posthog', 'ph_event') ? D.sum('posthog', 'ph_event', (r) => r.dim_value === 'project_created', from, to) : null, note: 'PostHog events not synced' });
     return steps;
   }
-  // Same seven steps the page draws, for the assistant (window = A.overviewWindow, all countries).
+  const pageCountry = () => (countryOptions().includes(A.S.overviewCountry) ? A.S.overviewCountry : 'all');
+  // Everything the funnel card shows, as data: the assistant reads this, so its findings quote the same
+  // window, country, steps, % versus the previous step and tables as the page.
   A.overviewFunnel = () => {
-    const w = A.overviewWindow();
-    return { from: w.from, to: w.to, set_by: w.mode === 'range' ? 'From/To' : `Group by ${A.D.grainName()}`, steps: funnelSteps(w.from, w.to, 'all').map((s) => ({ step: s.name, source: s.src, value: s.n == null ? null : Number(s.n), counts: s.aside ? 'events' : undefined, note: s.n == null ? s.note : undefined })) };
+    const U = A.ui, C = A.charts, w = A.overviewWindow(), country = pageCountry();
+    const steps = funnelSteps(w.from, w.to, country);
+    const weak = C.weakest(steps);
+    const prevOf = (i) => (i > 0 && !steps[i].aside ? C.prevStep(steps, i) : -1);
+    const all = country === 'all';
+    const origins = all ? originRows(w.from, w.to) : null;
+    return {
+      from: w.from, to: w.to, window: U.win(w.from, w.to),
+      set_by: w.mode === 'range' ? 'From/To' : `Group by ${A.D.grainName()}`,
+      country: all ? 'All countries' : country,
+      steps: steps.map((s, i) => {
+        const p = prevOf(i), base = p >= 0 ? steps[p] : null;
+        return {
+          step: s.name, source: s.src, value: s.n == null ? null : Number(s.n), counts: s.aside ? 'events' : undefined, note: s.n == null ? s.note : undefined,
+          pct_of_previous: base && base.n > 0 && s.n != null ? s.n / base.n : null, previous_step: base ? base.name : undefined,
+        };
+      }),
+      weakest_step: weak > 0 ? { from: steps[C.prevStep(steps, weak)].name, to: steps[weak].name, continue: steps[weak].n / steps[C.prevStep(steps, weak)].n } : null,
+      channels: all ? channelRows(w.from, w.to).map((r) => ({ channel: r.name, impressions: r.impressions, clicks: r.clicks, clicks_kind: r.kind, impressions_to_clicks: r.ctr })) : [],
+      forms: all ? formRows(w.from, w.to).map(([form, n]) => ({ form, submissions: n })) : [],
+      accounts_by_origin: origins ? origins.map((r) => ({ origin: r.name, rule: r.rule, accounts: r.n })) : null,
+    };
   };
   // Step 1 → 2 per ad channel, from the same metrics and window as the funnel, so the rows add up to it.
-  function channelCtr(from, to) {
-    const U = A.ui, D = A.D;
-    const rows = [
+  function channelRows(from, to) {
+    const D = A.D;
+    return [
       { name: 'Meta Ads', imp: 'meta', clk: ['meta', 'ad_outbound_clicks'], kind: 'outbound clicks' },
       { name: 'Google Ads', imp: 'google_ads', clk: ['google_ads', 'ad_clicks'], kind: 'clicks' },
     ].filter((c) => D.has(c.imp, 'ad_impressions')).map((c) => {
@@ -255,6 +277,9 @@
       const clicks = D.has(c.clk[0], c.clk[1]) ? D.sum(c.clk[0], c.clk[1], null, from, to) : null;
       return { ...c, impressions: imp, clicks, ctr: clicks != null && imp ? clicks / imp : null };
     });
+  }
+  function channelCtr(from, to) {
+    const U = A.ui, rows = channelRows(from, to);
     if (!rows.length) return '';
     const best = Math.max(...rows.map((r) => r.ctr || 0));
     const table = U.table([
@@ -273,11 +298,26 @@
     ['Other paid / other UTM', 'Meta and any other tagged visit'],
     ['No UTM', 'no first-touch source, medium or campaign'],
   ];
+  function originRows(from, to) {
+    const D = A.D;
+    if (!D.covered('posthog', 'account_origin_coverage', from, to)) return null;
+    return ORIGINS.map(([name, rule]) => ({ name, rule, n: D.sum('posthog', 'ph_accounts_origin', (r) => r.dim === 'origin' && r.dim_value === name, from, to) }));
+  }
+  // Form submissions split by HubSpot form, so Developer Network registrations (the Early Builders form)
+  // read apart from the landing sign-up form. Same window and test filter as step 4.
+  function formRows(from, to) {
+    const byForm = {};
+    for (const e of A.D.forms(from, to)) {
+      const name = String(e.form || 'Form not named').replace(/^T4E\s*[–-]\s*/, '');
+      byForm[name] = (byForm[name] || 0) + 1;
+    }
+    return Object.entries(byForm).sort((a, b) => b[1] - a[1]);
+  }
   function originTable(from, to, accounts) {
-    const U = A.ui, D = A.D;
+    const U = A.ui;
     const head = '<h4 class="cf-sub">Accounts created by origin</h4>';
-    if (!D.covered('posthog', 'account_origin_coverage', from, to)) return `<div class="ov-accounts-by-origin">${head}<p class="card-note"><span class="kpi-awaiting">Pending</span> The origin split arrives with the next PostHog sync; not zero.</p></div>`;
-    const rows = ORIGINS.map(([name, rule]) => ({ name, rule, n: D.sum('posthog', 'ph_accounts_origin', (r) => r.dim === 'origin' && r.dim_value === name, from, to) }));
+    const rows = originRows(from, to);
+    if (!rows) return `<div class="ov-accounts-by-origin">${head}<p class="card-note"><span class="kpi-awaiting">Pending</span> The origin split arrives with the next PostHog sync; not zero.</p></div>`;
     const total = rows.reduce((t, r) => t + r.n, 0);
     const table = U.table([
       { t: 'Origin', f: (r) => `${U.esc(r.name)}<br><small class="text-muted">${U.esc(r.rule)}</small>` },
@@ -290,22 +330,15 @@
   function funnelCard(from, to) {
     const U = A.ui, C = A.charts, S = A.S;
     const options = countryOptions();
-    const country = options.includes(S.overviewCountry) ? S.overviewCountry : 'all';
+    const country = pageCountry();
     const steps = funnelSteps(from, to, country);
     const weak = C.weakest(steps);
     const weakLine = weak > 0
       ? `Weakest step: ${steps[C.prevStep(steps, weak)].name} → ${steps[weak].name}, ${U.pct(steps[weak].n / steps[C.prevStep(steps, weak)].n, 1)} continue.`
       : 'The weakest step appears once two consecutive steps have data.';
-    // Form submissions split by HubSpot form, so Developer Network registrations (the Early Builders form)
-    // read apart from the landing sign-up form. Same window and test filter as step 4.
-    const byForm = {};
-    if (country === 'all') for (const e of A.D.forms(from, to)) {
-      const name = String(e.form || 'Form not named').replace(/^T4E\s*[–-]\s*/, '');
-      byForm[name] = (byForm[name] || 0) + 1;
-    }
-    const formRows = Object.entries(byForm).sort((a, b) => b[1] - a[1]);
+    const forms = country === 'all' ? formRows(from, to) : [];
     const channels = country === 'all' ? channelCtr(from, to) : '';
-    const formLine = formRows.length ? `<p class="card-note ov-forms-by-form">Form submissions by form: ${formRows.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Early Builders is the Developer Network registration; Landing Signup is the general sign-up.</p>` : '';
+    const formLine = forms.length ? `<p class="card-note ov-forms-by-form">Form submissions by form: ${forms.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Early Builders is the Developer Network registration; Landing Signup is the general sign-up.</p>` : '';
     const origins = country === 'all' ? originTable(from, to, steps[4] && steps[4].n) : '';
     const picker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country"><option value="all"${country === 'all' ? ' selected' : ''}>All countries</option>${options.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
     const note = `<p class="card-note">Each step comes from its own source and is not linked person by person, so the % between steps is indicative. Accounts created is the same number as the 500K goal (External, internal excluded). Logins count signed_in events, not people, and include returning accounts, so they are shown for reference and Projects created is compared with Accounts created. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;

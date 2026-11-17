@@ -1818,3 +1818,40 @@ test('Overview funnel shows accounts created by origin, and Pending before the o
   assert.doesNotMatch(html, /The split covers/, 'groups match step 5');
   assert.doesNotMatch(html, /Developer Network form|No form matched/);
 });
+
+test('the assistant reads the funnel card as drawn: window, country, step %, weakest step and its tables', () => {
+  const A = dashboard();
+  A.S.from = '2026-11-01'; A.S.to = '2026-11-17'; A.S.grain = 'week'; A.S.ovWin = 'grain';
+  const d = '2026-11-14';
+  A.S.data.snapshots.push(
+    { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-17', rows: [{ available: true }] },
+    { source: 'posthog', key: 'account_origin_coverage', from: '2026-10-01', to: '2026-11-17', rows: [{ available: true }] },
+  );
+  A.S.data.metrics.push(
+    { source: 'meta', metric: 'ad_impressions', value: 10000, date: d }, { source: 'meta', metric: 'ad_outbound_clicks', value: 100, date: d },
+    { source: 'google_ads', metric: 'ad_impressions', value: 5000, date: d }, { source: 'google_ads', metric: 'ad_clicks', value: 150, date: d },
+    { source: 'meta', metric: 'ad_impressions', value: 99999, date: '2026-11-05' },
+    { source: 'posthog', metric: 'ph_accounts', date: d, dim: 'account_type', dim_value: 'External', value: 6 },
+    { source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: 'Google Ads', value: 4 },
+    { source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: 'No UTM', value: 2 },
+  );
+  A.S.data.events.push({ kind: 'form_signup', date: d, form: 'T4E – Early Builders Colombia' });
+  const html = A.views.overview.render();
+  const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
+  assert.equal(f.window, 'Nov 11 – Nov 17');
+  assert.ok(html.includes(`<div class="card-sub">${f.window} · All countries`), 'same window as the card');
+  assert.equal(f.country, 'All countries');
+  assert.equal(f.steps[0].value, 15000, 'Nov 5 is outside the weekly window');
+  assert.equal(f.steps[1].pct_of_previous, 250 / 15000);
+  assert.equal(f.steps[1].previous_step, 'Impressions');
+  assert.ok(f.weakest_step && html.includes(`Weakest step: ${f.weakest_step.from} → ${f.weakest_step.to}`), 'same weakest step as the card');
+  assert.deepEqual(f.channels.map((c) => [c.channel, c.impressions, c.clicks]), [['Meta Ads', 10000, 100], ['Google Ads', 5000, 150]]);
+  assert.deepEqual(f.forms, [{ form: 'Early Builders Colombia', submissions: 1 }]);
+  assert.deepEqual(f.accounts_by_origin.filter((r) => r.accounts).map((r) => [r.origin, r.accounts]), [['Google Ads', 4], ['No UTM', 2]]);
+  A.S.data.metrics.push({ source: 'posthog', metric: 'ph_accounts_geo', date: d, dim: 'country', dim_value: 'Colombia', value: 3 });
+  A.S.overviewCountry = 'Colombia';
+  const c = JSON.parse(JSON.stringify(A.overviewFunnel()));
+  assert.equal(c.country, 'Colombia');
+  assert.equal(c.steps[4].value, 3, 'the country picked on the card reaches the assistant');
+  assert.deepEqual(c.channels, []);
+});
