@@ -373,6 +373,18 @@
       g[s.id] += v;
       g.countries.set(row.dim_value || '(not set)', (g.countries.get(row.dim_value || '(not set)') || 0) + v);
     }
+    // An account created by the backend (account_created, no $identify) has no country. It still counts in
+    // the Overview total, so it goes to "Country not reported" and the column adds up to the same number.
+    if (ready.accounts) {
+      const assigned = [...out.values()].reduce((n, g) => n + g.accounts, 0);
+      const total = D.sum('posthog', 'ph_accounts', (x) => x.dim === 'account_type' && x.dim_value !== 'Internal', from, through);
+      const missing = Math.max(0, (Number(total) || 0) - assigned);
+      if (missing) {
+        const g = out.get(R.regionOf('', plan));
+        g.accounts += missing;
+        g.countries.set('no country (account without identify)', (g.countries.get('no country (account without identify)') || 0) + missing);
+      }
+    }
     const rows = [...out.values()].filter((g) => g.sessions || g.accounts).map((g) => ({
       ...g, countries: [...g.countries].sort((a, b) => b[1] - a[1]).map(([c]) => c),
     }));
@@ -392,7 +404,7 @@
         { t: 'Region', f: (g) => `${U.esc(g.name)}<br><small class="text-muted">${top(g)}</small>` },
         { t: 'Sessions', num: 1, f: (g) => cell(g, 'sessions') },
         { t: 'Accounts', num: 1, f: (g) => cell(g, 'accounts') },
-      ], r.rows) + `<p class="card-note">Landing sessions are GA4 on go.think4ever.com. Accounts created is PostHog first account_created or identify, External, all hosts, the same number as Overview. Both use the visitor's IP country. LATAM plan countries are the ${U.fmt(r.planCount)} countries of the goal plan.${r.rows.some((g) => g.id === 'unmapped') ? ' "Not in the region table" lists countries the table does not know yet, by name.' : ''}</p>`;
+      ], r.rows) + `<p class="card-note">Landing sessions are GA4 on go.think4ever.com. Accounts created is PostHog first account_created or identify, External, all hosts, the same number as Overview. Both use the visitor's IP country; an account created without an identify event has no country and is counted under Country not reported. LATAM plan countries are the ${U.fmt(r.planCount)} countries of the goal plan.${r.rows.some((g) => g.id === 'unmapped') ? ' "Not in the region table" lists countries the table does not know yet, by name.' : ''}</p>`;
     return U.section('Sessions and accounts by world region', `${U.win(r.from, r.through)} · month to date, through the last day both sources synced`, U.card({ title: 'By world region', sub: 'Landing sessions (GA4) and accounts created (PostHog) · country grouped into regions', body }));
   }
 

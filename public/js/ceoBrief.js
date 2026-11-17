@@ -197,7 +197,7 @@
   function spendChip(spend = {}, cps = {}) {
     const label = 'Investment & cost per account';
     if (!num(spend.value)) return { label, state: 'nodata', value: null, sub: spend.reason || 'No paid source reported data for this month.' };
-    const cpa = num(cps.value) ? `Cost per account ${money(cps.value)}` : cps.status === 'no_signups' ? 'No accounts yet, so no cost per account' : `Cost per account unavailable${cps.reason ? ` (${cps.reason})` : ''}`;
+    const cpa = num(cps.value) ? `Cost per LATAM account ${money(cps.value)}` : cps.status === 'no_signups' ? 'No accounts yet, so no cost per account' : `Cost per account unavailable${cps.reason ? ` (${cps.reason})` : ''}`;
     return { label, state: 'ok', value: money(spend.value), sub: `${cpa}${spend.complete === false ? ' · paid spend incomplete' : ''}.` };
   }
   function countriesChip(rows = []) {
@@ -239,7 +239,7 @@
     const sub = [];
     if (pk.active.state === 'ok') sub.push(`${fmt(pk.active.value)} active users (7 days)`);
     if (pk.projects.state === 'ok') sub.push(`${pct(pk.projects.value, 0)} of new accounts built a project`);
-    if (num(cps.value)) sub.push(`cost per account ${money(cps.value)}`);
+    if (num(cps.value)) sub.push(`cost per LATAM account ${money(cps.value)}`);
 
     // What changed
     const changed = [];
