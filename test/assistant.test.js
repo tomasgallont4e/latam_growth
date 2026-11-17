@@ -261,7 +261,7 @@ test('automatic findings get only the funnel card with its tables, and the promp
     weakest_step: { from: 'Impressions', to: 'Clicks to the landing', continue: 250 / 15000 },
     channels: [{ channel: 'Meta Ads', impressions: 10000, clicks: 100, clicks_kind: 'outbound clicks', impressions_to_clicks: 0.01 }],
     forms: [{ form: 'Early Builders Colombia', submissions: 22 }, { form: 'leak@example.com', submissions: 1 }],
-    by_channel: [{ channel: 'Gmail ads', group: 'campaign', forms: 1, accounts: 16 }, { channel: 'No UTM', group: 'bogus', forms: 0, accounts: 12 }],
+    by_channel: [{ channel: 'Gmail ads', group: 'program', builders: 14, forms: 1, accounts: 16 }, { channel: 'No UTM', group: 'bogus', forms: 0, accounts: 12 }],
   };
   const body = { mode: 'insights', question: 'Write the findings', context: { overview_funnel, kpis: { ga4_sessions: 999 }, ga4_channels: [{ channel: 'Organic Search', sessions: 1 }] } };
   const safe = cleanRequest(body).context;
@@ -271,13 +271,14 @@ test('automatic findings get only the funnel card with its tables, and the promp
   assert.equal(safe.overview_funnel.channels[0].impressions_to_clicks, 0.01);
   assert.deepEqual(safe.overview_funnel.forms.map((r) => r.form), ['Early Builders Colombia']);
   assert.equal(safe.overview_funnel.by_channel[0].accounts, 16);
+  assert.equal(safe.overview_funnel.by_channel[0].builders, 14);
   assert.equal(safe.overview_funnel.by_channel[1].group, 'general', 'unknown groups fall back to general');
   let sent;
   await ask(body, { apiKey: 'test-secret', fetchImpl: async (url, options) => { sent = JSON.parse(options.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }; } });
   assert.match(sent.system, /Each finding must make sense on its own/);
-  assert.match(sent.system, /"## Suggestion" with one sentence/);
+  assert.match(sent.system, /"## Suggestion" with one or two sentences/);
   assert.ok(sent.system.indexOf('## Suggestion') < sent.system.indexOf('## Findings'), 'the suggestion comes first');
-  assert.match(sent.system, /under 120 words/);
+  assert.match(sent.system, /between 150 and 250 words/);
   assert.match(sent.system, /Never write internal names such as overview_funnel/);
   assert.match(sent.system, /never compare with another period/);
   assert.doesNotMatch(sent.messages[0].content, /ga4_sessions|Organic Search/);

@@ -282,7 +282,7 @@
       weakest_step: weak > 0 ? { from: steps[C.prevStep(steps, weak)].name, to: steps[weak].name, continue: steps[weak].n / steps[C.prevStep(steps, weak)].n } : null,
       channels: all ? channelRows(w.from, w.to).map((r) => ({ channel: r.name, impressions: r.impressions, clicks: r.clicks, clicks_kind: r.kind, impressions_to_clicks: r.ctr, organic: !!r.organic })) : [],
       forms: all ? formRows(w.from, w.to).map(([form, n]) => ({ form, submissions: n })) : [],
-      by_channel: byChannel ? byChannel.rows.map((r) => ({ channel: r.label, group: r.group, forms: r.forms, accounts: r.accounts })) : null,
+      by_channel: byChannel ? byChannel.rows.map((r) => ({ channel: r.label, group: r.group, builders: r.builders, accounts: r.accounts, forms: r.forms })) : null,
     };
   };
   // Step 1 → 2 per channel, from the same metrics and window as the funnel: the rows add up to steps 1 and 2.
@@ -321,11 +321,16 @@
     const forms = {};
     for (const e of D.forms(from, to)) { const k = CH.classify(CH.formUtm(e)); forms[k] = (forms[k] || 0) + 1; }
     const accountsReady = !!D.covered('posthog', 'account_origin_coverage', from, to);
+    const buildersReady = !!D.covered('posthog', 'builders_coverage', from, to);
     const rows = CH.CHANNELS.map((c) => ({
       key: c.key, label: c.label, rule: c.rule, group: c.group, forms: forms[c.key] || 0,
       accounts: accountsReady ? D.sum('posthog', 'ph_accounts_origin', (r) => r.dim === 'origin' && r.dim_value === c.key, from, to) : null,
-    })).filter((r) => r.group !== 'test' || r.forms || r.accounts);
-    return { rows, accountsReady };
+      builders: buildersReady ? D.sum('posthog', 'ph_builders_origin', (r) => r.dim === 'origin' && r.dim_value === c.key, from, to) : null,
+    })).filter((r) => r.group !== 'test' || r.forms || r.accounts || r.builders);
+    // Gmail ads is a Google Ads campaign: its spend and clicks in the window, to read the cost per builder.
+    const gmailCampaign = (r) => /gmail|early.?builders/i.test(String(r.dim_value || ''));
+    const gmail = D.has('google_ads', 'ad_spend') ? { spend: D.sum('google_ads', 'ad_spend', gmailCampaign, from, to), clicks: D.sum('google_ads', 'ad_clicks', gmailCampaign, from, to) } : null;
+    return { rows, accountsReady, buildersReady, gmail };
   }
   // Form submissions split by HubSpot form, so Developer Network registrations (the Early Builders form)
   // read apart from the landing sign-up form. Same window and test filter as step 4.
@@ -340,21 +345,24 @@
   function channelTable(from, to, steps) {
     const U = A.ui, sp = channelSplit(from, to);
     const sum = (rows, f) => rows.reduce((t, r) => t + (r[f] || 0), 0);
-    const groupRow = (group, label) => { const rs = sp.rows.filter((r) => r.group === group); return { label, subtotal: true, forms: sum(rs, 'forms'), accounts: sp.accountsReady ? sum(rs, 'accounts') : null }; };
+    const ready = (f) => (f === 'builders' ? sp.buildersReady : f === 'accounts' ? sp.accountsReady : true);
+    const groupRow = (group, label) => { const rs = sp.rows.filter((r) => r.group === group); return { label, subtotal: true, forms: sum(rs, 'forms'), accounts: ready('accounts') ? sum(rs, 'accounts') : null, builders: ready('builders') ? sum(rs, 'builders') : null }; };
     const rows = [
-      groupRow('campaign', 'Campaigns · the official program links'), ...sp.rows.filter((r) => r.group === 'campaign'),
+      groupRow('program', 'Developer Network · Early Builders program'), ...sp.rows.filter((r) => r.group === 'program'),
       groupRow('general', 'General traffic'), ...sp.rows.filter((r) => r.group === 'general'),
       ...sp.rows.filter((r) => r.group === 'test'),
     ];
     const n = (v) => (v == null ? '<span class="kpi-awaiting">Pending</span>' : U.fmt(v));
+    const forms = (r) => `<small class="text-muted">${U.fmt(r.forms)} form${r.forms === 1 ? '' : 's'}</small>`;
+    const gmailNote = (r) => (r.key === 'gmail' && sp.gmail && sp.gmail.spend ? ` · Google Ads ${U.money(sp.gmail.spend)}, ${U.fmt(sp.gmail.clicks)} clicks${r.builders ? ` · ${U.money(sp.gmail.spend / r.builders)} per builder` : ''}` : '');
     const table = U.table([
-      { t: 'Channel', f: (r) => (r.subtotal ? `<b>${U.esc(r.label)}</b>` : `${U.esc(r.label)}<br><small class="text-muted">${U.esc(r.rule)}</small>`) },
-      { t: 'Form submissions', num: 1, f: (r) => (r.subtotal ? `<b>${n(r.forms)}</b>` : n(r.forms)) },
+      { t: 'Channel', f: (r) => (r.subtotal ? `<b>${U.esc(r.label)}</b> ${forms(r)}` : `${U.esc(r.label)} ${forms(r)}<br><small class="text-muted">${U.esc(r.rule + gmailNote(r))}</small>`) },
+      { t: 'Builders (verified)', num: 1, f: (r) => (r.subtotal ? `<b>${n(r.builders)}</b>` : n(r.builders)) },
       { t: 'Accounts created', num: 1, f: (r) => (r.subtotal ? `<b>${n(r.accounts)}</b>` : n(r.accounts)) },
     ], rows, (r) => (r.subtotal ? 'is-subtotal' : r.group === 'test' ? 'muted' : ''));
-    const formsTotal = sum(sp.rows, 'forms'), accTotal = sp.accountsReady ? sum(sp.rows, 'accounts') : null;
+    const accTotal = sp.accountsReady ? sum(sp.rows, 'accounts') : null;
     const gap = steps[4] && steps[4].n != null && accTotal != null && accTotal !== steps[4].n ? ` The channels cover ${U.fmt(accTotal)} of the ${U.fmt(steps[4].n)} accounts in step 5; the rest arrived before the channel was synced.` : '';
-    return `<div class="ov-by-channel"><h4 class="cf-sub">Form submissions and accounts by channel</h4>${table}<p class="card-note">Same channels and rules as the Early Builders dashboard: the official links match on utm_source, utm_medium and utm_campaign, the Developer Network emails sent from HubSpot count with Referrals, and each builder's own link (medium influencer) counts as Influencers. Each row counts once, by its first-touch UTMs: forms by the HubSpot submission (${U.fmt(formsTotal)}, a separate path) and accounts by the PostHog person (step 5).${sp.accountsReady ? '' : ' Accounts by channel arrive with the next PostHog sync; Pending is not zero.'}${U.esc(gap)}</p></div>`;
+    return `<div class="ov-by-channel"><h4 class="cf-sub">Builders by channel</h4>${table}<p class="card-note">Builders = people who verified their account (first account_verified, internal excluded), the same definition as the Early Builders dashboard; Accounts created is step 5 and includes accounts not verified yet. Each person counts once, by the UTMs of their first visit. The small number next to each channel is HubSpot form submissions, a separate path. Early Builders counts since Oct 1: set From to 10/01/2026 to compare its total.${sp.buildersReady ? '' : ' Builders by channel arrive with the next PostHog sync; Pending is not zero.'}${U.esc(gap)}</p></div>`;
   }
   // One line per step: where the number comes from and what it counts, so a step larger than the one above reads as expected.
   function howMeasured() {

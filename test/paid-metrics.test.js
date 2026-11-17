@@ -1815,7 +1815,7 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
     { kind: 'form_signup', date: d, form: 'T4E – Early Builders Colombia', utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'early_builders_co_202611' },
     { kind: 'form_signup', date: d, form: 'T4E – Registro LATAM' },
   );
-  assert.match(A.views.overview.render(), /Accounts by channel arrive with the next PostHog sync/);
+  assert.match(A.views.overview.render(), /Builders by channel arrive with the next PostHog sync/);
   A.S.data.snapshots.push(
     { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
     { source: 'posthog', key: 'account_origin_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
@@ -1825,15 +1825,16 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
     ...[['gmail', 5], ['referral', 3], ['none', 2]].map(([v, n]) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n })),
   );
   const html = A.views.overview.render();
-  assert.match(html, /<b>Campaigns · the official program links<\/b><\/td><td class="td-num"><b>2<\/b><\/td><td class="td-num"><b>8<\/b>/);
-  assert.match(html, /<b>General traffic<\/b><\/td><td class="td-num"><b>1<\/b><\/td><td class="td-num"><b>2<\/b>/);
-  assert.match(html, /Gmail ads<br><small class="text-muted">google \/ cpc \/ early_builders_co_202611<\/small><\/td><td class="td-num">1<\/td><td class="td-num">5<\/td>/);
+  assert.match(html, /<b>Developer Network · Early Builders program<\/b> <small class="text-muted">2 forms<\/small><\/td><td class="td-num"><b><span class="kpi-awaiting">Pending<\/span><\/b><\/td><td class="td-num"><b>8<\/b>/);
+  assert.match(html, /<b>General traffic<\/b> <small class="text-muted">1 form<\/small><\/td><td class="td-num"><b><span class="kpi-awaiting">Pending<\/span><\/b><\/td><td class="td-num"><b>2<\/b>/);
+  assert.match(html, /Gmail ads · Google Ads <small class="text-muted">1 form<\/small><br><small class="text-muted">google \/ cpc \/ early_builders_co_202611 · piece gmail_promo_01<\/small><\/td><td class="td-num"><span class="kpi-awaiting">Pending<\/span><\/td><td class="td-num">5<\/td>/);
+  assert.match(html, /Builders by channel arrive with the next PostHog sync/);
   assert.doesNotMatch(html, /The channels cover/, 'channels match step 5');
   assert.match(html, /How each step is measured/);
   assert.doesNotMatch(html, /<span class="funnel-name">Form submissions/, 'HubSpot forms are not a funnel step');
   assert.match(html, /HubSpot form submissions: <b>3<\/b>/);
   const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
-  assert.deepEqual(f.by_channel.map((r) => [r.channel, r.group, r.forms, r.accounts]).slice(0, 3), [['Referrals · Developer Network', 'campaign', 1, 3], ['Gmail ads', 'campaign', 1, 5], ['LinkedIn paid', 'campaign', 0, 0]]);
+  assert.deepEqual(f.by_channel.map((r) => [r.channel, r.group, r.forms, r.accounts]).slice(0, 3), [['Referrals · Developer Network', 'program', 1, 3], ['Gmail ads · Google Ads', 'program', 1, 5], ['LinkedIn paid', 'program', 0, 0]]);
 });
 
 test('the assistant reads the funnel card as drawn: window, country, step %, weakest step and its tables', () => {
@@ -1864,7 +1865,7 @@ test('the assistant reads the funnel card as drawn: window, country, step %, wea
   assert.ok(f.weakest_step && html.includes(`Weakest step: ${f.weakest_step.from} → ${f.weakest_step.to}`), 'same weakest step as the card');
   assert.deepEqual(f.channels.map((c) => [c.channel, c.impressions, c.clicks]), [['Meta Ads', 10000, 100], ['Google Ads', 5000, 150]]);
   assert.deepEqual(f.forms, [{ form: 'Early Builders Colombia', submissions: 1 }]);
-  assert.deepEqual(f.by_channel.filter((r) => r.accounts).map((r) => [r.channel, r.accounts]), [['Gmail ads', 4], ['No UTM', 2]]);
+  assert.deepEqual(f.by_channel.filter((r) => r.accounts).map((r) => [r.channel, r.accounts]), [['Gmail ads · Google Ads', 4], ['No UTM', 2]]);
   A.S.data.metrics.push({ source: 'posthog', metric: 'ph_accounts_geo', date: d, dim: 'country', dim_value: 'Colombia', value: 3 });
   A.S.overviewCountry = 'Colombia';
   const c = JSON.parse(JSON.stringify(A.overviewFunnel()));
@@ -1948,4 +1949,44 @@ test('PostHog started sign-up counts the first registration_started, account_cre
   assert.equal(sum('ph_signup_starts', (r) => r.dim_value !== 'Internal'), 40);
   assert.equal(sum('ph_signup_starts_reg', (r) => r.dim_value !== 'Internal'), 12);
   assert.equal(load.snapshots.find((x) => x.key === 'signup_start_coverage').rows[0].available, true);
+});
+
+
+test('builders by channel are verified accounts, like Early Builders; forms sit small next to each channel', () => {
+  const A = dashboard();
+  A.S.from = '2026-10-01'; A.S.to = '2026-11-17'; A.S.ovWin = 'range';
+  const d = '2026-11-10';
+  for (const key of ['account_coverage', 'account_origin_coverage', 'builders_coverage']) A.S.data.snapshots.push({ source: 'posthog', key, from: '2026-10-01', to: '2026-11-17', rows: [{ available: true }] });
+  const m = (metric, v, n) => ({ source: 'posthog', metric, date: d, dim: 'origin', dim_value: v, value: n });
+  A.S.data.metrics.push(
+    { source: 'posthog', metric: 'ph_accounts', date: d, dim: 'account_type', dim_value: 'External', value: 35 },
+    m('ph_accounts_origin', 'gmail', 16), m('ph_accounts_origin', 'referral', 3), m('ph_accounts_origin', 'none', 16),
+    m('ph_builders_origin', 'gmail', 14), m('ph_builders_origin', 'referral', 3), m('ph_builders_origin', 'none', 10),
+    { source: 'google_ads', metric: 'ad_spend', date: d, dim: 'campaign', dim_value: 'Early Builders CO - Gmail - 2026-11', value: 490 },
+    { source: 'google_ads', metric: 'ad_clicks', date: d, dim: 'campaign', dim_value: 'Early Builders CO - Gmail - 2026-11', value: 1044 },
+  );
+  A.S.data.events.push({ kind: 'form_signup', date: d, form: 'T4E – Early Builders Colombia', utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'early_builders_co_202611' });
+  const html = A.views.overview.render();
+  assert.match(html, /<h4 class="cf-sub">Builders by channel<\/h4>/);
+  assert.match(html, /<b>Developer Network · Early Builders program<\/b> <small class="text-muted">1 form<\/small><\/td><td class="td-num"><b>17<\/b><\/td><td class="td-num"><b>19<\/b>/);
+  assert.match(html, /<b>General traffic<\/b> <small class="text-muted">0 forms<\/small><\/td><td class="td-num"><b>10<\/b><\/td><td class="td-num"><b>16<\/b>/);
+  assert.match(html, /Google Ads \$490\.00, 1,044 clicks · \$35\.00 per builder/);
+  assert.match(html, /same definition as the Early Builders dashboard/);
+});
+
+test('PostHog builders are the first account_verified per person, by channel, internal excluded', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test', POSTHOG_PROJECT_CREATED_ENABLED: '0' });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(console, 'warn', () => {});
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    const q = JSON.parse(opts.body).query.query;
+    if (q.includes("WHERE event = 'account_verified'") && q.includes('count() AS n, source, medium, campaign, content')) {
+      return response({ results: [[date, 'External', 14, 'google', 'cpc', 'early_builders_co_202611', 'gmail_promo_01'], [date, 'External', 2, 'linkedin', 'influencer', 'early_builders_co_202611', 'jdoe_dev'], [date, 'Unknown', 10, '(not set)', '(not set)', '(not set)', '(not set)'], [date, 'Internal', 5, 'google', 'cpc', 'early_builders_co_202611', '']] });
+    }
+    return response({ results: [] });
+  });
+  const load = await connectors.posthog();
+  const ch = (k) => load.metrics.filter((r) => r.metric === 'ph_builders_origin' && r.dim_value === k).reduce((n, r) => n + r.value, 0);
+  assert.deepEqual([ch('gmail'), ch('influencer'), ch('none')], [14, 2, 10]);
+  assert.equal(load.snapshots.find((x) => x.key === 'builders_coverage').rows[0].available, true);
 });

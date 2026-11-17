@@ -15,12 +15,13 @@
   ];
   const DN_EMAIL_SOURCES = new Set(['hs_email', 'hs_automation', 'hubspot']);
   const PROGRAM_CAMPAIGN = 'early_builders_co_202611';
-  // group: 'campaign' = the official links of the program, 'general' = everything else, 'test' = left out.
+  // group: 'program' = the official links of the Developer Network (Early Builders) program, 'general' = everything
+  // else, 'test' = left out.
   const CHANNELS = [
-    { key: 'referral', label: 'Referrals · Developer Network', rule: 'equipo / referral / developer-network, and HubSpot emails (hs_email, hs_automation, hubspot / email)', group: 'campaign' },
-    { key: 'gmail', label: 'Gmail ads', rule: 'google / cpc / early_builders_co_202611', group: 'campaign' },
-    { key: 'linkedin', label: 'LinkedIn paid', rule: 'linkedin / paid_social / early_builders_co_202611', group: 'campaign' },
-    { key: 'influencer', label: 'Influencers · builder links', rule: 'linkedin, instagram… / influencer / early_builders_co_202611 (each builder shares their own link)', group: 'campaign' },
+    { key: 'referral', label: 'Referrals · Developer Network', rule: 'equipo / referral / developer-network, and HubSpot emails (hs_email, hs_automation, hubspot / email)', group: 'program' },
+    { key: 'gmail', label: 'Gmail ads · Google Ads', rule: 'google / cpc / early_builders_co_202611 · piece gmail_promo_01', group: 'program' },
+    { key: 'linkedin', label: 'LinkedIn paid', rule: 'linkedin / paid_social / early_builders_co_202611', group: 'program' },
+    { key: 'influencer', label: 'Influencers · builder links', rule: 'linkedin, instagram… / influencer / early_builders_co_202611 (each builder shares their own link)', group: 'program' },
     { key: 'other', label: 'Other UTM', rule: 'a UTM that matches none of the program links', group: 'general' },
     { key: 'none', label: 'No UTM', rule: 'no utm_source, utm_medium or utm_campaign', group: 'general' },
     { key: 'test', label: 'Tests', rule: 'qa, test or prueba in any UTM value', group: 'test' },
