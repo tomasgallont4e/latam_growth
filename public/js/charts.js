@@ -281,7 +281,8 @@
             h += `<div class="funnel-conn is-over"><span class="keep">${U.icon('arrow-down')} ${U.fmt(b)} vs ${U.fmt(a)}${U.esc(vs)}</span><span class="conn-note">More than the step above: ${U.esc(s.over || 'a different source, not a subset of the step above')}</span></div>`;
           } else {
             const kp = a ? b / a : 0;
-            h += `<div class="funnel-conn${k === weak ? ' weakest' : ''}"><span class="keep">${U.icon('arrow-down')} ${U.pct(kp)} continue${U.esc(vs)}</span><span class="drop">${U.pct(Math.max(0, 1 - kp))} drop-off</span>${k === weak ? `<span class="weak-badge">${U.icon('triangle-exclamation')} Weakest step</span>` : ''}</div>`;
+            const tgt = s.target != null ? `<span class="target ${kp >= s.target ? 'is-met' : 'is-below'}">target ${U.pct(s.target, s.target < 0.1 ? 1 : 0)}</span>` : '';
+            h += `<div class="funnel-conn${k === weak ? ' weakest' : ''}"><span class="keep">${U.icon('arrow-down')} ${U.pct(kp)} continue${U.esc(vs)}</span>${tgt}<span class="drop">${U.pct(Math.max(0, 1 - kp))} drop-off</span>${k === weak ? `<span class="weak-badge">${U.icon('triangle-exclamation')} Weakest step</span>` : ''}</div>`;
           }
         }
       }

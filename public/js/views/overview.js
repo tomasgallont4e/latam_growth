@@ -187,6 +187,15 @@
     }
     return [...seen].sort((a, b) => a.localeCompare(b));
   }
+  // Market benchmarks for the % that should continue from the step above (researched 2026-11-17; vendor and agency
+  // reports, so directional). Logins have none: they are a reference, not part of the step %.
+  const STEP_TARGETS = {
+    'Clicks to the landing': { pct: 0.03, basis: 'Google Ads CTR for technology and SaaS, about 2 to 4% (WordStream, Digital Gravity)' },
+    'Landing sessions': { pct: 0.85, basis: 'ad clicks that become GA4 sessions, normally 85 to 95%' },
+    'Started sign-up': { pct: 0.04, basis: 'SaaS landing page median 3.8% (Unbounce); self-serve trial pages 4 to 10%' },
+    'Accounts created': { pct: 0.7, basis: 'sign-up completion after an email code; no solid benchmark, a verification gate costs 8 to 20 points' },
+    'Projects created': { pct: 0.4, basis: '7-day activation, median about 41.7% and average 37.5% (Userpilot)' },
+  };
   function funnelSteps(from, to, country) {
     const D = A.D, all = !country || country === 'all';
     const inCountry = (r) => r.dim === 'country' && r.dim_value === country;
@@ -245,6 +254,7 @@
     if (!all) steps.push(split('Projects created', 'PostHog · project_created'));
     else steps.push({ name: 'Projects created', src: 'PostHog · project_created', n: D.has('posthog', 'ph_event') ? D.sum('posthog', 'ph_event', (r) => r.dim_value === 'project_created', from, to) : null, note: 'PostHog events not synced',
       over: 'counts every project created in these dates, also by accounts created earlier, and an account can create several' });
+    for (const st of steps) if (STEP_TARGETS[st.name]) st.target = STEP_TARGETS[st.name].pct;
     return steps;
   }
   // Unique portal accounts with at least one signed_in day in the window (product usage rows, America/Bogota days).
@@ -277,6 +287,7 @@
           with_registration_started: s.withReg != null ? s.withReg : undefined,
           pct_of_previous: base && base.n > 0 && s.n != null ? s.n / base.n : null, previous_step: base ? base.name : undefined,
           above_previous_because: base && base.n != null && s.n != null && s.n > base.n ? s.over : undefined,
+          target_pct_of_previous: s.target != null ? s.target : undefined,
         };
       }),
       weakest_step: weak > 0 ? { from: steps[C.prevStep(steps, weak)].name, to: steps[weak].name, continue: steps[weak].n / steps[C.prevStep(steps, weak)].n } : null,
@@ -372,7 +383,8 @@
       ['Logins', 'PostHog, unique people who signed in at least once in these dates, internal excluded. They include accounts created before these dates, so they are shown for reference and are not part of the step %.'],
       ['Projects created', 'PostHog project_created events in these dates. It can be larger than Accounts created: older accounts create projects too, and one account can create several.'],
     ];
-    return `<details class="collapsible ov-how"><summary>${U.icon('chevron-right', 'fa-solid', 'chev')}How each step is measured</summary><div class="collapsible-body"><dl class="defs">${items.map(([t, d]) => `<div><dt>${U.esc(t)}</dt><dd>${U.esc(d)}</dd></div>`).join('')}</dl><p class="card-note">HubSpot form submissions (the Early Builders program form and other site forms) are not a step: the landing has no HubSpot form. They are listed under the funnel and in the channel table. Each step comes from its own source (ad platforms, GA4, HubSpot, PostHog) and is not the same group of people moving down, so the % between steps is indicative. When a step is larger than the one above, the funnel says why instead of showing more than 100%.</p></div></details>`;
+    const targets = Object.entries(STEP_TARGETS).map(([t, x]) => `<div><dt>${U.esc(t)} · target ${U.esc(U.pct(x.pct, 0))}</dt><dd>${U.esc(x.basis)}</dd></div>`).join('');
+    return `<details class="collapsible ov-how"><summary>${U.icon('chevron-right', 'fa-solid', 'chev')}How each step is measured</summary><div class="collapsible-body"><dl class="defs">${items.map(([t, d]) => `<div><dt>${U.esc(t)}</dt><dd>${U.esc(d)}</dd></div>`).join('')}</dl><h4 class="cf-sub">Targets per step</h4><dl class="defs">${targets}</dl><p class="card-note">Targets are the % that should continue from the step above, from market benchmarks (vendor and agency reports, so directional). HubSpot form submissions (the Early Builders program form and other site forms) are not a step: the landing has no HubSpot form. They are listed under the funnel and in the channel table. Each step comes from its own source (ad platforms, GA4, HubSpot, PostHog) and is not the same group of people moving down, so the % between steps is indicative. When a step is larger than the one above, the funnel says why instead of showing more than 100%.</p></div></details>`;
   }
   function funnelCard(from, to) {
     const U = A.ui, C = A.charts, S = A.S;

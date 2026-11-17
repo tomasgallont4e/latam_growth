@@ -1989,3 +1989,21 @@ test('PostHog builders are the first account_verified per person, by channel, in
   assert.equal(load.metrics.filter((r) => r.metric === 'ph_builders_internal').reduce((n, r) => n + r.value, 0), 5, 'internal builders counted apart');
   assert.equal(load.snapshots.find((x) => x.key === 'builders_coverage').rows[0].available, true);
 });
+
+
+test('each funnel step shows its market target next to the continue %', () => {
+  const A = dashboard();
+  A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
+  const d = '2026-11-10';
+  A.S.data.metrics.push(
+    { source: 'meta', metric: 'ad_impressions', value: 10000, date: d }, { source: 'meta', metric: 'ad_outbound_clicks', value: 400, date: d },
+    { source: 'ga4', metric: 'ga_exec_geo_sessions', value: 300, date: d, dim: 'country', dim_value: 'Colombia' },
+  );
+  const html = A.views.overview.render();
+  assert.match(html, /4\.00% continue<\/span><span class="target is-met">target 3\.0%<\/span>/, 'clicks 4% beats the 3% target');
+  assert.match(html, /75\.0% continue<\/span><span class="target is-below">target 85%<\/span>/, 'sessions 75% are below the 85% target');
+  assert.match(html, /Targets per step/);
+  const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
+  assert.equal(f.steps[1].target_pct_of_previous, 0.03);
+  assert.equal(f.steps[5].target_pct_of_previous, undefined, 'logins have no target');
+});
