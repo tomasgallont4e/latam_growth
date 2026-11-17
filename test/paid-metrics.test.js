@@ -615,7 +615,7 @@ test('Overview: dates typed in From/To set the accounts card, the pace chart and
   assert.equal(fed.steps.find((x) => x.step === 'Accounts created').value, 10);
   // Step 4 split by HubSpot form: Developer Network registrations read apart from the landing sign-up.
   A.S.data.events = [{ kind: 'form_signup', date: '2026-11-12', form: 'T4E – Early Builders Colombia' }, { kind: 'form_signup', date: '2026-11-13', form: 'T4E – Early Builders Colombia' }, { kind: 'form_signup', date: '2026-11-13', form: 'T4E – Landing Signup LATAM' }, { kind: 'form_signup', date: '2026-11-13', form: 'T4E – Landing Signup LATAM', utm_medium: 'test' }, { kind: 'form_signup', date: '2026-11-05', form: 'T4E – Landing Signup LATAM' }];
-  assert.match(A.views.overview.render(), /ov-forms-by-form">Form submissions by form: Early Builders Colombia <b>2<\/b> · Landing Signup LATAM <b>1<\/b>/);
+  assert.match(A.views.overview.render(), /ov-forms-by-form">HubSpot form submissions: <b>3<\/b> \(Early Builders Colombia 2 · Landing Signup LATAM 1\)\. A separate path, not a funnel step/);
   // Narrower dates move every number together.
   A.S.from = '2026-11-12';
   assert.equal(period(A.views.overview.render()), 4);
@@ -1815,8 +1815,11 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
   A.S.data.snapshots.push(
     { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
     { source: 'posthog', key: 'account_origin_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
+    { source: 'posthog', key: 'registration_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
   );
   A.S.data.metrics.push(
+    { source: 'posthog', metric: 'ph_signups', date: d, dim: 'account_type', dim_value: 'External', value: 4 },
+    { source: 'posthog', metric: 'ph_signups', date: d, dim: 'account_type', dim_value: 'Internal', value: 9 },
     { source: 'posthog', metric: 'ph_accounts', date: d, dim: 'account_type', dim_value: 'External', value: 10 },
     ...[['gmail', 5], ['referral', 3], ['none', 2]].map(([v, n]) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n })),
   );
@@ -1826,11 +1829,16 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
   assert.match(html, /Gmail ads<br><small class="text-muted">google \/ cpc \/ early_builders_co_202611<\/small><\/td><td class="td-num">1<\/td><td class="td-num">5<\/td>/);
   assert.doesNotMatch(html, /The channels cover/, 'channels match step 5');
   assert.match(html, /How each step is measured/);
-  assert.match(html, /10 vs 3 · <\/span>|10 vs 3<\/span>/, 'step 5 above step 4 shows both numbers');
-  assert.match(html, /More than the step above: includes accounts that never submitted a form/);
-  assert.doesNotMatch(html, /333\.3% continue/);
+  assert.match(html, /Registration started<small>PostHog · first registration_started · External<\/small>/);
+  assert.match(html, /10 vs 4<\/span>/, 'step 5 above step 4 shows both numbers; internal registrations excluded');
+  assert.match(html, /More than the step above: one-click sign-up \(Google\)/);
+  assert.doesNotMatch(html, /250\.0% continue/);
+  assert.doesNotMatch(html, /<span class="funnel-name">Form submissions/, 'HubSpot forms are not a funnel step');
+  assert.match(html, /HubSpot form submissions: <b>3<\/b>/);
   const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
-  assert.match(f.steps[4].above_previous_because, /never submitted a form/);
+  assert.equal(f.steps[3].step, 'Registration started');
+  assert.equal(f.steps[3].value, 4);
+  assert.match(f.steps[4].above_previous_because, /one-click sign-up/);
   assert.deepEqual(f.by_channel.map((r) => [r.channel, r.group, r.forms, r.accounts]).slice(0, 3), [['Referrals · Developer Network', 'campaign', 1, 3], ['Gmail ads', 'campaign', 1, 5], ['LinkedIn paid', 'campaign', 0, 0]]);
 });
 

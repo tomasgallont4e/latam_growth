@@ -219,19 +219,21 @@
     steps.push(D.has('ga4', 'ga_exec_geo_sessions')
       ? { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: D.sum('ga4', 'ga_exec_geo_sessions', all ? null : inCountry, from, to), ...onSite }
       : { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: null, note: 'GA4 go-host sessions not synced', ...onSite });
-    // 4. Form submissions (HubSpot)
-    if (!all) steps.push(split('Form submissions', 'HubSpot · CRM contacts'));
-    else {
-      const crm = D.crmTotal(from, to);
-      steps.push({ name: 'Form submissions', src: 'HubSpot · CRM contacts', n: crm == null ? null : crm, note: 'HubSpot has not reported' });
-    }
+    // 4. Registration started (PostHog, first registration_started per person, internal excluded): the visitor types
+    // the email on the landing and asks for the 6-digit code. The landing signs up without a HubSpot form, so HubSpot
+    // form submissions are a separate path, shown under the funnel and in the channel table.
+    const regReady = D.covered('posthog', 'registration_coverage', from, to);
+    const registrations = !regReady ? null : all
+      ? D.sum('posthog', 'ph_signups', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', from, to)
+      : D.sum('posthog', 'ph_signups_geo', inCountry, from, to);
+    steps.push({ name: 'Registration started', src: 'PostHog · first registration_started · External', n: registrations, note: 'Registration coverage unavailable; not zero' });
     // 5. Accounts created (memory #134: External first account_created or $identify, all hosts, internal excluded)
     const covered = D.covered('posthog', 'account_coverage', from, to);
     const accounts = !covered ? null : all
       ? D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', from, to)
       : D.sum('posthog', 'ph_accounts_geo', inCountry, from, to);
     steps.push({ name: 'Accounts created', src: 'PostHog · first account_created or $identify · External', n: accounts, note: 'Account coverage unavailable; not zero',
-      over: 'includes accounts that never submitted a form: one-click sign-up, Developer Network emails and people who go straight to the platform' });
+      over: 'one-click sign-up (Google) and some Developer Network links create the account without a registration_started event' });
     // 6. Logins (PostHog signed_in events; entries to the platform; events, not people)
     const loginsSynced = metricsList().some((r) => r.source === 'posthog' && r.metric === 'ph_event' && r.dim_value === 'signed_in');
     // Shown in place but `aside`: login events include returning accounts, so they are not a subset of
@@ -343,7 +345,7 @@
     ], rows, (r) => (r.subtotal ? 'is-subtotal' : r.group === 'test' ? 'muted' : ''));
     const formsTotal = sum(sp.rows, 'forms'), accTotal = sp.accountsReady ? sum(sp.rows, 'accounts') : null;
     const gap = steps[4] && steps[4].n != null && accTotal != null && accTotal !== steps[4].n ? ` The channels cover ${U.fmt(accTotal)} of the ${U.fmt(steps[4].n)} accounts in step 5; the rest arrived before the channel was synced.` : '';
-    return `<div class="ov-by-channel"><h4 class="cf-sub">Form submissions and accounts by channel</h4>${table}<p class="card-note">Same channels and rules as the Early Builders dashboard: the three official links match on utm_source, utm_medium and utm_campaign, and the Developer Network emails sent from HubSpot count with Referrals. Each row counts once, by its first-touch UTMs: forms by the HubSpot submission (${U.fmt(formsTotal)}, step 4) and accounts by the PostHog person (step 5).${sp.accountsReady ? '' : ' Accounts by channel arrive with the next PostHog sync; Pending is not zero.'}${U.esc(gap)}</p></div>`;
+    return `<div class="ov-by-channel"><h4 class="cf-sub">Form submissions and accounts by channel</h4>${table}<p class="card-note">Same channels and rules as the Early Builders dashboard: the three official links match on utm_source, utm_medium and utm_campaign, and the Developer Network emails sent from HubSpot count with Referrals. Each row counts once, by its first-touch UTMs: forms by the HubSpot submission (${U.fmt(formsTotal)}, a separate path) and accounts by the PostHog person (step 5).${sp.accountsReady ? '' : ' Accounts by channel arrive with the next PostHog sync; Pending is not zero.'}${U.esc(gap)}</p></div>`;
   }
   // One line per step: where the number comes from and what it counts, so a step larger than the one above reads as expected.
   function howMeasured() {
@@ -352,12 +354,12 @@
       ['Impressions', 'Meta Ads and Google Ads, plus the posts of the LinkedIn company page (organic). Ads are campaign traffic; the LinkedIn page is general.'],
       ['Clicks to the landing', 'Meta outbound clicks, Google Ads clicks and the clicks on the LinkedIn company page posts. LinkedIn reports every click on a post, so its part can include clicks that do not open the landing.'],
       ['Landing sessions', 'GA4 sessions on go.think4ever.com from every source: ads, organic, direct and emails.'],
-      ['Form submissions', 'HubSpot contacts that submitted a form on the site (Early Builders, Registro LATAM). The landing page no longer has a form, so this is the Developer Network registration and the other site forms; internal and test contacts are excluded.'],
-      ['Accounts created', 'PostHog, the first account_created or $identify of each person, External only. It can be larger than Form submissions: one-click sign-up and the Developer Network emails create accounts without a form.'],
+      ['Registration started', 'PostHog, the first registration_started of each person, internal excluded: the visitor types the email on the landing and asks for the 6-digit code.'],
+      ['Accounts created', 'PostHog, the first account_created or $identify of each person, External only: the visitor entered the code, or signed up in one click with Google. One-click sign-up skips Registration started, so this step can be larger.'],
       ['Logins', 'PostHog signed_in events, not people. They include accounts created before these dates, so they are shown for reference and are not part of the step %.'],
       ['Projects created', 'PostHog project_created events in these dates. It can be larger than Accounts created: older accounts create projects too, and one account can create several.'],
     ];
-    return `<details class="collapsible ov-how"><summary>${U.icon('chevron-right', 'fa-solid', 'chev')}How each step is measured</summary><div class="collapsible-body"><dl class="defs">${items.map(([t, d]) => `<div><dt>${U.esc(t)}</dt><dd>${U.esc(d)}</dd></div>`).join('')}</dl><p class="card-note">Each step comes from its own source (ad platforms, GA4, HubSpot, PostHog) and is not the same group of people moving down, so the % between steps is indicative. When a step is larger than the one above, the funnel says why instead of showing more than 100%.</p></div></details>`;
+    return `<details class="collapsible ov-how"><summary>${U.icon('chevron-right', 'fa-solid', 'chev')}How each step is measured</summary><div class="collapsible-body"><dl class="defs">${items.map(([t, d]) => `<div><dt>${U.esc(t)}</dt><dd>${U.esc(d)}</dd></div>`).join('')}</dl><p class="card-note">HubSpot form submissions (the Early Builders program form and other site forms) are not a step: the landing has no HubSpot form. They are listed under the funnel and in the channel table. Each step comes from its own source (ad platforms, GA4, HubSpot, PostHog) and is not the same group of people moving down, so the % between steps is indicative. When a step is larger than the one above, the funnel says why instead of showing more than 100%.</p></div></details>`;
   }
   function funnelCard(from, to) {
     const U = A.ui, C = A.charts, S = A.S;
@@ -370,7 +372,8 @@
       : 'The weakest step appears once two consecutive steps have data.';
     const forms = country === 'all' ? formRows(from, to) : [];
     const channels = country === 'all' ? channelCtr(from, to) : '';
-    const formLine = forms.length ? `<p class="card-note ov-forms-by-form">Form submissions by form: ${forms.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Early Builders is the Developer Network registration; Landing Signup is the general sign-up.</p>` : '';
+    const formTotal = forms.reduce((t, [, n]) => t + n, 0);
+    const formLine = forms.length ? `<p class="card-note ov-forms-by-form">HubSpot form submissions: <b>${U.fmt(formTotal)}</b> (${forms.map(([name, n]) => `${U.esc(name)} ${U.fmt(n)}`).join(' · ')}). A separate path, not a funnel step: the landing signs up with the email and a 6-digit code, without a HubSpot form. Early Builders is the Developer Network program form.</p>` : '';
     const byChannel = country === 'all' ? channelTable(from, to, steps) : '';
     const picker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country"><option value="all"${country === 'all' ? ' selected' : ''}>All countries</option>${options.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
     const note = `<p class="card-note">Accounts created is the same number as the 500K goal (External, internal excluded). Open "How each step is measured" for what each number counts. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
