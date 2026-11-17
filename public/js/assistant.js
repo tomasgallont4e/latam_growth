@@ -79,7 +79,7 @@
     if (state.ready === false) return '<div class="growth-insight-state">Overview insights need the server-side ANTHROPIC_API_KEY.</div>';
     if (state.insightStatus === 'loading' || state.insightPreparing) return '<div class="growth-insight-state" role="status">Analyzing Overview data…</div>';
     if (state.insightStatus === 'error') return `<div class="growth-insight-state growth-assistant-error" role="alert">${A.ui.esc(state.insightError || 'Insights could not be generated.')}</div><button class="btn btn-secondary btn-sm" type="button" data-insights-retry>Retry insights</button>`;
-    if (state.insightStatus === 'ready' && state.insightText) return `<div class="growth-assistant-report">${richText(state.insightText)}</div><div class="growth-insight-meta">Selected period · ${A.ui.esc(state.insightPeriod)}</div><button class="btn btn-ghost btn-sm" type="button" data-insights-retry>Refresh insights</button>`;
+    if (state.insightStatus === 'ready' && state.insightText) return `<div class="growth-assistant-report">${richText(state.insightText)}</div><div class="growth-insight-meta">Funnel window · ${A.ui.esc(state.insightPeriod)}</div><button class="btn btn-ghost btn-sm" type="button" data-insights-retry>Refresh insights</button>`;
     return '<div class="growth-insight-state">Insights will be generated automatically for this Overview period.</div>';
   }
   function render() {
@@ -124,12 +124,14 @@
     state.insightPreparing = false;
     if (!force && key === state.insightKey && ['loading', 'ready', 'error'].includes(state.insightStatus)) return;
     state.insightKey = key; state.insightStatus = 'loading'; state.insightText = ''; state.insightError = '';
-    state.insightPeriod = `${snapshot.period.from} to ${snapshot.period.to}`;
+    // The findings describe the funnel card, so they carry its window and country, not From/To.
+    const of = snapshot.overview_funnel;
+    state.insightPeriod = of ? `${of.window} · ${of.country} · ${of.set_by}` : `${snapshot.period.from} to ${snapshot.period.to}`;
     const sequence = ++state.insightSeq;
     rerender();
     try {
       const result = await A.api('api/assistant/ask', { method: 'POST', body: JSON.stringify({
-        mode: 'insights', question: 'Generate the Overview executive insight report in English from the supplied data, starting from the 7-step funnel on the page (overview_funnel): its numbers from impressions to projects created, the weakest step versus the previous one, which ad platform and channel brought the most people to the landing, and which channel performs best and why. Use English for all headings, findings and recommendations; prioritize evidence over metric listings.', context: snapshot,
+        mode: 'insights', question: 'Write the findings for the 7-step funnel card exactly as the page shows it: the weakest step, how each ad channel turns impressions into clicks, which forms bring the submissions and where the accounts created come from. Each finding must be understandable on its own.', context: snapshot,
       }) });
       if (sequence !== state.insightSeq) return;
       if (JSON.stringify(context()) !== key) {
