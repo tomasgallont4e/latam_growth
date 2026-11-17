@@ -142,7 +142,7 @@ test('metric corrections preserve the goal, channel and conversion charts', () =
   assert.match(conversion, /Sign-ups/);
   assert.doesNotMatch(overview + conversion, /Confirmed accounts created/);
   assert.doesNotMatch(overview, /Plan needs review/);
-  assert.match(conversion, /Daily registration starts and sign-ups/);
+  assert.match(conversion, /Weekly registration starts and sign-ups/);
   assert.doesNotMatch(overview, /class="goal-col"/);
   const realZero = A.charts.goalProgress({ dates: ['2026-10-01'], values: [0], goal: 500000 });
   assert.match(realZero, /class="goal-dot"/);
@@ -1729,4 +1729,24 @@ test('Executive says in one line that no visit carries a persona code instead of
   } }));
   assert.match(html, /No visit this month carries a persona code[^<]*all 849 landing sessions and 22 forms stay untagged/);
   assert.doesNotMatch(html, /By persona|A persona code reaches/);
+});
+
+test('Overview groups by week by default and splits impressions to clicks by ad channel', () => {
+  const A = dashboard();
+  assert.equal(A.D.grain(), 'week');
+  A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
+  const d = '2026-11-10';
+  A.S.data.metrics.push(
+    { source: 'meta', metric: 'ad_impressions', value: 10000, date: d, dim_value: 'Early Builders' },
+    { source: 'meta', metric: 'ad_outbound_clicks', value: 80, date: d, dim_value: 'Early Builders' },
+    { source: 'google_ads', metric: 'ad_impressions', value: 2000, date: d, dim_value: 'Search' },
+    { source: 'google_ads', metric: 'ad_clicks', value: 60, date: d, dim_value: 'Search' },
+  );
+  const html = A.views.overview.render();
+  assert.match(html, /Impressions → clicks by channel/);
+  assert.match(html, /Meta Ads<\/td><td class="td-num">10,000<\/td><td class="td-num">80 <small class="text-muted">outbound clicks<\/small><\/td><td class="td-num">0\.80%/);
+  assert.match(html, /Google Ads<\/td><td class="td-num">2,000<\/td><td class="td-num">60 <small class="text-muted">clicks<\/small><\/td><td class="td-num"><b>3\.00%<\/b>/);
+  const fed = A.overviewFunnel();
+  assert.equal(fed.steps[0].value, 12000, 'the channel rows add up to the funnel impressions');
+  assert.equal(fed.steps[1].value, 140, 'and to the funnel clicks');
 });

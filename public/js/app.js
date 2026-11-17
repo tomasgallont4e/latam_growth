@@ -4,7 +4,7 @@
 (function (A) {
   const U = A.ui;
   const LAUNCH = A.LAUNCH = '2026-10-01';
-  const S = A.S = { data: null, tab: 'overview', grain: 'day', ovWin: 'grain', from: LAUNCH, to: U.today(), exInt: true, me: null, goalCountry: 'Colombia', goalMonth: '' };
+  const S = A.S = { data: null, tab: 'overview', grain: 'week', ovWin: 'grain', from: LAUNCH, to: U.today(), exInt: true, me: null, goalCountry: 'Colombia', goalMonth: '' };
 
   // ---------- data helpers
   const D = A.D = {};
@@ -238,7 +238,7 @@
     quarter: { name: 'Quarterly', bar: 'quarter' },
     year: { name: 'Yearly', bar: 'year' },
   };
-  D.grain = () => (GRAIN_META[S.grain] ? S.grain : 'day');
+  D.grain = () => (GRAIN_META[S.grain] ? S.grain : 'week');
   D.grainName = () => GRAIN_META[D.grain()].name;
   D.grainBar = () => GRAIN_META[D.grain()].bar;
   D.ticks = (from = S.from, to = S.to) => U.ticks(from, to, D.grain(), LAUNCH);
@@ -533,10 +533,11 @@
   };
   A.setGrain = (v) => {
     const sel = document.getElementById('period');
-    if (![...sel.options].some((o) => o.value === v)) v = 'day';
+    if (![...sel.options].some((o) => o.value === v)) v = 'week';
     sel.value = v;
     S.grain = v;
-    A.store('t4e-growth-grain', v);
+    // v2: the old key held 'day' for everyone, because boot saved the old default.
+    A.store('t4e-growth-grain-v2', v);
     if (A.targets) A.targets.ensure(S.goalMonth);
     if (S.data) A.render();
   };
@@ -660,7 +661,7 @@
     for (const id of ['range-from', 'range-to']) { document.getElementById(id).min = LAUNCH; document.getElementById(id).max = U.today(); }
     // The saved Month decides the From/To range on boot (whole calendar month, capped at today).
     A.setGoalMonth(A.store('t4e-growth-month') || A.bogotaMonth(), false);
-    A.setGrain(A.store('t4e-growth-grain') || 'day');
+    A.setGrain(A.store('t4e-growth-grain-v2') || 'week');
     A.render();
     A.load();
     // The role decides which controls show; the server enforces the same rule on every write.

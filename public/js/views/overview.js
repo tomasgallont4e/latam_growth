@@ -244,6 +244,27 @@
     const w = A.overviewWindow();
     return { from: w.from, to: w.to, set_by: w.mode === 'range' ? 'From/To' : `Group by ${A.D.grainName()}`, steps: funnelSteps(w.from, w.to, 'all').map((s) => ({ step: s.name, source: s.src, value: s.n == null ? null : Number(s.n), counts: s.aside ? 'events' : undefined, note: s.n == null ? s.note : undefined })) };
   };
+  // Step 1 → 2 per ad channel, from the same metrics and window as the funnel, so the rows add up to it.
+  function channelCtr(from, to) {
+    const U = A.ui, D = A.D;
+    const rows = [
+      { name: 'Meta Ads', imp: 'meta', clk: ['meta', 'ad_outbound_clicks'], kind: 'outbound clicks' },
+      { name: 'Google Ads', imp: 'google_ads', clk: ['google_ads', 'ad_clicks'], kind: 'clicks' },
+    ].filter((c) => D.has(c.imp, 'ad_impressions')).map((c) => {
+      const imp = D.sum(c.imp, 'ad_impressions', null, from, to);
+      const clicks = D.has(c.clk[0], c.clk[1]) ? D.sum(c.clk[0], c.clk[1], null, from, to) : null;
+      return { ...c, impressions: imp, clicks, ctr: clicks != null && imp ? clicks / imp : null };
+    });
+    if (!rows.length) return '';
+    const best = Math.max(...rows.map((r) => r.ctr || 0));
+    const table = U.table([
+      { t: 'Channel', f: (r) => U.esc(r.name) },
+      { t: 'Impressions', num: 1, f: (r) => U.fmt(r.impressions) },
+      { t: 'Clicks to the landing', num: 1, f: (r) => (r.clicks == null ? '<span class="text-muted">Pending</span>' : `${U.fmt(r.clicks)} <small class="text-muted">${r.kind}</small>`) },
+      { t: 'Impressions → clicks', num: 1, f: (r) => (r.ctr == null ? '–' : r.ctr === best && rows.length > 1 && best > 0 ? `<b>${U.pct(r.ctr, 2)}</b>` : U.pct(r.ctr, 2)) },
+    ], rows);
+    return `<div class="ov-channel-ctr"><h4 class="cf-sub">Impressions → clicks by channel</h4>${table}</div>`;
+  }
   function funnelCard(from, to) {
     const U = A.ui, C = A.charts, S = A.S;
     const options = countryOptions();
@@ -261,6 +282,7 @@
       byForm[name] = (byForm[name] || 0) + 1;
     }
     const formRows = Object.entries(byForm).sort((a, b) => b[1] - a[1]);
+    const channels = country === 'all' ? channelCtr(from, to) : '';
     const formLine = formRows.length ? `<p class="card-note ov-forms-by-form">Form submissions by form: ${formRows.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Early Builders is the Developer Network registration; Landing Signup is the general sign-up.</p>` : '';
     const picker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country"><option value="all"${country === 'all' ? ' selected' : ''}>All countries</option>${options.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
     const note = `<p class="card-note">Each step comes from its own source and is not linked person by person, so the % between steps is indicative. Accounts created is the same number as the 500K goal (External, internal excluded). Logins count signed_in events, not people, and include returning accounts, so they are shown for reference and Projects created is compared with Accounts created. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
@@ -268,7 +290,7 @@
       cls: 'chart-card', title: 'Funnel · 7 steps',
       sub: `${U.win(from, to)} · ${country === 'all' ? 'All countries' : U.esc(country)} · % versus the previous step`,
       right: picker,
-      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${formLine}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
+      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${channels}${formLine}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
     });
   }
 
