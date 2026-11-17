@@ -531,11 +531,11 @@ test('Overview 7-step funnel shows % between steps, the weakest step and the cou
   const html = A.views.overview.render();
   assert.match(html, /Funnel · 7 steps/);
   assert.match(html, /Logins/);
-  assert.match(html, /No signed_in event is synced yet/);
+  assert.match(html, /Product usage not synced yet/);
   assert.doesNotMatch(html, /Credits loaded/);
   assert.match(html, /Weakest step/);
   assert.match(html, /continue</);
-  assert.match(html, /Logins are events, not people · not part of the step %/);
+  assert.match(html, /Unique people who signed in, including accounts created earlier · not part of the step %/);
   assert.match(html, /continue vs Accounts created</, 'projects compare with accounts, skipping logins');
   assert.match(html, /id="goal-country"/);
   A.S.overviewCountry = 'Colombia';
@@ -1815,11 +1815,8 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
   A.S.data.snapshots.push(
     { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
     { source: 'posthog', key: 'account_origin_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
-    { source: 'posthog', key: 'registration_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
   );
   A.S.data.metrics.push(
-    { source: 'posthog', metric: 'ph_signups', date: d, dim: 'account_type', dim_value: 'External', value: 4 },
-    { source: 'posthog', metric: 'ph_signups', date: d, dim: 'account_type', dim_value: 'Internal', value: 9 },
     { source: 'posthog', metric: 'ph_accounts', date: d, dim: 'account_type', dim_value: 'External', value: 10 },
     ...[['gmail', 5], ['referral', 3], ['none', 2]].map(([v, n]) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n })),
   );
@@ -1829,16 +1826,9 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
   assert.match(html, /Gmail ads<br><small class="text-muted">google \/ cpc \/ early_builders_co_202611<\/small><\/td><td class="td-num">1<\/td><td class="td-num">5<\/td>/);
   assert.doesNotMatch(html, /The channels cover/, 'channels match step 5');
   assert.match(html, /How each step is measured/);
-  assert.match(html, /Registration started<small>PostHog · first registration_started · External<\/small>/);
-  assert.match(html, /10 vs 4<\/span>/, 'step 5 above step 4 shows both numbers; internal registrations excluded');
-  assert.match(html, /More than the step above: one-click sign-up \(Google\)/);
-  assert.doesNotMatch(html, /250\.0% continue/);
   assert.doesNotMatch(html, /<span class="funnel-name">Form submissions/, 'HubSpot forms are not a funnel step');
   assert.match(html, /HubSpot form submissions: <b>3<\/b>/);
   const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
-  assert.equal(f.steps[3].step, 'Registration started');
-  assert.equal(f.steps[3].value, 4);
-  assert.match(f.steps[4].above_previous_because, /one-click sign-up/);
   assert.deepEqual(f.by_channel.map((r) => [r.channel, r.group, r.forms, r.accounts]).slice(0, 3), [['Referrals · Developer Network', 'campaign', 1, 3], ['Gmail ads', 'campaign', 1, 5], ['LinkedIn paid', 'campaign', 0, 0]]);
 });
 
@@ -1900,4 +1890,58 @@ test('steps 1 and 2 add the organic LinkedIn page impressions and post clicks', 
   A.S.data.metrics.push({ source: 'meta', metric: 'ad_impressions_geo', value: 4000, date: d, dim: 'country', dim_value: 'Colombia' }, { source: 'ga4', metric: 'ga_exec_geo_sessions', value: 5, date: d, dim: 'country', dim_value: 'Colombia' });
   A.S.overviewCountry = 'Colombia';
   assert.equal(A.overviewFunnel().steps[0].value, 4000, 'a country view counts ads only: LinkedIn page has no country');
+});
+
+
+test('started sign-up always holds the accounts created, and logins are unique people without internal accounts', () => {
+  const A = dashboard();
+  A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
+  const d = '2026-11-10';
+  A.S.data.snapshots.push(
+    { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
+    { source: 'posthog', key: 'signup_start_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
+    { source: 'posthog', key: 'product_usage', from: '2026-10-01', to: '2026-11-14', pulled_at: '2026-11-14T10:00:00Z', rows: [{ available: true, accounts: 4 }] },
+    { source: 'posthog', key: 'product_usage_1', from: '2026-10-01', to: '2026-11-14', rows: [
+      { created: '2026-10-20', signin_days: ['2026-10-21', '2026-11-03', '2026-11-04'], internal: false },
+      { created: '2026-11-05', signin_days: ['2026-11-05'], internal: false },
+      { created: '2026-11-06', signin_days: [], internal: false },
+      { created: '2026-11-02', signin_days: ['2026-11-02', '2026-11-09'], internal: true },
+      { created: '2026-10-02', signin_days: ['2026-10-03'], internal: false },
+    ] },
+  );
+  A.S.data.metrics.push(
+    { source: 'posthog', metric: 'ph_accounts', date: d, dim: 'account_type', dim_value: 'External', value: 35 },
+    { source: 'posthog', metric: 'ph_signup_starts', date: d, dim: 'account_type', dim_value: 'External', value: 40 },
+    { source: 'posthog', metric: 'ph_signup_starts', date: d, dim: 'account_type', dim_value: 'Internal', value: 7 },
+    { source: 'posthog', metric: 'ph_signup_starts_reg', date: d, dim: 'account_type', dim_value: 'External', value: 12 },
+    { source: 'posthog', metric: 'ph_event', date: d, dim: 'event', dim_value: 'signed_in', value: 208 },
+  );
+  const html = A.views.overview.render();
+  const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
+  assert.equal(f.steps[3].step, 'Started sign-up');
+  assert.equal(f.steps[3].value, 40, 'internal people excluded');
+  assert.equal(f.steps[3].with_registration_started, 12);
+  assert.equal(f.steps[4].pct_of_previous, 35 / 40, 'accounts are part of started sign-up');
+  assert.match(html, /Started sign-up: 40 people, 12 of them through the landing code \(registration_started\) and 28 who created the account directly/);
+  assert.equal(f.steps[5].value, 2, 'two external people signed in between Nov 1 and Nov 14, not 208 events');
+  assert.equal(f.steps[5].counts, 'people');
+  assert.match(html, /2<em>people<\/em>/);
+});
+
+test('PostHog started sign-up counts the first registration_started, account_created or $identify per person', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test', POSTHOG_PROJECT_CREATED_ENABLED: '0' });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(console, 'warn', () => {});
+  let sql = '';
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    const q = JSON.parse(opts.body).query.query;
+    if (q.includes("event IN ('registration_started', '$identify', 'account_created')")) { sql = q; return response({ results: [[date, 'External', 40, 12], [date, 'Internal', 7, 7]] }); }
+    return response({ results: [] });
+  });
+  const load = await connectors.posthog();
+  assert.match(sql, /person\.created_at >= toDate/, 'same person filter as Accounts created');
+  const sum = (m, f = () => true) => load.metrics.filter((r) => r.metric === m && f(r)).reduce((n, r) => n + r.value, 0);
+  assert.equal(sum('ph_signup_starts', (r) => r.dim_value !== 'Internal'), 40);
+  assert.equal(sum('ph_signup_starts_reg', (r) => r.dim_value !== 'Internal'), 12);
+  assert.equal(load.snapshots.find((x) => x.key === 'signup_start_coverage').rows[0].available, true);
 });

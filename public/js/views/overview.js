@@ -219,34 +219,42 @@
     steps.push(D.has('ga4', 'ga_exec_geo_sessions')
       ? { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: D.sum('ga4', 'ga_exec_geo_sessions', all ? null : inCountry, from, to), ...onSite }
       : { name: 'Landing sessions', src: 'GA4 · go.think4ever.com', n: null, note: 'GA4 go-host sessions not synced', ...onSite });
-    // 4. Registration started (PostHog, first registration_started per person, internal excluded): the visitor types
-    // the email on the landing and asks for the 6-digit code. The landing signs up without a HubSpot form, so HubSpot
-    // form submissions are a separate path, shown under the funnel and in the channel table.
-    const regReady = D.covered('posthog', 'registration_coverage', from, to);
-    const registrations = !regReady ? null : all
-      ? D.sum('posthog', 'ph_signups', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', from, to)
-      : D.sum('posthog', 'ph_signups_geo', inCountry, from, to);
-    steps.push({ name: 'Registration started', src: 'PostHog · first registration_started · External', n: registrations, note: 'Registration coverage unavailable; not zero' });
+    // 4. Started sign-up (PostHog): people whose first registration_started, account_created or $identify falls in the
+    // window, internal excluded. Every account created started, so step 5 is always part of step 4. The landing signs
+    // up without a HubSpot form, so HubSpot form submissions are a separate path, under the funnel and in the channel table.
+    const notInternal = (r) => r.dim === 'account_type' && r.dim_value !== 'Internal';
+    const startsReady = D.covered('posthog', 'signup_start_coverage', from, to);
+    if (!all) steps.push(split('Started sign-up', 'PostHog · registration started or account created'));
+    else steps.push({ name: 'Started sign-up', src: 'PostHog · registration started or account created · External', n: startsReady ? D.sum('posthog', 'ph_signup_starts', notInternal, from, to) : null,
+      withReg: startsReady ? D.sum('posthog', 'ph_signup_starts_reg', notInternal, from, to) : null, note: 'Sign-up coverage unavailable; not zero' });
     // 5. Accounts created (memory #134: External first account_created or $identify, all hosts, internal excluded)
     const covered = D.covered('posthog', 'account_coverage', from, to);
     const accounts = !covered ? null : all
       ? D.sum('posthog', 'ph_accounts', (r) => r.dim === 'account_type' && r.dim_value !== 'Internal', from, to)
       : D.sum('posthog', 'ph_accounts_geo', inCountry, from, to);
     steps.push({ name: 'Accounts created', src: 'PostHog · first account_created or $identify · External', n: accounts, note: 'Account coverage unavailable; not zero',
-      over: 'one-click sign-up (Google) and some Developer Network links create the account without a registration_started event' });
-    // 6. Logins (PostHog signed_in events; entries to the platform; events, not people)
-    const loginsSynced = metricsList().some((r) => r.source === 'posthog' && r.metric === 'ph_event' && r.dim_value === 'signed_in');
-    // Shown in place but `aside`: login events include returning accounts, so they are not a subset of
-    // accounts created and never enter a step % or the weakest step. Projects compare with accounts.
-    const loginsAside = { aside: true, bridge: 'Logins are events, not people · not part of the step %' };
-    if (!loginsSynced) steps.push({ name: 'Logins', src: 'PostHog · signed_in', n: null, note: 'No signed_in event is synced yet', ...loginsAside });
-    else if (!all) steps.push({ ...split('Logins', 'PostHog · signed_in'), ...loginsAside });
-    else steps.push({ name: 'Logins', src: 'PostHog · signed_in (events)', n: D.sum('posthog', 'ph_event', (r) => r.dim_value === 'signed_in', from, to), ...loginsAside });
+      over: 'an account created in these dates can have started signing up before them' });
+    // 6. Logins: unique people (portal accounts) with a signed_in in the window, internal excluded, from the PostHog
+    // product usage rows. Shown in place but `aside`: they include accounts created earlier, so they are not part of
+    // step 5 and never enter a step % or the weakest step. Projects compare with accounts.
+    const loginsAside = { aside: true, em: 'people', bridge: 'Unique people who signed in, including accounts created earlier · not part of the step %' };
+    const logins = uniqueLogins(from, to);
+    if (!all) steps.push({ ...split('Logins', 'PostHog · signed_in · unique people'), ...loginsAside });
+    else steps.push({ name: 'Logins', src: 'PostHog · signed_in · unique people, internal excluded', n: logins, note: 'Product usage not synced yet', ...loginsAside });
     // 7. Projects created (PostHog project_created)
     if (!all) steps.push(split('Projects created', 'PostHog · project_created'));
     else steps.push({ name: 'Projects created', src: 'PostHog · project_created', n: D.has('posthog', 'ph_event') ? D.sum('posthog', 'ph_event', (r) => r.dim_value === 'project_created', from, to) : null, note: 'PostHog events not synced',
       over: 'counts every project created in these dates, also by accounts created earlier, and an account can create several' });
     return steps;
+  }
+  // Unique portal accounts with at least one signed_in day in the window (product usage rows, America/Bogota days).
+  function uniqueLogins(from, to) {
+    const snaps = (A.S.data && A.S.data.snapshots) || [];
+    const head = snaps.filter((x) => x.source === 'posthog' && x.key === 'product_usage' && x.rows && x.rows[0] && x.rows[0].available === true)
+      .sort((a, b) => String(b.pulled_at || b._at || '').localeCompare(String(a.pulled_at || a._at || '')))[0];
+    if (!head || head.from > from) return null;
+    const rows = snaps.filter((x) => x.source === 'posthog' && /^product_usage_\d+$/.test(String(x.key || '')) && x.from === head.from && x.to === head.to).flatMap((x) => x.rows || []);
+    return rows.filter((r) => !r.internal && (r.signin_days || []).some((d) => d >= from && d <= to)).length;
   }
   const pageCountry = () => (countryOptions().includes(A.S.overviewCountry) ? A.S.overviewCountry : 'all');
   // Everything the funnel card shows, as data: the assistant reads this, so its findings quote the same
@@ -265,7 +273,8 @@
       steps: steps.map((s, i) => {
         const p = prevOf(i), base = p >= 0 ? steps[p] : null;
         return {
-          step: s.name, source: s.src, value: s.n == null ? null : Number(s.n), counts: s.aside ? 'events' : undefined, note: s.n == null ? s.note : undefined,
+          step: s.name, source: s.src, value: s.n == null ? null : Number(s.n), counts: s.aside ? (s.em === 'people' ? 'people' : 'events') : undefined, note: s.n == null ? s.note : undefined,
+          with_registration_started: s.withReg != null ? s.withReg : undefined,
           pct_of_previous: base && base.n > 0 && s.n != null ? s.n / base.n : null, previous_step: base ? base.name : undefined,
           above_previous_because: base && base.n != null && s.n != null && s.n > base.n ? s.over : undefined,
         };
@@ -354,9 +363,9 @@
       ['Impressions', 'Meta Ads and Google Ads, plus the posts of the LinkedIn company page (organic). Ads are campaign traffic; the LinkedIn page is general.'],
       ['Clicks to the landing', 'Meta outbound clicks, Google Ads clicks and the clicks on the LinkedIn company page posts. LinkedIn reports every click on a post, so its part can include clicks that do not open the landing.'],
       ['Landing sessions', 'GA4 sessions on go.think4ever.com from every source: ads, organic, direct and emails.'],
-      ['Registration started', 'PostHog, the first registration_started of each person, internal excluded: the visitor types the email on the landing and asks for the 6-digit code.'],
-      ['Accounts created', 'PostHog, the first account_created or $identify of each person, External only: the visitor entered the code, or signed up in one click with Google. One-click sign-up skips Registration started, so this step can be larger.'],
-      ['Logins', 'PostHog signed_in events, not people. They include accounts created before these dates, so they are shown for reference and are not part of the step %.'],
+      ['Started sign-up', 'PostHog, people who typed their email on the landing and asked for the 6-digit code (registration_started), plus people who created the account directly, as one-click sign-up with Google does without that event. Internal excluded. Every account created is part of this step.'],
+      ['Accounts created', 'PostHog, the first account_created or $identify of each person, External only: the visitor entered the code, or signed up in one click with Google.'],
+      ['Logins', 'PostHog, unique people who signed in at least once in these dates, internal excluded. They include accounts created before these dates, so they are shown for reference and are not part of the step %.'],
       ['Projects created', 'PostHog project_created events in these dates. It can be larger than Accounts created: older accounts create projects too, and one account can create several.'],
     ];
     return `<details class="collapsible ov-how"><summary>${U.icon('chevron-right', 'fa-solid', 'chev')}How each step is measured</summary><div class="collapsible-body"><dl class="defs">${items.map(([t, d]) => `<div><dt>${U.esc(t)}</dt><dd>${U.esc(d)}</dd></div>`).join('')}</dl><p class="card-note">HubSpot form submissions (the Early Builders program form and other site forms) are not a step: the landing has no HubSpot form. They are listed under the funnel and in the channel table. Each step comes from its own source (ad platforms, GA4, HubSpot, PostHog) and is not the same group of people moving down, so the % between steps is indicative. When a step is larger than the one above, the funnel says why instead of showing more than 100%.</p></div></details>`;
@@ -367,6 +376,8 @@
     const country = pageCountry();
     const steps = funnelSteps(from, to, country);
     const weak = C.weakest(steps);
+    const st = steps[3];
+    const regLine = st && st.n != null && st.withReg != null ? `<p class="card-note">Started sign-up: ${U.fmt(st.n)} people, ${U.fmt(st.withReg)} of them through the landing code (registration_started) and ${U.fmt(st.n - st.withReg)} who created the account directly (one-click sign-up or a direct link).</p>` : '';
     const weakLine = weak > 0
       ? `Weakest step: ${steps[C.prevStep(steps, weak)].name} → ${steps[weak].name}, ${U.pct(steps[weak].n / steps[C.prevStep(steps, weak)].n, 1)} continue.`
       : 'The weakest step appears once two consecutive steps have data.';
@@ -381,7 +392,7 @@
       cls: 'chart-card', title: 'Funnel · 7 steps',
       sub: `${U.win(from, to)} · ${country === 'all' ? 'All countries' : U.esc(country)} · % versus the previous step`,
       right: picker,
-      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${howMeasured()}${channels}${formLine}${byChannel}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
+      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${regLine}${howMeasured()}${channels}${formLine}${byChannel}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
     });
   }
 
