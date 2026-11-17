@@ -330,7 +330,8 @@
     // Gmail ads is a Google Ads campaign: its spend and clicks in the window, to read the cost per builder.
     const gmailCampaign = (r) => /gmail|early.?builders/i.test(String(r.dim_value || ''));
     const gmail = D.has('google_ads', 'ad_spend') ? { spend: D.sum('google_ads', 'ad_spend', gmailCampaign, from, to), clicks: D.sum('google_ads', 'ad_clicks', gmailCampaign, from, to) } : null;
-    return { rows, accountsReady, buildersReady, gmail };
+    const internalBuilders = buildersReady ? D.sum('posthog', 'ph_builders_internal', null, from, to) : null;
+    return { rows, accountsReady, buildersReady, gmail, internalBuilders };
   }
   // Form submissions split by HubSpot form, so Developer Network registrations (the Early Builders form)
   // read apart from the landing sign-up form. Same window and test filter as step 4.
@@ -362,7 +363,7 @@
     ], rows, (r) => (r.subtotal ? 'is-subtotal' : r.group === 'test' ? 'muted' : ''));
     const accTotal = sp.accountsReady ? sum(sp.rows, 'accounts') : null;
     const gap = steps[4] && steps[4].n != null && accTotal != null && accTotal !== steps[4].n ? ` The channels cover ${U.fmt(accTotal)} of the ${U.fmt(steps[4].n)} accounts in step 5; the rest arrived before the channel was synced.` : '';
-    return `<div class="ov-by-channel"><h4 class="cf-sub">Builders by channel</h4>${table}<p class="card-note">Builders = people who verified their account (first account_verified, internal excluded), the same definition as the Early Builders dashboard; Accounts created is step 5 and includes accounts not verified yet. Each person counts once, by the UTMs of their first visit. The small number next to each channel is HubSpot form submissions, a separate path. Early Builders counts since Oct 1: set From to 10/01/2026 to compare its total.${sp.buildersReady ? '' : ' Builders by channel arrive with the next PostHog sync; Pending is not zero.'}${U.esc(gap)}</p></div>`;
+    return `<div class="ov-by-channel"><h4 class="cf-sub">Builders by channel</h4>${table}<p class="card-note">Builders = people who verified their account (first account_verified, internal excluded), the same definition as the Early Builders dashboard; Accounts created is step 5 and includes accounts not verified yet. Each person counts once, by the UTMs of their first visit. The small number next to each channel is HubSpot form submissions, a separate path. Early Builders counts since Oct 1: set From to 10/01/2026 to compare its total.${sp.internalBuilders ? ` ${U.fmt(sp.internalBuilders)} more verified builder${sp.internalBuilders === 1 ? ' is' : 's are'} internal (think4ever, moadbus or t4e in the email, company or name) and left out here; Early Builders only leaves out @think4ever.com and the think4ever or moadbus company.` : ''}${sp.buildersReady ? '' : ' Builders by channel arrive with the next PostHog sync; Pending is not zero.'}${U.esc(gap)}</p></div>`;
   }
   // One line per step: where the number comes from and what it counts, so a step larger than the one above reads as expected.
   function howMeasured() {

@@ -1962,6 +1962,7 @@ test('builders by channel are verified accounts, like Early Builders; forms sit 
     { source: 'posthog', metric: 'ph_accounts', date: d, dim: 'account_type', dim_value: 'External', value: 35 },
     m('ph_accounts_origin', 'gmail', 16), m('ph_accounts_origin', 'referral', 3), m('ph_accounts_origin', 'none', 16),
     m('ph_builders_origin', 'gmail', 14), m('ph_builders_origin', 'referral', 3), m('ph_builders_origin', 'none', 10),
+    { source: 'posthog', metric: 'ph_builders_internal', date: d, dim: 'account_type', dim_value: 'Internal', value: 9 },
     { source: 'google_ads', metric: 'ad_spend', date: d, dim: 'campaign', dim_value: 'Early Builders CO - Gmail - 2026-11', value: 490 },
     { source: 'google_ads', metric: 'ad_clicks', date: d, dim: 'campaign', dim_value: 'Early Builders CO - Gmail - 2026-11', value: 1044 },
   );
@@ -1972,6 +1973,7 @@ test('builders by channel are verified accounts, like Early Builders; forms sit 
   assert.match(html, /<b>General traffic<\/b> <small class="text-muted">0 forms<\/small><\/td><td class="td-num"><b>10<\/b><\/td><td class="td-num"><b>16<\/b>/);
   assert.match(html, /Google Ads \$490\.00, 1,044 clicks · \$35\.00 per builder/);
   assert.match(html, /same definition as the Early Builders dashboard/);
+  assert.match(html, /9 more verified builders are internal \(think4ever, moadbus or t4e in the email, company or name\) and left out here/);
 });
 
 test('PostHog builders are the first account_verified per person, by channel, internal excluded', async (t) => {
@@ -1988,5 +1990,6 @@ test('PostHog builders are the first account_verified per person, by channel, in
   const load = await connectors.posthog();
   const ch = (k) => load.metrics.filter((r) => r.metric === 'ph_builders_origin' && r.dim_value === k).reduce((n, r) => n + r.value, 0);
   assert.deepEqual([ch('gmail'), ch('influencer'), ch('none')], [14, 2, 10]);
+  assert.equal(load.metrics.filter((r) => r.metric === 'ph_builders_internal').reduce((n, r) => n + r.value, 0), 5, 'internal builders counted apart');
   assert.equal(load.snapshots.find((x) => x.key === 'builders_coverage').rows[0].available, true);
 });
