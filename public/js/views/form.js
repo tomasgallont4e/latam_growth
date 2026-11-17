@@ -21,7 +21,7 @@
         for (const e of D.formsAll(from, to)) if (!D.isTestForm(e) && String(e.site_host || '').toLowerCase() === HOST) out[e.date] += 1;
         return out;
       } },
-    { id: 'accounts', name: 'Accounts created', short: 'PostHog', src: 'PostHog · first identify · External · all hosts',
+    { id: 'accounts', name: 'Accounts created', short: 'PostHog', src: 'PostHog · first account_created or identify · External · all hosts',
       daily: (D, from, to) => (D.accounts(from, to) == null ? null : D.accountsByDay(from, to)) },
   ];
   const total = (byDay) => (byDay ? Object.values(byDay).reduce((s, v) => s + v, 0) : null);

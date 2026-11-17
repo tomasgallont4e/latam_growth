@@ -410,7 +410,7 @@ test('audited 4 CRM + 34 PostHog case never claims 38 verified accounts or 850% 
   assert.equal(A.D.ga().rate, 508 / 1752);
   const conversion = A.views.conversion.render(), overview = A.views.overview.render();
   assert.match(conversion, /29\.0%/);
-  assert.match(overview, /LATAM 500K goal · .*Monthly · .*sign-ups once per person \(first \$identify/);
+  assert.match(overview, /LATAM 500K goal · .*Monthly · .*sign-ups once per person \(first account_created or \$identify/);
   assert.doesNotMatch(conversion + overview, /850|72\.1%|35\.6%|38 sign-ups|Direct Platform Sign-ups/);
   assert.doesNotMatch(conversion, /Weakest step|drop-off<|continue</);
   A.S.exInt = false;
@@ -609,6 +609,15 @@ test('Overview: dates typed in From/To set the accounts card, the pace chart and
   assert.match(html, /2026-11-10 to 2026-11-13 · From\/To at the top/);
   assert.match(html, /class="goal-focus"/);
   assert.ok((html.match(/goal-col is-dim/g) || []).length >= 1, 'days outside the typed dates are dimmed');
+  // Step 4 split by HubSpot form: Developer Network registrations read apart from the landing sign-up.
+  A.S.data.events = [{ kind: 'form_signup', date: '2026-11-12', form: 'T4E – Early Builders Colombia' }, { kind: 'form_signup', date: '2026-11-13', form: 'T4E – Early Builders Colombia' }, { kind: 'form_signup', date: '2026-11-13', form: 'T4E – Landing Signup LATAM' }, { kind: 'form_signup', date: '2026-11-13', form: 'T4E – Landing Signup LATAM', utm_medium: 'test' }, { kind: 'form_signup', date: '2026-11-05', form: 'T4E – Landing Signup LATAM' }];
+  assert.match(A.views.overview.render(), /ov-forms-by-form">Form submissions by form: Early Builders Colombia <b>2<\/b> · Landing Signup LATAM <b>1<\/b>/);
+  // Accounts split by the HubSpot form matched to the account (daily counts from the connector).
+  assert.doesNotMatch(A.views.overview.render(), /ov-accounts-by-origin/);
+  A.S.data.snapshots.push({ ...available('posthog', 'account_origin_coverage'), to: '2026-11-13', rows: [{ available: true }] });
+  const origin = (n, d, v) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n });
+  A.S.data.metrics.push(origin(5, '2026-11-10', 'Developer Network form'), origin(1, '2026-11-11', 'Developer Network form'), origin(2, '2026-11-13', 'Landing sign-up form'), origin(2, '2026-11-12', 'No form matched'), origin(9, '2026-11-06', 'No form matched'));
+  assert.match(A.views.overview.render(), /ov-accounts-by-origin">Accounts created by origin: Developer Network form <b>6<\/b> · Landing sign-up form <b>2<\/b> · No form matched <b>2<\/b>/);
   // The assistant receives the same seven steps and window the page draws.
   const fed = A.overviewFunnel();
   assert.deepEqual([fed.from, fed.to, fed.set_by, fed.steps.length], ['2026-11-10', '2026-11-13', 'From/To', 7]);
@@ -1046,7 +1055,10 @@ test('Executive PostHog account country rows use event GeoIP on external first i
 
   const load = await connectors.posthog();
   const accountQuery = requests.find((r) => r.query.query.includes("event = '$identify'") && !r.query.query.includes('first_host'));
-  assert.match(accountQuery.query.query, /argMin\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name/);
+  // Accounts = first account_created or $identify per person; country only from the person's first $identify
+  // (account_created is a server event, so its GeoIP is the server's).
+  assert.match(accountQuery.query.query, /event IN \('\$identify', 'account_created'\)/);
+  assert.match(accountQuery.query.query, /argMinIf\(coalesce\(nullIf\(toString\(properties\.\$geoip_country_name[\s\S]*event = '\$identify'\) AS country/);
   assert.match(accountQuery.query.query, /person\.properties\.country/);
   const executiveTotal = load.metrics.find((r) => r.metric === 'ph_exec_accounts');
   const executiveGeo = load.metrics.find((r) => r.metric === 'ph_exec_accounts_geo');
@@ -1208,7 +1220,7 @@ test('loaded PostHog funnel exposes only aggregate step counts to the assistant 
   assert.equal(JSON.stringify(summary).includes('private@example.com'), false);
 });
 
-test('Overview sign-up goal stays on first identify and outcomes are separate', () => {
+test('Overview sign-up goal counts first account_created or identify and outcomes are separate', () => {
   const A = auditedDashboard();
   A.S.data.snapshots.push({ ...available('posthog', 'account_coverage'), rows: [{ available: true, country_available: true }] });
   A.S.data.snapshots.push({ ...available('posthog', 'accounts_created_coverage'), rows: [{ available: true, event: 'account_created' }] });
@@ -1222,7 +1234,7 @@ test('Overview sign-up goal stays on first identify and outcomes are separate', 
   assert.match(html, /LATAM 500K goal/);
   assert.match(html, /sign-ups once per person/);
   assert.match(html, /data-go="product"/);
-  assert.match(html, /sign-ups once per person \(first \$identify/);
+  assert.match(html, /sign-ups once per person \(first account_created or \$identify/);
   assert.doesNotMatch(html, /Campaign funnel|Marketing-to-Project Activation Funnel/);
 });
 
