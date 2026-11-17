@@ -265,6 +265,28 @@
     ], rows);
     return `<div class="ov-channel-ctr"><h4 class="cf-sub">Impressions → clicks by channel</h4>${table}</div>`;
   }
+  // Step 5 split by origin: the person's first-touch UTMs (utm_*_first in PostHog), one group per account,
+  // computed by the connector from the same rows as Accounts created, so the groups add up to step 5.
+  const ORIGINS = [
+    ['Google Ads', 'google / cpc'],
+    ['Developer Network', 'HubSpot emails and activation bot · hs_email, hs_automation, hubspot / email'],
+    ['Other paid / other UTM', 'Meta and any other tagged visit'],
+    ['No UTM', 'no first-touch source, medium or campaign'],
+  ];
+  function originTable(from, to, accounts) {
+    const U = A.ui, D = A.D;
+    const head = '<h4 class="cf-sub">Accounts created by origin</h4>';
+    if (!D.covered('posthog', 'account_origin_coverage', from, to)) return `<div class="ov-accounts-by-origin">${head}<p class="card-note"><span class="kpi-awaiting">Pending</span> The origin split arrives with the next PostHog sync; not zero.</p></div>`;
+    const rows = ORIGINS.map(([name, rule]) => ({ name, rule, n: D.sum('posthog', 'ph_accounts_origin', (r) => r.dim === 'origin' && r.dim_value === name, from, to) }));
+    const total = rows.reduce((t, r) => t + r.n, 0);
+    const table = U.table([
+      { t: 'Origin', f: (r) => `${U.esc(r.name)}<br><small class="text-muted">${U.esc(r.rule)}</small>` },
+      { t: 'Accounts created', num: 1, f: (r) => U.fmt(r.n) },
+      { t: 'Share', num: 1, f: (r) => (total ? U.pct(r.n / total, 0) : '–') },
+    ], rows);
+    const check = accounts != null && accounts !== total ? ` The split covers ${U.fmt(total)} of the ${U.fmt(accounts)} accounts in step 5 because the origin arrived with a later sync.` : '';
+    return `<div class="ov-accounts-by-origin">${head}${table}<p class="card-note">Each account counts once, by the UTMs of its first visit stored on the PostHog person (utm_source_first, utm_medium_first, utm_campaign_first). No UTM means all three are empty.${U.esc(check)}</p></div>`;
+  }
   function funnelCard(from, to) {
     const U = A.ui, C = A.charts, S = A.S;
     const options = countryOptions();
@@ -284,19 +306,14 @@
     const formRows = Object.entries(byForm).sort((a, b) => b[1] - a[1]);
     const channels = country === 'all' ? channelCtr(from, to) : '';
     const formLine = formRows.length ? `<p class="card-note ov-forms-by-form">Form submissions by form: ${formRows.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Early Builders is the Developer Network registration; Landing Signup is the general sign-up.</p>` : '';
-    // Accounts created split by the HubSpot form matched to the account's email (HMAC; no identifiers
-    // stored): Developer Network (Early Builders form), landing sign-up form, or no form matched.
-    const originOk = country === 'all' && A.D.covered('posthog', 'account_origin_coverage', from, to);
-    const originRows = originOk ? ['Developer Network form', 'Landing sign-up form', 'No form matched']
-      .map((name) => [name, A.D.sum('posthog', 'ph_accounts_origin', (r) => r.dim === 'origin' && r.dim_value === name, from, to)]) : [];
-    const originLine = originRows.some(([, n]) => n > 0) ? `<p class="card-note ov-accounts-by-origin">Accounts created by origin: ${originRows.map(([name, n]) => `${U.esc(name)} <b>${U.fmt(n)}</b>`).join(' · ')}. Matched by the email used on the HubSpot form; an account with no form came straight to the product or signed up in one click.</p>` : '';
+    const origins = country === 'all' ? originTable(from, to, steps[4] && steps[4].n) : '';
     const picker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country"><option value="all"${country === 'all' ? ' selected' : ''}>All countries</option>${options.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
     const note = `<p class="card-note">Each step comes from its own source and is not linked person by person, so the % between steps is indicative. Accounts created is the same number as the 500K goal (External, internal excluded). Logins count signed_in events, not people, and include returning accounts, so they are shown for reference and Projects created is compared with Accounts created. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
     return U.card({
       cls: 'chart-card', title: 'Funnel · 7 steps',
       sub: `${U.win(from, to)} · ${country === 'all' ? 'All countries' : U.esc(country)} · % versus the previous step`,
       right: picker,
-      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${channels}${formLine}${originLine}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
+      body: C.funnel(steps, 'Funnel from impressions to projects created') + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${channels}${formLine}${origins}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
     });
   }
 

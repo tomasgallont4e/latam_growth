@@ -1752,3 +1752,69 @@ test('Overview groups by week by default and splits impressions to clicks by ad 
   assert.equal(fed.steps[0].value, 12000, 'the channel rows add up to the funnel impressions');
   assert.equal(fed.steps[1].value, 140, 'and to the funnel clicks');
 });
+
+test('account origin puts each account in one group from its first-touch UTMs', () => {
+  const { accountOrigin, ACCOUNT_ORIGINS } = require('../lib/connectors');
+  assert.equal(accountOrigin({ source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611' }), 'Google Ads');
+  assert.equal(accountOrigin({ source: 'Google', medium: 'CPC', campaign: '(not set)' }), 'Google Ads');
+  for (const source of ['hs_email', 'hs_automation', 'hubspot']) assert.equal(accountOrigin({ source, medium: 'email', campaign: 'x' }), 'Developer Network');
+  assert.equal(accountOrigin({ source: 'hubspot', medium: 'social', campaign: 'x' }), 'Other paid / other UTM');
+  assert.equal(accountOrigin({ source: 'facebook', medium: 'paid_social', campaign: 'eb' }), 'Other paid / other UTM');
+  assert.equal(accountOrigin({ source: '(not set)', medium: '(not set)', campaign: '(not set)' }), 'No UTM');
+  assert.equal(accountOrigin({ source: '', medium: '', campaign: 'spring' }), 'Other paid / other UTM', 'a campaign alone is still a UTM');
+  assert.deepEqual(ACCOUNT_ORIGINS, ['Google Ads', 'Developer Network', 'Other paid / other UTM', 'No UTM']);
+});
+
+test('PostHog accounts by origin come from the same rows as Accounts created and add up to it', async (t) => {
+  env(t, { POSTHOG_HOST: 'https://example.test', POSTHOG_PROJECT_ID: '1', POSTHOG_API_KEY: 'test', POSTHOG_PROJECT_CREATED_ENABLED: '0' });
+  const { connectors } = require('../lib/connectors');
+  t.mock.method(console, 'warn', () => {});
+  let accountSql = '';
+  t.mock.method(global, 'fetch', async (url, opts) => {
+    const sql = JSON.parse(opts.body).query.query;
+    if (sql.includes("event IN ('$identify', 'account_created')") && sql.includes('count() AS n, source, medium, campaign')) {
+      accountSql = sql;
+      return response({ results: [
+        [date, 'External', 'Colombia', 5, 'google', 'cpc', 'early_builders_co_202611'],
+        [date, 'External', '', 2, 'hs_automation', 'email', 'dn_activation'],
+        [date, 'Unknown', '', 1, 'hs_email', 'email', 'dn_welcome'],
+        [date, 'External', 'Mexico', 3, '(not set)', '(not set)', '(not set)'],
+        [date, 'External', 'Chile', 1, 'facebook', 'paid_social', 'eb'],
+        [date, 'Internal', 'Colombia', 4, 'google', 'cpc', 'x'],
+      ] });
+    }
+    return response({ results: [] });
+  });
+  const load = await connectors.posthog();
+  assert.match(accountSql, /utm_source_first/);
+  const sum = (metric, f = () => true) => load.metrics.filter((r) => r.metric === metric && f(r)).reduce((n, r) => n + r.value, 0);
+  const origin = (name) => sum('ph_accounts_origin', (r) => r.dim_value === name);
+  assert.equal(origin('Google Ads'), 5);
+  assert.equal(origin('Developer Network'), 3);
+  assert.equal(origin('No UTM'), 3);
+  assert.equal(origin('Other paid / other UTM'), 1);
+  assert.equal(sum('ph_accounts_origin'), sum('ph_accounts', (r) => r.dim_value !== 'Internal'), 'groups add up to step 5');
+  const cov = load.snapshots.find((s) => s.key === 'account_origin_coverage');
+  assert.equal(cov.rows[0].available, true);
+});
+
+test('Overview funnel shows accounts created by origin, and Pending before the origin sync', () => {
+  const A = dashboard();
+  A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
+  assert.match(A.views.overview.render(), /Accounts created by origin<\/h4><p class="card-note"><span class="kpi-awaiting">Pending/);
+  const d = '2026-11-10';
+  A.S.data.snapshots.push(
+    { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
+    { source: 'posthog', key: 'account_origin_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
+  );
+  A.S.data.metrics.push(
+    { source: 'posthog', metric: 'ph_accounts', date: d, dim: 'account_type', dim_value: 'External', value: 10 },
+    ...[['Google Ads', 5], ['Developer Network', 3], ['No UTM', 2]].map(([v, n]) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n })),
+  );
+  const html = A.views.overview.render();
+  assert.match(html, /Google Ads<br><small class="text-muted">google \/ cpc<\/small><\/td><td class="td-num">5<\/td><td class="td-num">50%/);
+  assert.match(html, /Developer Network<br>.*?<td class="td-num">3<\/td>/);
+  assert.match(html, /Other paid \/ other UTM<br>.*?<td class="td-num">0<\/td>/);
+  assert.doesNotMatch(html, /The split covers/, 'groups match step 5');
+  assert.doesNotMatch(html, /Developer Network form|No form matched/);
+});
