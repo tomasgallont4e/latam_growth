@@ -1855,3 +1855,25 @@ test('the assistant reads the funnel card as drawn: window, country, step %, wea
   assert.equal(c.steps[4].value, 3, 'the country picked on the card reaches the assistant');
   assert.deepEqual(c.channels, []);
 });
+
+test('step 1 adds the organic LinkedIn page impressions; step 2 keeps only clicks to the landing', () => {
+  const A = dashboard();
+  A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
+  const d = '2026-11-10';
+  A.S.data.metrics.push(
+    { source: 'meta', metric: 'ad_impressions', value: 10000, date: d }, { source: 'meta', metric: 'ad_outbound_clicks', value: 100, date: d },
+    { source: 'google_ads', metric: 'ad_impressions', value: 2000, date: d }, { source: 'google_ads', metric: 'ad_clicks', value: 60, date: d },
+    { source: 'linkedin', metric: 'post_impressions', value: 3000, date: d }, { source: 'linkedin', metric: 'post_clicks', value: 90, date: d },
+  );
+  const html = A.views.overview.render();
+  const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
+  assert.equal(f.steps[0].value, 15000, 'Meta + Google + LinkedIn page');
+  assert.equal(f.steps[0].source, 'Meta Ads · Google Ads · LinkedIn page');
+  assert.equal(f.steps[1].value, 160, 'LinkedIn content clicks are not clicks to the landing');
+  assert.match(html, /LinkedIn · organic page<br><small class="text-muted">Organic posts · impressions count in step 1/);
+  assert.match(html, /Google Ads<\/td><td class="td-num">2,000<\/td><td class="td-num">60 <small class="text-muted">clicks<\/small><\/td><td class="td-num"><b>3\.00%<\/b>/, 'the best rate is ranked among paid channels only');
+  assert.deepEqual(f.channels.map((c) => [c.channel, c.organic]), [['Meta Ads', false], ['Google Ads', false], ['LinkedIn · organic page', true]]);
+  A.S.data.metrics.push({ source: 'meta', metric: 'ad_impressions_geo', value: 4000, date: d, dim: 'country', dim_value: 'Colombia' }, { source: 'ga4', metric: 'ga_exec_geo_sessions', value: 5, date: d, dim: 'country', dim_value: 'Colombia' });
+  A.S.overviewCountry = 'Colombia';
+  assert.equal(A.overviewFunnel().steps[0].value, 4000, 'a country view counts ads only: LinkedIn page has no country');
+});

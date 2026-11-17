@@ -193,12 +193,15 @@
     const split = (name, src) => ({ name, src, n: null, note: NOT_SPLIT });
     const add = (parts) => parts.reduce((s, v) => s + (Number(v) || 0), 0);
     const steps = [];
-    // 1. Impressions (Meta Ads + Google Ads; LinkedIn Ads is not used, memory #151)
+    // 1. Impressions: Meta Ads + Google Ads + the organic LinkedIn company page (no LinkedIn Ads, memory #151).
+    // LinkedIn page statistics have no country, so a country view counts the ads only.
     const impMetric = all ? 'ad_impressions' : 'ad_impressions_geo';
     const impNets = ['meta', 'google_ads'].filter((k) => D.has(k, impMetric));
-    if (impNets.length) steps.push({ name: 'Impressions', src: 'Meta Ads · Google Ads', n: add(impNets.map((k) => D.sum(k, impMetric, all ? null : inCountry, from, to))) });
-    else steps.push(all ? { name: 'Impressions', src: 'Meta Ads · Google Ads', n: null, note: 'No ad platform has reported' } : split('Impressions', 'Meta Ads · Google Ads'));
-    steps[0].group = 'Ads · bars and % of impressions';
+    const liImp = all && D.has('linkedin', 'post_impressions') ? D.sum('linkedin', 'post_impressions', null, from, to) : null;
+    const impSrc = all ? 'Meta Ads · Google Ads · LinkedIn page' : 'Meta Ads · Google Ads';
+    if (impNets.length || liImp != null) steps.push({ name: 'Impressions', src: impSrc, n: add([...impNets.map((k) => D.sum(k, impMetric, all ? null : inCountry, from, to)), liImp]) });
+    else steps.push(all ? { name: 'Impressions', src: impSrc, n: null, note: 'No ad platform has reported' } : split('Impressions', impSrc));
+    steps[0].group = all ? 'Ads and LinkedIn page · bars and % of impressions' : 'Ads · bars and % of impressions';
     // 2. Clicks to the landing (Meta outbound + Google Ads clicks); never split by country
     if (!all) steps.push(split('Clicks to the landing', 'Meta outbound · Google Ads clicks'));
     else {
@@ -261,19 +264,22 @@
         };
       }),
       weakest_step: weak > 0 ? { from: steps[C.prevStep(steps, weak)].name, to: steps[weak].name, continue: steps[weak].n / steps[C.prevStep(steps, weak)].n } : null,
-      channels: all ? channelRows(w.from, w.to).map((r) => ({ channel: r.name, impressions: r.impressions, clicks: r.clicks, clicks_kind: r.kind, impressions_to_clicks: r.ctr })) : [],
+      channels: all ? channelRows(w.from, w.to).map((r) => ({ channel: r.name, impressions: r.impressions, clicks: r.clicks, clicks_kind: r.kind, impressions_to_clicks: r.ctr, organic: !!r.organic })) : [],
       forms: all ? formRows(w.from, w.to).map(([form, n]) => ({ form, submissions: n })) : [],
       accounts_by_origin: origins ? origins.map((r) => ({ origin: r.name, rule: r.rule, accounts: r.n })) : null,
     };
   };
-  // Step 1 → 2 per ad channel, from the same metrics and window as the funnel, so the rows add up to it.
+  // Step 1 → 2 per channel, from the same metrics and window as the funnel: the impressions add up to step 1.
+  // LinkedIn is the organic company page (no LinkedIn Ads). Its post clicks are content clicks, not clicks to the
+  // landing, so they are not part of step 2.
   function channelRows(from, to) {
     const D = A.D;
     return [
-      { name: 'Meta Ads', imp: 'meta', clk: ['meta', 'ad_outbound_clicks'], kind: 'outbound clicks' },
-      { name: 'Google Ads', imp: 'google_ads', clk: ['google_ads', 'ad_clicks'], kind: 'clicks' },
-    ].filter((c) => D.has(c.imp, 'ad_impressions')).map((c) => {
-      const imp = D.sum(c.imp, 'ad_impressions', null, from, to);
+      { name: 'Meta Ads', imp: ['meta', 'ad_impressions'], clk: ['meta', 'ad_outbound_clicks'], kind: 'outbound clicks' },
+      { name: 'Google Ads', imp: ['google_ads', 'ad_impressions'], clk: ['google_ads', 'ad_clicks'], kind: 'clicks' },
+      { name: 'LinkedIn · organic page', imp: ['linkedin', 'post_impressions'], clk: ['linkedin', 'post_clicks'], kind: 'content clicks', organic: true },
+    ].filter((c) => D.has(c.imp[0], c.imp[1])).map((c) => {
+      const imp = D.sum(c.imp[0], c.imp[1], null, from, to);
       const clicks = D.has(c.clk[0], c.clk[1]) ? D.sum(c.clk[0], c.clk[1], null, from, to) : null;
       return { ...c, impressions: imp, clicks, ctr: clicks != null && imp ? clicks / imp : null };
     });
@@ -281,14 +287,16 @@
   function channelCtr(from, to) {
     const U = A.ui, rows = channelRows(from, to);
     if (!rows.length) return '';
-    const best = Math.max(...rows.map((r) => r.ctr || 0));
+    const paid = rows.filter((r) => !r.organic);
+    const best = Math.max(0, ...paid.map((r) => r.ctr || 0));
     const table = U.table([
-      { t: 'Channel', f: (r) => U.esc(r.name) },
+      { t: 'Channel', f: (r) => (r.organic ? `${U.esc(r.name)}<br><small class="text-muted">Organic posts · impressions count in step 1, clicks do not count in step 2</small>` : U.esc(r.name)) },
       { t: 'Impressions', num: 1, f: (r) => U.fmt(r.impressions) },
       { t: 'Clicks to the landing', num: 1, f: (r) => (r.clicks == null ? '<span class="text-muted">Pending</span>' : `${U.fmt(r.clicks)} <small class="text-muted">${r.kind}</small>`) },
-      { t: 'Impressions → clicks', num: 1, f: (r) => (r.ctr == null ? '–' : r.ctr === best && rows.length > 1 && best > 0 ? `<b>${U.pct(r.ctr, 2)}</b>` : U.pct(r.ctr, 2)) },
+      { t: 'Impressions → clicks', num: 1, f: (r) => (r.ctr == null ? '–' : !r.organic && r.ctr === best && paid.length > 1 && best > 0 ? `<b>${U.pct(r.ctr, 2)}</b>` : U.pct(r.ctr, 2)) },
     ], rows);
-    return `<div class="ov-channel-ctr"><h4 class="cf-sub">Impressions → clicks by channel</h4>${table}</div>`;
+    const note = rows.some((r) => r.organic) ? '<p class="card-note">Step 1 adds up the three rows. Step 2 adds up only Meta Ads and Google Ads: LinkedIn is the organic company page, and a click on a post is not necessarily a click to the landing.</p>' : '';
+    return `<div class="ov-channel-ctr"><h4 class="cf-sub">Impressions → clicks by channel</h4>${table}${note}</div>`;
   }
   // Step 5 split by origin: the person's first-touch UTMs (utm_*_first in PostHog), one group per account,
   // computed by the connector from the same rows as Accounts created, so the groups add up to step 5.
