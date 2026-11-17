@@ -2007,3 +2007,17 @@ test('each funnel step shows its market target next to the continue %', () => {
   assert.equal(f.steps[1].target_pct_of_previous, 0.03);
   assert.equal(f.steps[5].target_pct_of_previous, undefined, 'logins have no target');
 });
+
+
+test('the assistant gets the previous window of the same length and the ad spend', () => {
+  const A = dashboard();
+  A.S.from = '2026-11-08'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
+  A.S.data.metrics.push(
+    { source: 'meta', metric: 'ad_impressions', value: 1000, date: '2026-11-10' }, { source: 'meta', metric: 'ad_spend', value: 50, date: '2026-11-10' },
+    { source: 'meta', metric: 'ad_impressions', value: 400, date: '2026-11-03' }, { source: 'meta', metric: 'ad_spend', value: 20, date: '2026-11-03' },
+  );
+  const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
+  assert.equal(f.previous_window.window, 'Nov 1 – Nov 7');
+  assert.equal(f.previous_window.steps[0].value, 400);
+  assert.deepEqual(f.spend, [{ platform: 'Meta Ads', spend: 50, previous_spend: 20 }]);
+});

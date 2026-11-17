@@ -131,7 +131,7 @@
     rerender();
     try {
       const result = await A.api('api/assistant/ask', { method: 'POST', body: JSON.stringify({
-        mode: 'insights', question: 'Start with one high-level suggestion on how to manage the product given how the funnel is doing, then give two to four short findings about the 7-step funnel card exactly as the page shows it. Be concise.', context: snapshot,
+        mode: 'insights', question: 'What should the team do this week? Start with the decision, then three findings that say what happened against the target or the previous window, the likely reason and the action.', context: snapshot,
       }) });
       if (sequence !== state.insightSeq) return;
       if (JSON.stringify(context()) !== key) {

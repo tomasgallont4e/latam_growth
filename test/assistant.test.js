@@ -144,7 +144,7 @@ test('assistant forwards only bounded aggregate dashboard data to Anthropic', as
   assert.equal(result.answer, 'Organic Search led.');
   const payload = JSON.parse(request.options.body);
   assert.equal(payload.max_tokens, 16000);
-  assert.deepEqual(payload.output_config, { effort: 'low' });
+  assert.deepEqual(payload.output_config, { effort: 'medium' }, 'insights reason at medium effort');
   assert.match(payload.system, /Answer in English/);
   assert.doesNotMatch(payload.system, /Answer in Spanish/);
   assert.equal(request.url, 'https://api.anthropic.com/v1/messages');
@@ -276,11 +276,13 @@ test('automatic findings get only the funnel card with its tables, and the promp
   let sent;
   await ask(body, { apiKey: 'test-secret', fetchImpl: async (url, options) => { sent = JSON.parse(options.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }; } });
   assert.match(sent.system, /Each finding must make sense on its own/);
-  assert.match(sent.system, /"## Suggestion" with one or two sentences/);
+  assert.match(sent.system, /"## Suggestion" with one or two sentences: the single decision/);
+  assert.match(sent.system, /the likely reason; and one concrete action for this week/);
+  assert.deepEqual(sent.output_config, { effort: 'medium' });
   assert.ok(sent.system.indexOf('## Suggestion') < sent.system.indexOf('## Findings'), 'the suggestion comes first');
-  assert.match(sent.system, /between 150 and 250 words/);
+  assert.match(sent.system, /under 220 words/);
   assert.match(sent.system, /Never write internal names such as overview_funnel/);
-  assert.match(sent.system, /never compare with another period/);
+  assert.match(sent.system, /previous_window \(the same number of days just before\)/);
   assert.doesNotMatch(sent.messages[0].content, /ga4_sessions|Organic Search/);
 });
 

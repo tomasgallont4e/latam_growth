@@ -276,7 +276,15 @@
     const prevOf = (i) => (i > 0 && !steps[i].aside ? C.prevStep(steps, i) : -1);
     const all = country === 'all';
     const byChannel = all ? channelSplit(w.from, w.to) : null;
+    // The same number of days just before the window, so the assistant can say what moved.
+    const days = U.diffDays(w.from, w.to) + 1;
+    const prevTo = U.addDays(w.from, -1), prevFrom = U.addDays(w.from, -days);
+    const prevSteps = prevTo >= A.LAUNCH ? funnelSteps(prevFrom < A.LAUNCH ? A.LAUNCH : prevFrom, prevTo, country) : [];
+    const D = A.D;
+    const spendOf = (k, a, b) => (D.has(k, 'ad_spend') ? D.sum(k, 'ad_spend', null, a, b) : null);
     return {
+      previous_window: prevSteps.length ? { window: U.win(prevFrom < A.LAUNCH ? A.LAUNCH : prevFrom, prevTo), steps: prevSteps.map((x) => ({ step: x.name, value: x.n == null ? null : Number(x.n) })) } : null,
+      spend: all ? [['Meta Ads', 'meta'], ['Google Ads', 'google_ads']].map(([name, k]) => ({ platform: name, spend: spendOf(k, w.from, w.to), previous_spend: prevSteps.length ? spendOf(k, prevFrom, prevTo) : null })).filter((x) => x.spend != null) : [],
       from: w.from, to: w.to, window: U.win(w.from, w.to),
       set_by: w.mode === 'range' ? 'From/To' : `Group by ${A.D.grainName()}`,
       country: all ? 'All countries' : country,
