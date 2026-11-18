@@ -256,7 +256,7 @@
       why: 'older accounts build too, some several', over: 'counts every project created in these dates, also by accounts created earlier, and an account can create several' });
     for (const st of steps) {
       const t = STEP_TARGETS[st.name];
-      if (t) Object.assign(st, { target: t.pct, targetMax: t.max, targetAtLeast: !!t.atLeast });
+      if (t) Object.assign(st, { target: t.pct, targetMax: t.max, targetAtLeast: !!t.atLeast, targetBasis: t.basis });
     }
     return steps;
   }
@@ -300,12 +300,13 @@
           above_previous_because: base && base.n != null && s.n != null && s.n > base.n ? s.over : undefined,
           target_pct_of_previous: s.target != null ? s.target : undefined,
           target_max_pct_of_previous: s.targetMax != null ? s.targetMax : undefined,
+          target_basis: s.targetBasis || undefined,
         };
       }),
       weakest_step: weak > 0 ? { from: steps[C.prevStep(steps, weak)].name, to: steps[weak].name, continue: steps[weak].n / steps[C.prevStep(steps, weak)].n } : null,
       channels: all ? channelRows(w.from, w.to).map((r) => ({ channel: r.name, impressions: r.impressions, clicks: r.clicks, clicks_kind: r.kind, impressions_to_clicks: r.ctr, organic: !!r.organic })) : [],
       forms: all ? formRows(w.from, w.to).map(([form, n]) => ({ form, submissions: n })) : [],
-      by_channel: byChannel ? byChannel.rows.map((r) => ({ channel: r.label, group: r.group, builders: r.builders, accounts: r.accounts, forms: r.forms })) : null,
+      by_channel: byChannel ? byChannel.rows.map((r) => ({ channel: r.label, group: r.group, platform: r.platform, builders: r.builders, accounts: r.accounts, forms: r.forms })) : null,
     };
   };
   // Step 1 → 2 per channel, from the same metrics and window as the funnel: the rows add up to steps 1 and 2.
@@ -346,7 +347,7 @@
     const accountsReady = !!D.covered('posthog', 'account_origin_coverage', from, to);
     const buildersReady = !!D.covered('posthog', 'builders_coverage', from, to);
     const rows = CH.CHANNELS.map((c) => ({
-      key: c.key, label: c.label, rule: c.rule, group: c.group, forms: forms[c.key] || 0,
+      key: c.key, label: c.label, rule: c.rule, group: c.group, platform: c.platform, forms: forms[c.key] || 0,
       accounts: accountsReady ? D.sum('posthog', 'ph_accounts_origin', (r) => r.dim === 'origin' && r.dim_value === c.key, from, to) : null,
       builders: buildersReady ? D.sum('posthog', 'ph_builders_origin', (r) => r.dim === 'origin' && r.dim_value === c.key, from, to) : null,
     })).filter((r) => r.group !== 'test' || r.forms || r.accounts || r.builders);

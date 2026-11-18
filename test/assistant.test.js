@@ -325,6 +325,61 @@ test('derived figures size the gap to target, the change and the cost so the mod
   assert.deepEqual(d.builders, { total: 10, from_campaigns: 8, campaign_share_pct: 80 });
 });
 
+test('a Started sign-up made of direct accounts is not sized, and spend reads per platform', () => {
+  // The week of Nov 12 – Nov 18: 25 starts, all of them accounts created directly, none through the landing code.
+  const overview_funnel = {
+    window: 'Nov 12 – Nov 18', country: 'All countries',
+    steps: [
+      { step: 'Impressions', value: 122862 },
+      { step: 'Clicks to the landing', value: 1653, pct_of_previous: 1653 / 122862, previous_step: 'Impressions', target_pct_of_previous: 0.1 },
+      { step: 'Landing sessions', value: 959, pct_of_previous: 959 / 1653, previous_step: 'Clicks to the landing', target_pct_of_previous: 0.85 },
+      { step: 'Started sign-up', value: 25, with_registration_started: 0, pct_of_previous: 25 / 959, previous_step: 'Landing sessions', target_pct_of_previous: 0.5, target_basis: 'team target, half of the landing sessions start signing up; the SaaS landing page median is 3.8% (Unbounce)' },
+      { step: 'Accounts created', value: 25, pct_of_previous: 1, previous_step: 'Started sign-up', target_pct_of_previous: 0.7 },
+    ],
+    weakest_step: { from: 'Landing sessions', to: 'Started sign-up', continue: 25 / 959 },
+    channels: [{ channel: 'Meta Ads', clicks: 874 }, { channel: 'Google Ads', clicks: 768 }],
+    spend: [{ platform: 'Meta Ads', spend: 48.93, previous_spend: 0 }, { platform: 'Google Ads', spend: 380.43, previous_spend: 91.91 }],
+    by_channel: [
+      { channel: 'Gmail ads · Google Ads', group: 'program', platform: 'Google Ads', builders: 10, accounts: 16 },
+      { channel: 'No UTM', group: 'general', builders: 2, accounts: 7 },
+    ],
+  };
+  const { context } = cleanRequest({ mode: 'insights', question: 'q', context: { overview_funnel } });
+  const d = context.derived;
+  assert.equal(context.overview_funnel.steps[3].with_registration_started, 0, 'the landing-code count reaches the model');
+  assert.match(context.overview_funnel.steps[3].target_basis, /3\.8%/);
+  assert.equal(d.measurement_gaps[0].step, 'Started sign-up');
+  assert.equal(d.measurement_gaps[0].direct_accounts, 25);
+  assert.deepEqual(d.not_sized_steps, ['Started sign-up', 'Accounts created']);
+  assert.equal(d.steps_vs_target.some((x) => x.step === 'Started sign-up' || x.step === 'Accounts created'), false, 'no people missing from a step that is not measured');
+  assert.equal(d.worst_step_vs_target.step, 'Clicks to the landing', 'the worst step is picked among measured steps');
+  assert.equal(d.worst_step_vs_target.accounts_if_it_reached_target, 185, '25 accounts at 1/0.135 of the click target');
+  assert.equal(context.overview_funnel.weakest_step, null, 'the unmeasured weakest step is dropped');
+  const google = d.spend.by_platform.find((x) => x.platform === 'Google Ads');
+  assert.deepEqual([google.accounts_from_its_links, google.builders_from_its_links, google.per_account_usd], [16, 10, 23.78]);
+  const meta = d.spend.by_platform.find((x) => x.platform === 'Meta Ads');
+  assert.equal(meta.accounts_from_its_links, null, 'Meta has no campaign link: unknown, not zero');
+  assert.match(meta.attribution, /no campaign link/);
+  assert.equal(meta.clicks, 874);
+});
+
+test('a Started sign-up mostly through the landing code is sized as before', () => {
+  const { deriveSignals } = require('../lib/assistant');
+  const d = deriveSignals({ steps: [
+    { step: 'Landing sessions', value: 1000 },
+    { step: 'Started sign-up', value: 40, with_registration_started: 30, pct_of_previous: 0.04, previous_step: 'Landing sessions', target_pct_of_previous: 0.5 },
+  ] });
+  assert.deepEqual(d.measurement_gaps, []);
+  assert.equal(d.steps_vs_target[0].missing_people_at_target, 460);
+});
+
+test('the findings prompt keeps unmeasured steps, stretch targets and unattributed platforms out of the decision', () => {
+  const { INSIGHTS_SYSTEM } = require('../lib/assistant');
+  assert.match(INSIGHTS_SYSTEM, /Never size, rank, call weakest or build the decision on a step in not_sized_steps/);
+  assert.match(INSIGHTS_SYSTEM, /stretch goal/);
+  assert.match(INSIGHTS_SYSTEM, /never that it brought zero/);
+});
+
 test('structured findings come back parsed, and the panel shows the decision first in its own box', async () => {
   const { ask } = require('../lib/assistant');
   const json = { suggestion: 'Nov 11 – Nov 17 · All countries: Fix the landing sign-up before adding budget, because 1,200 starts are missing.', findings: [

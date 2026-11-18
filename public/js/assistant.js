@@ -71,7 +71,8 @@
     return out.join('');
   }
   function cardStatus() {
-    if (state.ready === true) return `Ready · ${A.ui.esc(state.model || 'Anthropic')}`;
+    // The findings name their own model under the panel; this one answers the follow-up questions.
+    if (state.ready === true) return `Ready · follow-ups on ${A.ui.esc(state.model || 'Anthropic')}`;
     if (state.ready === false) return 'Not configured · set ANTHROPIC_API_KEY in the Think4Ever service variables.';
     return state.statusError ? 'Assistant setup could not be checked.' : 'Checking assistant setup…';
   }
@@ -85,7 +86,7 @@
     if (state.ready === false) return '<div class="growth-insight-state">Overview insights need the server-side ANTHROPIC_API_KEY.</div>';
     if (state.insightStatus === 'loading' || state.insightPreparing) return '<div class="growth-insight-state" role="status">Analyzing Overview data…</div>';
     if (state.insightStatus === 'error') return `<div class="growth-insight-state growth-assistant-error" role="alert">${A.ui.esc(state.insightError || 'Insights could not be generated.')}</div><button class="btn btn-secondary btn-sm" type="button" data-insights-retry>Retry insights</button>`;
-    if (state.insightStatus === 'ready' && state.insightText) return `${state.insightData ? insightReport(state.insightData) : `<div class="growth-assistant-report">${richText(state.insightText)}</div>`}<div class="growth-insight-meta">Funnel window · ${A.ui.esc(state.insightPeriod)}</div><button class="btn btn-ghost btn-sm" type="button" data-insights-retry>Refresh insights</button>`;
+    if (state.insightStatus === 'ready' && state.insightText) return `${state.insightData ? insightReport(state.insightData) : `<div class="growth-assistant-report">${richText(state.insightText)}</div>`}<div class="growth-insight-meta">Funnel window · ${A.ui.esc(state.insightPeriod)}${state.insightModel ? ` · ${A.ui.esc(state.insightModel)}` : ''}</div><button class="btn btn-ghost btn-sm" type="button" data-insights-retry>Refresh insights</button>`;
     return '<div class="growth-insight-state">Insights will be generated automatically for this Overview period.</div>';
   }
   function render() {
@@ -144,6 +145,7 @@
         state.insightKey = ''; state.insightStatus = 'idle'; rerender(); return;
       }
       state.insightText = String(result.answer || '');
+      state.insightModel = String(result.model || '');
       state.insightData = result.insights && result.insights.suggestion && Array.isArray(result.insights.findings) ? result.insights : null;
       state.insightStatus = state.insightText ? 'ready' : 'error';
       if (!state.insightText) state.insightError = 'The model returned no findings.';
