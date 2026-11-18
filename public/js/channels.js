@@ -19,8 +19,8 @@
   // else, 'test' = left out.
   const CHANNELS = [
     { key: 'referral', label: 'Referrals · Developer Network', rule: 'equipo / referral / developer-network, and HubSpot emails (hs_email, hs_automation, hubspot / email)', group: 'program' },
-    { key: 'gmail', label: 'Gmail ads · Google Ads', rule: 'google / cpc / early_builders_co_202611 · piece gmail_promo_01', group: 'program' },
-    { key: 'linkedin', label: 'LinkedIn paid', rule: 'linkedin / paid_social / early_builders_co_202611', group: 'program' },
+    { key: 'gmail', label: 'Gmail ads · Google Ads', rule: 'google / cpc / early_builders_co_202611 · piece gmail_promo_01', group: 'program', platform: 'Google Ads' },
+    { key: 'linkedin', label: 'LinkedIn paid', rule: 'linkedin / paid_social / early_builders_co_202611', group: 'program', platform: 'LinkedIn Ads' },
     { key: 'influencer', label: 'Influencers · builder links', rule: 'linkedin, instagram… / influencer / early_builders_co_202611 (each builder shares their own link)', group: 'program' },
     { key: 'other', label: 'Other UTM', rule: 'a UTM that matches none of the program links', group: 'general' },
     { key: 'none', label: 'No UTM', rule: 'no utm_source, utm_medium or utm_campaign', group: 'general' },
