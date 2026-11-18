@@ -123,7 +123,7 @@ test('assistant forwards only bounded aggregate dashboard data to Anthropic', as
   };
   const safe = cleanRequest(body);
   assert.equal(JSON.stringify(safe).includes('private@example.com'), false);
-  assert.deepEqual(Object.keys(safe.context), ['internal_tests_excluded', 'overview_funnel'], 'automatic findings read only the funnel card');
+  assert.deepEqual(Object.keys(safe.context), ['internal_tests_excluded', 'overview_funnel', 'derived'], 'automatic findings read only the funnel card');
   const asked = cleanRequest({ ...body, mode: 'question' });
   assert.equal(asked.context.kpis.ga4_sessions, 1000);
   assert.equal(asked.context.ga4_channels[0].channel, 'Organic Search');
@@ -144,8 +144,9 @@ test('assistant forwards only bounded aggregate dashboard data to Anthropic', as
   assert.equal(result.answer, 'Organic Search led.');
   const payload = JSON.parse(request.options.body);
   assert.equal(payload.max_tokens, 16000);
-  assert.deepEqual(payload.output_config, { effort: 'medium' }, 'insights reason at medium effort');
-  assert.match(payload.system, /Answer in English/);
+  assert.equal(payload.output_config.effort, 'medium', 'insights reason at medium effort');
+  assert.equal(payload.output_config.format.type, 'json_schema', 'insights come back as structured JSON');
+  assert.match(payload.system, /Write in English/);
   assert.doesNotMatch(payload.system, /Answer in Spanish/);
   assert.equal(request.url, 'https://api.anthropic.com/v1/messages');
   assert.equal(request.options.headers['x-api-key'], 'test-secret');
@@ -153,7 +154,7 @@ test('assistant forwards only bounded aggregate dashboard data to Anthropic', as
   assert.equal(request.options.headers['content-type'], 'application/json');
   assert.equal(payload.model, 'claude-sonnet-5-5');
   assert.match(payload.system, /first \$identify per person/i);
-  assert.match(payload.system, /Each finding must make sense on its own/);
+  assert.match(payload.system, /Every finding must say something the card does not show/);
   assert.match(payload.messages[0].content, /¿Qué canal trajo más sesiones\?/);
   assert.doesNotMatch(payload.messages[0].content, /private@example\.com|raw_events/);
 });
@@ -265,7 +266,7 @@ test('automatic findings get only the funnel card with its tables, and the promp
   };
   const body = { mode: 'insights', question: 'Write the findings', context: { overview_funnel, kpis: { ga4_sessions: 999 }, ga4_channels: [{ channel: 'Organic Search', sessions: 1 }] } };
   const safe = cleanRequest(body).context;
-  assert.deepEqual(Object.keys(safe), ['internal_tests_excluded', 'overview_funnel']);
+  assert.deepEqual(Object.keys(safe), ['internal_tests_excluded', 'overview_funnel', 'derived']);
   assert.equal(safe.overview_funnel.window, 'Nov 11 – Nov 17');
   assert.equal(safe.overview_funnel.weakest_step.to, 'Clicks to the landing');
   assert.equal(safe.overview_funnel.channels[0].impressions_to_clicks, 0.01);
@@ -275,14 +276,12 @@ test('automatic findings get only the funnel card with its tables, and the promp
   assert.equal(safe.overview_funnel.by_channel[1].group, 'general', 'unknown groups fall back to general');
   let sent;
   await ask(body, { apiKey: 'test-secret', fetchImpl: async (url, options) => { sent = JSON.parse(options.body); return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }; } });
-  assert.match(sent.system, /Each finding must make sense on its own/);
-  assert.match(sent.system, /"## Suggestion" with one or two sentences: the single decision/);
-  assert.match(sent.system, /the likely reason; and one concrete action for this week/);
-  assert.deepEqual(sent.output_config, { effort: 'medium' });
-  assert.ok(sent.system.indexOf('## Suggestion') < sent.system.indexOf('## Findings'), 'the suggestion comes first');
-  assert.match(sent.system, /under 220 words/);
+  assert.equal(sent.model, 'claude-opus-5-5', 'findings run on the strongest model');
+  assert.match(sent.system, /A finding that only restates a number from the card is wrong/);
+  assert.match(sent.system, /suggestion: the single most important decision for this week/);
+  assert.deepEqual(sent.output_config.format.schema.required, ['suggestion', 'findings']);
   assert.match(sent.system, /Never write internal names such as overview_funnel/);
-  assert.match(sent.system, /previous_window \(the same number of days just before\)/);
+  assert.ok(JSON.parse(sent.messages[0].content).dashboard_context.derived, 'the model gets the derived figures');
   assert.doesNotMatch(sent.messages[0].content, /ga4_sessions|Organic Search/);
 });
 
@@ -296,4 +295,59 @@ test('the findings label shows the funnel window and country, not From/To', asyn
   const html = App.assistant.render();
   assert.match(html, /Funnel window · Oct 23 – Oct 29 · All countries · Group by Weekly/);
   assert.doesNotMatch(html, /Selected period · 2026-10-01 to 2026-10-29/);
+});
+
+
+test('derived figures size the gap to target, the change and the cost so the model can interpret', () => {
+  const { deriveSignals } = require('../lib/assistant');
+  const d = deriveSignals({
+    steps: [
+      { step: 'Impressions', value: 100000 },
+      { step: 'Clicks to the landing', value: 2000, pct_of_previous: 0.02, previous_step: 'Impressions', target_pct_of_previous: 0.1 },
+      { step: 'Landing sessions', value: 2500, pct_of_previous: null, previous_step: 'Clicks to the landing', target_pct_of_previous: 0.85 },
+      { step: 'Started sign-up', value: 50, pct_of_previous: 0.02, previous_step: 'Landing sessions', target_pct_of_previous: 0.5 },
+      { step: 'Accounts created', value: 40, pct_of_previous: 0.8, previous_step: 'Started sign-up', target_pct_of_previous: 0.7 },
+    ],
+    previous_window: { steps: [{ step: 'Accounts created', value: 20 }, { step: 'Impressions', value: 50000 }] },
+    spend: [{ platform: 'Meta Ads', spend_usd: 400, previous_spend_usd: 200 }],
+    channels: [{ channel: 'Meta Ads', clicks: 1600, organic: false }, { channel: 'LinkedIn page', clicks: 400, organic: true }],
+    by_channel: [{ channel: 'Gmail ads', group: 'program', builders: 8 }, { channel: 'No UTM', group: 'general', builders: 2 }],
+  });
+  const starts = d.steps_vs_target.find((x) => x.step === 'Started sign-up');
+  assert.equal(starts.missing_people_at_target, 1200, '2,500 sessions at 50% is 1,250 starts, 1,200 more than 50');
+  assert.equal(d.worst_step_vs_target.step, 'Started sign-up');
+  assert.equal(d.worst_step_vs_target.accounts_if_it_reached_target, 1000, '40 accounts at 25x the start rate');
+  assert.deepEqual(d.change_vs_previous_window.find((x) => x.step === 'Accounts created'), { step: 'Accounts created', now: 40, before: 20, change_pct: 100 });
+  assert.equal(d.spend.per_account_usd, 10);
+  assert.equal(d.spend.previous_per_account_usd, 10);
+  assert.equal(d.spend.per_paid_click_usd, 0.25, 'organic LinkedIn clicks are not paid clicks');
+  assert.equal(d.spend.per_campaign_builder_usd, 50);
+  assert.deepEqual(d.builders, { total: 10, from_campaigns: 8, campaign_share_pct: 80 });
+});
+
+test('structured findings come back parsed, and the panel shows the decision first in its own box', async () => {
+  const { ask } = require('../lib/assistant');
+  const json = { suggestion: 'Nov 11 – Nov 17 · All countries: Fix the landing sign-up before adding budget, because 1,200 starts are missing.', findings: [
+    { headline: 'The landing loses almost every visitor', meaning: 'Only 2% start.', likely_cause: 'Likely the code step.', action: 'Test a one-field form; starts should double.' },
+  ] };
+  const r = await ask({ mode: 'insights', question: 'q', context: {} }, { apiKey: 'k', fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: JSON.stringify(json) }] }) }) });
+  assert.deepEqual(r.insights, json);
+  assert.match(r.answer, /^## Suggestion\n/);
+
+  let calls = 0;
+  const fallback = await ask({ mode: 'insights', question: 'q', context: {} }, { apiKey: 'k', fetchImpl: async (u, o) => { calls += 1; const b = JSON.parse(o.body); return b.output_config.format ? { ok: false, status: 400, json: async () => ({}) } : { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: '## Suggestion\nDo X' }] }) }; } });
+  assert.equal(calls, 2, 'a 400 on structured output retries as plain text');
+  assert.equal(fallback.answer, '## Suggestion\nDo X');
+
+  const App = clientAssistant();
+  App.S.tab = 'overview';
+  App.assistant.state.ready = true;
+  App.overviewFunnel = () => ({ window: 'Nov 11 – Nov 17', set_by: 'Group by Weekly', country: 'All countries', steps: [] });
+  App.api = async () => r;
+  await App.assistant.generateInsights(true);
+  const html = App.assistant.render();
+  assert.match(html, /<div class="insight-suggestion" role="note"><span class="insight-kicker">Decision for this week<\/span><p>Nov 11 – Nov 17 · All countries: Fix the landing/);
+  assert.ok(html.indexOf('insight-suggestion') < html.indexOf('insight-findings'), 'the decision is above the findings');
+  assert.match(html, /<span>Why<\/span>Likely the code step\./);
+  assert.match(html, /<span>Do<\/span>Test a one-field form/);
 });

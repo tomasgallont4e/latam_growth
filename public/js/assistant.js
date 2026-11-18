@@ -1,6 +1,6 @@
 'use strict';
 (function (A) {
-  const state = { ready: null, model: '', statusRequested: false, statusError: '', question: '', answer: '', answerPeriod: null, error: '', loading: false, insightKey: '', insightStatus: 'idle', insightText: '', insightError: '', insightPeriod: '', insightSeq: 0, insightPreparing: false };
+  const state = { ready: null, model: '', statusRequested: false, statusError: '', question: '', answer: '', answerPeriod: null, error: '', loading: false, insightKey: '', insightStatus: 'idle', insightText: '', insightData: null, insightError: '', insightPeriod: '', insightSeq: 0, insightPreparing: false };
   const finite = (value) => value == null || value === '' || !Number.isFinite(Number(value)) ? null : Number(value);
   function context() {
     const S = A.S, D = A.D, ga = D.ga() || {}, paid = D.paidTotals() || {};
@@ -75,11 +75,17 @@
     if (state.ready === false) return 'Not configured · set ANTHROPIC_API_KEY in the Think4Ever service variables.';
     return state.statusError ? 'Assistant setup could not be checked.' : 'Checking assistant setup…';
   }
+  // The decision goes first and stands out; each finding then says what it means, why and what to do.
+  function insightReport(x) {
+    const e = A.ui.esc;
+    const finding = (f) => `<li><b class="insight-headline">${e(f.headline)}</b><p>${e(f.meaning)}</p>${f.likely_cause ? `<p class="insight-cause"><span>Why</span>${e(f.likely_cause)}</p>` : ''}${f.action ? `<p class="insight-action"><span>Do</span>${e(f.action)}</p>` : ''}</li>`;
+    return `<div class="insight-suggestion" role="note"><span class="insight-kicker">Decision for this week</span><p>${e(x.suggestion)}</p></div><ol class="insight-findings">${x.findings.map(finding).join('')}</ol>`;
+  }
   function insightPanel() {
     if (state.ready === false) return '<div class="growth-insight-state">Overview insights need the server-side ANTHROPIC_API_KEY.</div>';
     if (state.insightStatus === 'loading' || state.insightPreparing) return '<div class="growth-insight-state" role="status">Analyzing Overview data…</div>';
     if (state.insightStatus === 'error') return `<div class="growth-insight-state growth-assistant-error" role="alert">${A.ui.esc(state.insightError || 'Insights could not be generated.')}</div><button class="btn btn-secondary btn-sm" type="button" data-insights-retry>Retry insights</button>`;
-    if (state.insightStatus === 'ready' && state.insightText) return `<div class="growth-assistant-report">${richText(state.insightText)}</div><div class="growth-insight-meta">Funnel window · ${A.ui.esc(state.insightPeriod)}</div><button class="btn btn-ghost btn-sm" type="button" data-insights-retry>Refresh insights</button>`;
+    if (state.insightStatus === 'ready' && state.insightText) return `${state.insightData ? insightReport(state.insightData) : `<div class="growth-assistant-report">${richText(state.insightText)}</div>`}<div class="growth-insight-meta">Funnel window · ${A.ui.esc(state.insightPeriod)}</div><button class="btn btn-ghost btn-sm" type="button" data-insights-retry>Refresh insights</button>`;
     return '<div class="growth-insight-state">Insights will be generated automatically for this Overview period.</div>';
   }
   function render() {
@@ -90,7 +96,7 @@
         : state.loading ? '<div class="growth-assistant-answer" aria-live="polite">Thinking about your question…</div>' : '';
     const disabled = state.loading || state.ready === false ? ' disabled' : '';
     const body = `<div class="growth-assistant-status" role="status">${U.esc(cardStatus())}</div>
-      <section class="growth-insights" aria-label="Automatic Overview insights"><div class="growth-insights-heading"><div><b>Overview insights</b><span>Prioritized findings from available data</span></div>${state.insightStatus === 'loading' ? '<span class="insight-pulse">Analyzing</span>' : ''}</div>
+      <section class="growth-insights" aria-label="Automatic Overview insights"><div class="growth-insights-heading"><div><b>Overview insights</b><span>What the funnel means and what to do</span></div>${state.insightStatus === 'loading' ? '<span class="insight-pulse">Analyzing</span>' : ''}</div>
         ${insightPanel()}</section>
       <form id="growth-assistant-form" class="growth-assistant-form">
         <label for="growth-assistant-question">Ask a follow-up</label>
@@ -123,7 +129,7 @@
     const snapshot = context(), key = JSON.stringify(snapshot);
     state.insightPreparing = false;
     if (!force && key === state.insightKey && ['loading', 'ready', 'error'].includes(state.insightStatus)) return;
-    state.insightKey = key; state.insightStatus = 'loading'; state.insightText = ''; state.insightError = '';
+    state.insightKey = key; state.insightStatus = 'loading'; state.insightText = ''; state.insightData = null; state.insightError = '';
     // The findings describe the funnel card, so they carry its window and country, not From/To.
     const of = snapshot.overview_funnel;
     state.insightPeriod = of ? `${of.window} · ${of.country} · ${of.set_by}` : `${snapshot.period.from} to ${snapshot.period.to}`;
@@ -131,13 +137,14 @@
     rerender();
     try {
       const result = await A.api('api/assistant/ask', { method: 'POST', body: JSON.stringify({
-        mode: 'insights', question: 'What should the team do this week? Start with the decision, then three findings that say what happened against the target or the previous window, the likely reason and the action.', context: snapshot,
+        mode: 'insights', question: 'Interpret this funnel for the team: the one decision for this week, then the three findings that matter most, each with what it means, the likely cause and the action.', context: snapshot,
       }) });
       if (sequence !== state.insightSeq) return;
       if (JSON.stringify(context()) !== key) {
         state.insightKey = ''; state.insightStatus = 'idle'; rerender(); return;
       }
       state.insightText = String(result.answer || '');
+      state.insightData = result.insights && result.insights.suggestion && Array.isArray(result.insights.findings) ? result.insights : null;
       state.insightStatus = state.insightText ? 'ready' : 'error';
       if (!state.insightText) state.insightError = 'The model returned no findings.';
     } catch (error) {
