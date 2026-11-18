@@ -2043,63 +2043,99 @@ test('a step larger than the one above is grey with the multiple, a met step is 
 });
 
 // Users acquired (Acquisition): PostHog accounts, non-Internal, the same people Overview counts.
+// November data: attribution splits start on 2026-11-06, so the 2026-11-03 accounts count in the total only.
 function acquiredData(A, { utm = true } = {}) {
-  const day = (d) => `2026-10-${String(d).padStart(2, '0')}`;
-  const acc = (value, d, type = 'External') => ({ source: 'posthog', metric: 'ph_accounts', value, date: day(d), dim: 'account_type', dim_value: type });
-  const origin = (value, d, key) => ({ source: 'posthog', metric: 'ph_accounts_origin', value, date: day(d), dim: 'origin', dim_value: key });
-  const byUtm = (value, d, key) => ({ source: 'posthog', metric: 'ph_accounts_utm', value, date: day(d), dim: 'utm', dim_value: key });
+  A.S.from = '2026-10-01'; A.S.to = '2026-11-20'; A.S.goalMonth = '2026-11'; A.ui.today = () => '2026-11-21';
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  const day = (d) => `2026-11-${String(d).padStart(2, '0')}`;
+  const row = (metricName, dim, value, d, dim_value) => ({ source: 'posthog', metric: metricName, value, date: day(d), dim, dim_value });
+  const acc = (value, d, type = 'External') => row('ph_accounts', 'account_type', value, d, type);
   const spend = (source, value, d) => ({ source, metric: 'ad_spend', value, date: day(d), dim: 'campaign', dim_value: 'c' });
   A.S.data.metrics = [
-    acc(6, 20), acc(4, 21), acc(3, 21, 'Internal'),
-    origin(3, 20, 'other'), origin(1, 20, 'gmail'), origin(2, 20, 'none'), origin(4, 21, 'none'),
-    ...(utm ? [byUtm(2, 20, 'meta|paid_social|latam_co'), byUtm(1, 20, 'instagram|social|organic_ig'), byUtm(1, 20, 'google|cpc|early_builders_co_202611'), byUtm(2, 20, '(not set)|(not set)|(not set)'), byUtm(4, 21, '(not set)|(not set)|(not set)')] : []),
-    spend('meta', 30, 20), spend('google_ads', 12.5, 20),
-    { source: 'posthog', metric: 'ph_accounts_geo', value: 5, date: day(20), dim: 'country', dim_value: 'Colombia' },
+    acc(5, 3), acc(6, 10), acc(4, 11), acc(3, 11, 'Internal'),
+    row('ph_accounts_origin', 'origin', 5, 3, 'none'),
+    row('ph_accounts_origin', 'origin', 3, 10, 'other'), row('ph_accounts_origin', 'origin', 1, 10, 'gmail'), row('ph_accounts_origin', 'origin', 2, 10, 'none'), row('ph_accounts_origin', 'origin', 4, 11, 'none'),
+    row('ph_builders_origin', 'origin', 2, 10, 'other'), row('ph_builders_origin', 'origin', 1, 11, 'gmail'),
+    ...(utm ? [
+      row('ph_accounts_utm', 'utm', 5, 3, 'meta|paid_social|latam_co|p01_video'),
+      row('ph_accounts_utm', 'utm', 2, 10, 'meta|paid_social|latam_co|p01_video'), row('ph_accounts_utm', 'utm', 1, 10, 'instagram|social|organic_ig|p03_reel'),
+      row('ph_accounts_utm', 'utm', 1, 10, 'google|cpc|early_builders_co_202611|gmail_promo_01'),
+      row('ph_accounts_utm', 'utm', 2, 10, '(not set)|(not set)|(not set)|(not set)'), row('ph_accounts_utm', 'utm', 4, 11, '(not set)|(not set)|(not set)|(not set)'),
+      row('ph_builders_utm', 'utm', 2, 10, 'meta|paid_social|latam_co|p01_video'), row('ph_builders_utm', 'utm', 1, 11, 'google|cpc|early_builders_co_202611|gmail_promo_01'),
+    ] : []),
+    spend('meta', 50, 3), spend('meta', 30, 10), spend('google_ads', 12.5, 10),
+    row('ph_accounts_geo', 'country', 5, 10, 'Colombia'), row('ph_accounts_geo', 'country', 1, 10, 'Spain'),
   ];
-  A.S.data.snapshots = [available('posthog', 'account_coverage'), available('posthog', 'account_origin_coverage'), ...(utm ? [available('posthog', 'account_utm_coverage')] : [])];
+  const cov = (key) => ({ source: 'posthog', key, from: '2026-10-01', to: '2026-11-20', rows: [{ available: true }] });
+  A.S.data.snapshots = ['account_coverage', 'account_origin_coverage', 'builders_coverage', ...(utm ? ['account_utm_coverage', 'builders_utm_coverage'] : [])].map(cov);
 }
 function acquiredSection(html) { return html.slice(html.indexOf('Users acquired'), html.indexOf('Traffic to the sites')); }
 
 test('Acquisition counts accounts like Overview: non-Internal, whatever the internal-tests toggle says', () => {
   for (const exInt of [true, false]) {
-    const A = dashboard(); A.S.exInt = exInt; A.ui.today = () => '2026-10-29';
+    const A = dashboard(); A.S.exInt = exInt;
     acquiredData(A);
     const html = acquiredSection(A.views.acquisition.render());
-    assert.match(html, /title="10">10/, 'internal accounts never counted');
+    assert.match(html, /title="15">15/, 'internal accounts never counted; the total keeps accounts before Nov 6');
     assert.match(html, /same count as Overview/);
   }
 });
 
-test('Acquisition splits accounts by channel, campaign and paid platform from first-touch UTMs', () => {
-  const A = dashboard(); A.ui.today = () => '2026-10-29';
+test('Acquisition reads accounts against the month goal and each country goal, like Overview', () => {
+  const A = dashboard();
   acquiredData(A);
   const html = acquiredSection(A.views.acquisition.render());
-  // 4 of 10 accounts carry a UTM; Meta and Google Ads are paid, Instagram social is not.
-  assert.match(html, /With a first-touch UTM[\s\S]*?title="4">4/);
-  assert.match(html, /40\.0% of 10 accounts/);
-  assert.match(html, /From paid ads[\s\S]*?title="3">3/);
-  assert.match(html, /Meta 2 · Google Ads 1 · LinkedIn 0/);
-  // The campaign table names Meta, which the Developer Network channels fold into Other UTM.
-  assert.match(html, /latam_co<\/code>[\s\S]*?meta \/ paid_social[\s\S]*?Other UTM[\s\S]*?Paid · Meta/);
-  assert.match(html, /early_builders_co_202611<\/code>[\s\S]*?Gmail ads · Google Ads[\s\S]*?Paid · Google Ads/);
-  assert.match(html, /6 accounts have no first-touch UTM and are not listed/);
-  // Spend per account per platform, and overall: (30 + 12.5) / 3.
-  assert.match(html, /\$15\.00/); assert.match(html, /\$12\.50/);
-  assert.match(html, /\$14\.17/);
-  assert.match(html, /Not connected/, 'LinkedIn without spend data');
-  // Channel split is Overview's ph_accounts_origin; country leaves the rest as No country.
-  assert.match(html, /Accounts by channel/); assert.match(html, /No UTM/);
-  assert.match(html, /5 of 10 accounts with a country/); assert.match(html, /No country/);
+  const g = A.D.goalAccounts();
+  assert.equal(g.value, 15);
+  assert.match(html, new RegExp(`Month goal[\\s\\S]*?${A.ui.pct(g.ratio).replace('.', '\\.')}`));
+  assert.match(html, /15 of 500,000 accounts · November 2026/);
+  assert.match(html, /500K plan/);
+  // Colombia against its monthly goal from the plan; Spain has no goal; the rest has no country.
+  assert.match(html, /Colombia<\/td><td class="td-num">5<\/td><td class="td-num">57,598/);
+  assert.match(html, /Other countries<\/td><td class="td-num">1</);
+  assert.match(html, /No country<\/td><td class="td-num">9</);
 });
 
-test('Acquisition waits for the PostHog sync instead of showing zero accounts', () => {
+test('Acquisition splits accounts by channel, persona, campaign and platform from Nov 6, with verified people', () => {
+  const A = dashboard();
+  acquiredData(A);
+  const html = acquiredSection(A.views.acquisition.render());
+  // Attribution window Nov 6 – Nov 20: 10 accounts, 4 with a UTM; the 5 Meta accounts of Nov 3 are left out.
+  assert.match(html, /With a first-touch UTM[\s\S]*?title="4">4/);
+  assert.match(html, /40\.0% of 10 accounts · Nov 6 – Nov 20/);
+  assert.match(html, /First-touch UTMs are recorded from Nov 6; earlier accounts are left out of this split/);
+  // Paid = paid medium (Meta paid_social, Google cpc); organic includes Instagram social and no UTM.
+  assert.match(html, /Paid \/ organic[\s\S]*?3 \/ 7/);
+  // Spend in the window only: (30 + 12.5) / 3 accounts and / 3 verified; the Nov 3 Meta spend is left out.
+  assert.match(html, /\$42\.50 ÷ 3 accounts from Meta, Google Ads and LinkedIn UTMs · \$14\.17 per verified account/);
+  assert.match(html, /Meta<\/td><td class="td-num">\$30\.00<\/td><td class="td-num">2<\/td><td class="td-num">\$15\.00<\/td><td class="td-num">2<\/td><td class="td-num">\$15\.00/);
+  assert.match(html, /Spend in US dollars, converted at sync/);
+  // Channel table with verified people: Other UTM 3 accounts, 2 verified.
+  assert.match(html, /Other UTM<\/td><td class="td-num">3<\/td><td class="td-num">30\.0%<\/td><td class="td-num">2<\/td><td class="td-num">66\.7%/);
+  // Persona from utm_content; Gmail's piece has no persona code.
+  assert.match(html, /p01<\/span><\/td><td class="td-num">2</);
+  assert.match(html, /p03<\/span><\/td><td class="td-num">1</);
+  assert.match(html, /No persona code<\/td><td class="td-num">1</);
+  assert.match(html, /No UTM<\/td><td class="td-num">6</);
+  // Campaigns sum utm_content; Meta named even though its channel is Other UTM; Executive difference explained.
+  assert.match(html, /latam_co<\/code>[\s\S]*?meta \/ paid_social[\s\S]*?Other UTM[\s\S]*?Paid · Meta[\s\S]*?<td class="td-num">2<\/td>/);
+  assert.match(html, /6 accounts have no first-touch UTM and are not listed/);
+  assert.match(html, /Executive's campaign funnel splits a different population/);
+  assert.match(html, /Not connected/, 'LinkedIn without spend data');
+});
+
+test('Acquisition attribution splits wait for Nov 6 and for the PostHog sync, never showing zero', () => {
   const A = dashboard(); A.ui.today = () => '2026-10-29';
   assert.match(acquiredSection(A.views.acquisition.render()), /Awaiting PostHog/);
   acquiredData(A, { utm: false });
-  const html = acquiredSection(A.views.acquisition.render());
-  assert.match(html, /title="10">10/);
+  let html = acquiredSection(A.views.acquisition.render());
+  assert.match(html, /title="15">15/);
   assert.match(html, /Waiting for the next PostHog sync \(accounts by first-touch UTM\)/);
   assert.match(html, /Accounts by campaign appear after the next PostHog sync/);
+  acquiredData(A); A.S.to = '2026-11-05';
+  html = acquiredSection(A.views.acquisition.render());
+  assert.match(html, /First-touch UTMs are recorded from Nov 6; pick a range that reaches it/);
+  assert.doesNotMatch(html, /Nov 6 – Nov 5/);
 });
 
 test('UTM detail joins every stored part of the GA4 report for the same window', () => {

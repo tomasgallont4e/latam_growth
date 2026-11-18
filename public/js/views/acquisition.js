@@ -1,12 +1,16 @@
 'use strict';
 /* Acquisition: who signed up and where they came from, then the traffic that brought them.
-   Users acquired: PostHog accounts created (non-Internal, the same people as Overview), split by first-touch
-   channel, country and source / medium / campaign, with spend per account for the paid platforms.
+   Users acquired: PostHog accounts created (non-Internal, the same people as Overview) against the month goal,
+   split by first-touch channel, paid or organic, persona, campaign and country, with how many verified and the
+   spend per account and per verified account for the paid platforms.
    Traffic: GA4 sessions, users and engagement by channel, with UTM, entry-page and country detail. */
 (function (A) {
   const external = (r) => r.dim === 'account_type' && r.dim_value !== 'Internal';
-  // Channel keys of public/js/channels.js onto the dashboard colors.
-  const ORIGIN_COLOR = { referral: 'var(--ch-referral)', gmail: 'var(--pf-google)', linkedin: 'var(--pf-linkedin)', influencer: 'var(--ch-organic-social)', other: 'var(--ch-paid-social)', none: 'var(--ch-direct)', test: 'var(--ch-other)' };
+  // First-touch UTMs reach PostHog from this day: the portal stores utm_*_first since 2026-11-04 and the
+  // landing's first-touch cookie script went live on 2026-11-06 (KB, medicion-flujo-registro-con-intencion).
+  // Accounts before it carry no UTM, so every split by UTM starts here.
+  const ATTRIBUTION_FROM = '2026-11-06';
+  const sum = (rows, f) => rows.reduce((s, r) => s + (f ? f(r) : r.people), 0);
 
   function acquired(U, C, D, S) {
     const CH = A.channels, P = A.paid;
@@ -15,10 +19,11 @@
     if (!ready) {
       return U.section('Users acquired', 'Accounts created in the platform · PostHog', U.kpiRow([
         U.kpi({ label: 'Accounts created', source: 'PostHog', awaiting: 'PostHog' }),
+        U.kpi({ label: 'Month goal', source: 'PostHog · goal', awaiting: 'PostHog' }),
         U.kpi({ label: 'With a first-touch UTM', source: 'PostHog', awaiting: 'PostHog' }),
-        U.kpi({ label: 'From paid ads', source: 'PostHog · UTM', awaiting: 'PostHog' }),
+        U.kpi({ label: 'Paid / organic', source: 'PostHog · UTM', awaiting: 'PostHog' }),
         U.kpi({ label: 'Spend per paid account', source: 'Ads · PostHog', awaiting: 'PostHog' }),
-      ], 4));
+      ]));
     }
     const total = D.sum('posthog', 'ph_accounts', external, S.from, S.to);
     const cmp = D.completeBucketComparison();
@@ -26,66 +31,125 @@
     const cmpLabel = cmp ? `Latest complete ${grain.toLowerCase()}: ${cmp.current.label} vs ${cmp.previous.label}` : `No two complete ${grain.toLowerCase()} buckets since launch`;
     const now = cmp ? inBucket(cmp.current) : null, before = cmp ? inBucket(cmp.previous) : null;
 
-    // First-touch UTMs: attributed = any utm_source, medium or campaign; paid = a paid platform's source and medium.
-    const utm = D.accountsByUtm();
-    const withUtm = utm ? utm.filter((r) => CH.classify(r) !== 'none') : null;
-    const attributed = withUtm ? withUtm.reduce((s, r) => s + r.accounts, 0) : null;
-    const paidBy = { meta: 0, google_ads: 0, linkedin: 0 };
-    if (utm) for (const r of utm) { const k = P.platform(r.source, r.medium); if (k) paidBy[k] += r.accounts; }
-    const paidAccounts = utm ? paidBy.meta + paidBy.google_ads + paidBy.linkedin : null;
-    const platforms = C.PLATFORMS.map((p) => ({ ...p, spend: D.paidStats(p.key).spend, accounts: utm ? paidBy[p.key] : null }));
+    // Month goal: the same progress Overview shows (Targets, else the 500K plan), on the top-bar Month.
+    const g = D.goalAccounts();
+    const goalTile = g.status === 'loaded' && g.goal
+      ? U.kpi({ label: 'Month goal', source: 'PostHog · goal', value: U.pct(g.ratio), compare: `${U.fmt(g.value)} of ${U.fmt(g.goal)} accounts · ${U.monthName(g.month)} to ${U.dshort(g.to)} · ${g.goalSource === 'targets' ? 'target from Targets' : '500K plan'} · same progress as Overview · Month selector at the top` })
+      : U.kpi({ label: 'Month goal', source: 'PostHog · goal', value: '–', compare: g.status === 'loaded' ? 'No goal set for this month' : 'Account coverage unavailable for this month; not zero' });
+
+    // Every split by UTM uses the attribution window: the selected range from ATTRIBUTION_FROM on.
+    const aFrom = S.from > ATTRIBUTION_FROM ? S.from : ATTRIBUTION_FROM, aTo = S.to;
+    const attrOk = aFrom <= aTo;
+    const aWin = U.win(aFrom, aTo);
+    const attrNote = S.from < ATTRIBUTION_FROM ? `First-touch UTMs are recorded from ${U.dshort(ATTRIBUTION_FROM)}; earlier accounts are left out of this split.` : '';
+    const acc = attrOk ? D.accountsByUtm(aFrom, aTo) : null;
+    const ver = attrOk ? D.verifiedByUtm(aFrom, aTo) : null;
+    const utmPending = attrOk ? 'Waiting for the next PostHog sync (accounts by first-touch UTM)' : `First-touch UTMs are recorded from ${U.dshort(ATTRIBUTION_FROM)}; pick a range that reaches it`;
+    const accAll = acc ? sum(acc) : null;
+    const tagged = (r) => CH.classify(r) !== 'none';
+    const withUtm = acc ? sum(acc.filter(tagged)) : null;
+    const paid = acc ? sum(acc.filter((r) => P.paidMedium(r.medium))) : null;
+    const byPlatform = (rows, key) => (rows ? sum(rows.filter((r) => P.platform(r.source, r.medium) === key)) : null);
+    const platforms = C.PLATFORMS.map((p) => ({ ...p, spend: attrOk ? D.paidStats(p.key, aFrom, aTo).spend : null, accounts: byPlatform(acc, p.key), verified: byPlatform(ver, p.key) }));
     const spendAll = platforms.some((p) => p.spend != null) ? platforms.reduce((s, p) => s + (p.spend || 0), 0) : null;
-    const utmPending = 'Waiting for the next PostHog sync (accounts by first-touch UTM)';
+    const platformAccounts = acc ? platforms.reduce((s, p) => s + (p.accounts || 0), 0) : null;
+    const platformVerified = ver ? platforms.reduce((s, p) => s + (p.verified || 0), 0) : null;
 
     const kpis = U.kpiRow([
       U.kpi({ label: 'Accounts created', source: 'PostHog', hero: true, value: U.fmt(total), delta: cmp ? U.delta(now, before) : null,
         spark: D.series(D.byDay('posthog', 'ph_accounts', S.from, S.to, external)),
         compare: `Selected-range total · first account_created or $identify per person · internal excluded, same count as Overview · ${cmpLabel}` }),
-      utm ? U.kpi({ label: 'With a first-touch UTM', source: 'PostHog', value: U.fmt(attributed), compare: `${U.pct(total ? attributed / total : null)} of ${U.fmt(total)} accounts · the rest arrived with no UTM, so their campaign is unknown` })
+      goalTile,
+      acc ? U.kpi({ label: 'With a first-touch UTM', source: 'PostHog', value: U.fmt(withUtm), compare: `${U.pct(accAll ? withUtm / accAll : null)} of ${U.fmt(accAll)} accounts · ${aWin} · the rest arrived with no UTM, so their campaign is unknown` })
         : U.kpi({ label: 'With a first-touch UTM', source: 'PostHog', value: '–', compare: utmPending }),
-      utm ? U.kpi({ label: 'From paid ads', source: 'PostHog · UTM', value: U.fmt(paidAccounts), compare: `Meta ${U.fmt(paidBy.meta)} · Google Ads ${U.fmt(paidBy.google_ads)} · LinkedIn ${U.fmt(paidBy.linkedin)} · first-touch UTM with a paid medium` })
-        : U.kpi({ label: 'From paid ads', source: 'PostHog · UTM', value: '–', compare: utmPending }),
+      acc ? U.kpi({ label: 'Paid / organic', source: 'PostHog · UTM', value: `${U.fmt(paid)} / ${U.fmt(accAll - paid)}`, small: true, compare: `${U.pct(accAll ? paid / accAll : null)} paid · ${aWin} · paid = a paid utm_medium (cpc, paid_social, display…); organic is the rest, no UTM included` })
+        : U.kpi({ label: 'Paid / organic', source: 'PostHog · UTM', value: '–', compare: utmPending }),
       spendAll == null ? U.kpi({ label: 'Spend per paid account', source: 'Ads · PostHog', awaiting: 'Ads' })
-        : U.kpi({ label: 'Spend per paid account', source: 'Ads · PostHog', value: U.money(P.cost(spendAll, paidAccounts)),
-          compare: `${U.money(spendAll)} spend ÷ ${U.fmt(paidAccounts)} accounts with a paid UTM · an upper bound: paid sign-ups without a UTM are not counted` }),
-    ], 4);
+        : U.kpi({ label: 'Spend per paid account', source: 'Ads · PostHog', value: U.money(P.cost(spendAll, platformAccounts)),
+          compare: `${U.money(spendAll)} ÷ ${U.fmt(platformAccounts)} accounts from Meta, Google Ads and LinkedIn UTMs · ${U.money(P.cost(spendAll, platformVerified))} per verified account · ${aWin} · an upper bound: paid sign-ups without a UTM are not counted` }),
+    ]);
 
-    const origin = D.accountsByOrigin();
-    const originRows = origin ? CH.CHANNELS.map((c) => ({ name: c.label, color: ORIGIN_COLOR[c.key] || 'var(--ch-other)', value: origin[c.key] || 0 }))
-      .filter((r) => r.value).sort((a, b) => b.value - a.value) : [];
-    const byChannel = U.card({ title: 'Accounts by channel', sub: `${U.fmt(total)} accounts · first-touch UTM · the same split as Overview · ${U.win(S.from, S.to)}`, right: U.srcPill('posthog', 'first touch'),
-      body: origin ? C.hbars(originRows, total) + '<p class="card-note">Channels follow the Developer Network links. Meta and any other campaign outside those links count as Other UTM; the campaign table below names them.</p>' : U.empty('Waiting for PostHog', 'Accounts by channel appear after the next PostHog sync.') });
+    // By channel: Overview's channel split, with how many people verified in the same days.
+    const origin = attrOk ? D.accountsByOrigin(aFrom, aTo) : null, originVer = attrOk ? D.verifiedByOrigin(aFrom, aTo) : null;
+    const originTotal = origin ? Object.values(origin).reduce((s, v) => s + v, 0) : 0;
+    const originRows = origin ? CH.CHANNELS.map((c) => ({ key: c.key, name: c.label, accounts: origin[c.key] || 0, verified: originVer ? originVer[c.key] || 0 : null }))
+      .filter((r) => r.accounts || r.verified).sort((a, b) => b.accounts - a.accounts) : [];
+    const verifiedCols = [
+      { t: 'Verified', num: 1, f: (r) => (r.verified == null ? '–' : U.fmt(r.verified)) },
+      { t: 'Verified ÷ accounts', num: 1, f: (r) => (r.verified == null ? '–' : U.pct(r.accounts ? r.verified / r.accounts : null)) },
+    ];
+    const verNote = 'Verified = first account_verified per person in the same days (the Developer Network definition), so the ratio compares days, not a cohort.';
+    const byChannel = U.card({ title: 'Accounts by channel', sub: origin ? `${U.fmt(originTotal)} accounts · first-touch UTM · ${aWin}` : '', right: U.srcPill('posthog', 'first touch'),
+      body: origin ? (originRows.length ? U.table([
+        { t: 'Channel', f: (r) => U.esc(r.name) },
+        { t: 'Accounts', num: 1, f: (r) => U.fmt(r.accounts) }, { t: 'Share', num: 1, f: (r) => U.pct(originTotal ? r.accounts / originTotal : null) },
+        ...verifiedCols,
+      ], originRows) : U.empty('No accounts in this period')) + `<p class="card-note">Channels follow the Developer Network links. Meta and any campaign outside those links count as Other UTM; the campaign table names them. ${verNote} ${attrNote}</p>`
+        : U.empty(attrOk ? 'Waiting for PostHog' : 'Attribution not recorded yet', attrOk ? 'Accounts by channel appear after the next PostHog sync.' : utmPending) });
 
-    const geo = {};
-    for (const r of D.M()) if (r.source === 'posthog' && r.metric === 'ph_accounts_geo' && r.dim === 'country' && r.date >= S.from && r.date <= S.to) geo[r.dim_value] = (geo[r.dim_value] || 0) + (Number(r.value) || 0);
-    const geoRows = Object.entries(geo).sort((a, b) => b[1] - a[1]);
-    const assigned = geoRows.reduce((s, [, v]) => s + v, 0);
-    const countryBars = geoRows.slice(0, 10).map(([name, value]) => ({ name, color: 'var(--ch-direct)', value }));
-    if (total > assigned) countryBars.push({ name: 'No country', color: 'var(--ch-other)', value: total - assigned });
-    const byCountry = U.card({ title: 'Accounts by country', sub: `${U.fmt(assigned)} of ${U.fmt(total)} accounts with a country · ${U.win(S.from, S.to)}`, right: U.srcPill('posthog', 'country'),
-      body: countryBars.length ? C.hbars(countryBars, total) + '<p class="card-note">Country comes from the first sign-in in the browser. Accounts created only on the server have no country and are shown as No country, never guessed.</p>' : U.empty('No account countries yet') });
+    // By country against each market's monthly goal (goal plan), on the top-bar Month like the goal tile.
+    const plan = (S.data && S.data.goalPlan && S.data.goalPlan.countries) || {};
+    let byCountry;
+    if (g.status === 'loaded' && Object.keys(plan).length) {
+      const geo = {};
+      for (const r of D.M()) if (r.source === 'posthog' && r.metric === 'ph_accounts_geo' && r.dim === 'country' && r.date >= g.from && r.date <= g.to) geo[r.dim_value] = (geo[r.dim_value] || 0) + (Number(r.value) || 0);
+      const assigned = Object.values(geo).reduce((s, v) => s + v, 0);
+      const rows = Object.entries(plan).map(([country, goal]) => ({ country, accounts: geo[country] || 0, goal })).sort((a, b) => b.goal - a.goal);
+      const other = Object.entries(geo).filter(([c]) => !(c in plan)).reduce((s, [, v]) => s + v, 0);
+      rows.push({ country: 'Other countries', accounts: other, goal: null }, { country: 'No country', accounts: Math.max(0, g.value - assigned), goal: null });
+      byCountry = U.card({ title: 'Accounts by country vs monthly goal', sub: `${U.monthName(g.month)} to ${U.dshort(g.to)} · Month selector at the top · goals from the plan`, right: U.srcPill('posthog', 'country'), body: U.table([
+        { t: 'Country', f: (r) => U.esc(r.country) },
+        { t: 'Accounts', num: 1, f: (r) => U.fmt(r.accounts) },
+        { t: 'Monthly goal', num: 1, f: (r) => (r.goal == null ? '–' : U.fmt(r.goal)) },
+        { t: '% of goal', num: 1, f: (r) => (r.goal ? U.pct(r.accounts / r.goal) : '–') },
+      ], rows) + '<p class="card-note">Country comes from the first sign-in in the browser. Accounts created only on the server have no country and are shown as No country, never guessed.</p>' });
+    } else {
+      byCountry = U.card({ title: 'Accounts by country vs monthly goal', body: U.empty('No country goals or account coverage for this month') });
+    }
 
-    const costTable = U.card({ title: 'Spend per account by paid platform', sub: `${U.win(S.from, S.to)} · accounts whose first-touch UTM names the platform with a paid medium`, body: U.table([
+    // By persona: the pNN code at the start of utm_content (UTM convention; its place in paid ads is por confirmar).
+    const personaOf = (r) => D.persona(r.content) || (tagged(r) ? 'No persona code' : 'No UTM');
+    const group = (rows, keyOf) => { const m = new Map(); for (const r of rows || []) { const k = keyOf(r); m.set(k, (m.get(k) || 0) + r.people); } return m; };
+    const personaAcc = group(acc, personaOf), personaVer = group(ver, personaOf);
+    const personaRows = [...personaAcc.keys()].map((k) => ({ name: k, accounts: personaAcc.get(k) || 0, verified: ver ? personaVer.get(k) || 0 : null }))
+      .sort((a, b) => (/^p\d/.test(b.name) - /^p\d/.test(a.name)) || (/^p\d/.test(a.name) ? a.name.localeCompare(b.name) : b.accounts - a.accounts));
+    const byPersona = U.card({ title: 'Accounts by persona', sub: acc ? `${U.fmt(accAll)} accounts · persona code at the start of utm_content · ${aWin}` : '', right: U.srcPill('posthog', 'first touch'),
+      body: !acc ? U.empty(attrOk ? 'Waiting for PostHog' : 'Attribution not recorded yet', utmPending) : personaRows.length ? U.table([
+        { t: 'Persona', f: (r) => (/^p\d/.test(r.name) ? U.pill('info', r.name) : U.esc(r.name)) },
+        { t: 'Accounts', num: 1, f: (r) => U.fmt(r.accounts) }, { t: 'Share', num: 1, f: (r) => U.pct(accAll ? r.accounts / accAll : null) },
+        ...verifiedCols,
+      ], personaRows) + `<p class="card-note">Personas p01 to p13 per the UTM convention. Creator links carry the creator's user and Gmail ads the piece in utm_content, so they show as No persona code. Where paid ads put the persona code is still to be confirmed with the web team. ${attrNote}</p>` : U.empty('No accounts in this period') });
+
+    const costTable = !attrOk ? U.card({ title: 'Spend per account by paid platform', body: U.empty('Attribution not recorded yet', utmPending) }) : U.card({ title: 'Spend per account by paid platform', sub: `${aWin} · accounts whose first-touch UTM names the platform with a paid medium`, body: U.table([
       { t: 'Platform', f: (r) => `<span class="ch-dot" style="--ch:${r.color};margin-right:8px"></span>${U.esc(r.name)}` },
       { t: 'Spend', num: 1, f: (r) => (r.spend == null ? '<span class="text-muted">Not connected</span>' : U.money(r.spend)) },
-      { t: 'Accounts (paid UTM)', num: 1, f: (r) => (r.accounts == null ? '–' : U.fmt(r.accounts)) },
-      { t: 'Spend per account', num: 1, f: (r) => (r.spend == null || r.accounts == null ? '–' : r.accounts ? U.money(P.cost(r.spend, r.accounts)) : '<span class="text-muted">No accounts yet</span>') },
-    ], platforms) + '<p class="card-note">Spend in each ad account\'s reported currency. A paid sign-up that lost its UTM is not counted, so spend per account here is an upper bound.</p>' });
+      { t: 'Accounts', num: 1, f: (r) => (r.accounts == null ? '–' : U.fmt(r.accounts)) },
+      { t: 'Per account', num: 1, f: (r) => (r.spend == null || r.accounts == null ? '–' : r.accounts ? U.money(P.cost(r.spend, r.accounts)) : '<span class="text-muted">No accounts</span>') },
+      { t: 'Verified', num: 1, f: (r) => (r.verified == null ? '–' : U.fmt(r.verified)) },
+      { t: 'Per verified', num: 1, f: (r) => (r.spend == null || r.verified == null ? '–' : r.verified ? U.money(P.cost(r.spend, r.verified)) : '<span class="text-muted">None verified</span>') },
+    ], platforms) + `<p class="card-note">Spend in US dollars, converted at sync. A paid sign-up that lost its UTM is not counted, so spend per account is an upper bound. ${attrNote}</p>` });
 
-    const campaignRows = (utm || []).filter((r) => CH.classify(r) !== 'none');
-    const campaigns = U.card({ title: 'Accounts by campaign', sub: utm ? `${U.fmt(campaignRows.length)} source / medium / campaign rows · first-touch UTM · ${U.win(S.from, S.to)}` : '', right: U.srcPill('posthog', 'first touch'),
-      body: !utm ? U.empty('Waiting for PostHog', 'Accounts by campaign appear after the next PostHog sync.') : campaignRows.length ? U.table([
+    // By campaign: accounts and verified people per source / medium / campaign (utm_content summed).
+    const campKey = (r) => [r.campaign, r.source, r.medium].join('\u0001');
+    const campAcc = new Map(), campVer = group((ver || []).filter(tagged), campKey);
+    for (const r of (acc || []).filter(tagged)) { const k = campKey(r); const o = campAcc.get(k) || { campaign: r.campaign, source: r.source, medium: r.medium, accounts: 0 }; o.accounts += r.people; campAcc.set(k, o); }
+    const campaignRows = [...campAcc.entries()].map(([k, o]) => ({ ...o, verified: ver ? campVer.get(k) || 0 : null })).sort((a, b) => b.accounts - a.accounts);
+    const campaigns = U.card({ title: 'Accounts by campaign', sub: acc ? `${U.fmt(campaignRows.length)} source / medium / campaign rows · first-touch UTM · ${aWin}` : '', right: U.srcPill('posthog', 'first touch'),
+      body: !acc ? U.empty(attrOk ? 'Waiting for PostHog' : 'Attribution not recorded yet', attrOk ? 'Accounts by campaign appear after the next PostHog sync.' : utmPending) : campaignRows.length ? U.table([
         { t: 'Campaign', f: (r) => `<code>${U.esc(r.campaign)}</code>` },
         { t: 'Source / medium', f: (r) => `${U.esc(r.source)} / ${U.esc(r.medium)}` },
         { t: 'Channel', f: (r) => { const k = P.platform(r.source, r.medium); const pf = k && C.PLATFORMS.find((p) => p.key === k); return `${U.esc(CH.label(CH.classify(r)))}${pf ? ` ${U.pill('info', `Paid · ${pf.name}`)}` : ''}`; } },
         { t: 'Accounts', num: 1, f: (r) => U.fmt(r.accounts) },
-        { t: 'Share of accounts', num: 1, f: (r) => U.pct(total ? r.accounts / total : null) },
-      ], campaignRows.slice(0, 25)) + (campaignRows.length > 25 ? `<p class="card-note">Top 25 of ${U.fmt(campaignRows.length)} rows.</p>` : '') + `<p class="card-note">${U.fmt(total - attributed)} accounts have no first-touch UTM and are not listed.</p>`
+        { t: 'Share of accounts', num: 1, f: (r) => U.pct(accAll ? r.accounts / accAll : null) },
+        ...verifiedCols,
+      ], campaignRows.slice(0, 25)) + (campaignRows.length > 25 ? `<p class="card-note">Top 25 of ${U.fmt(campaignRows.length)} rows.</p>` : '')
+        + `<p class="card-note">${U.fmt(accAll - withUtm)} accounts have no first-touch UTM and are not listed. Counted from each account's own first-touch UTM in PostHog; Executive's campaign funnel splits a different population (external people on approved hosts, matched to HubSpot forms), so its per-campaign numbers can differ. ${attrNote}</p>`
         : U.empty('No accounts with a UTM in this period') });
 
-    return U.section('Users acquired', `${U.win(S.from, S.to)} · accounts created in the platform (PostHog), internal excluded · change compares the latest two complete ${grain.toLowerCase()} buckets since launch`, kpis)
+    return U.section('Users acquired', `${U.win(S.from, S.to)} · accounts created in the platform (PostHog), internal excluded · splits by UTM from ${U.dshort(ATTRIBUTION_FROM)} · change compares the latest two complete ${grain.toLowerCase()} buckets since launch`, kpis)
       + `<section class="section grid-2">${byChannel}${byCountry}</section>`
-      + `<section class="section grid-2">${campaigns}${costTable}</section>`;
+      + `<section class="section grid-2">${byPersona}${costTable}</section>`
+      + `<section class="section">${campaigns}</section>`;
   }
 
   function render() {

@@ -390,27 +390,32 @@
   };
   // Coverage row of the paged report ({ rows, parts, truncated }), or null for older loads.
   D.utmCoverage = () => { const s = D.snap('ga4', 'utm_attribution_coverage'); return s && s.rows && s.rows[0] ? s.rows[0] : null; };
-  // Accounts created, non-Internal (the same people as Overview's accounts and channel split), by
-  // first-touch source / medium / campaign from ph_accounts_utm. Null until the connector sends it.
-  D.accountsByUtm = (from = S.from, to = S.to) => {
-    if (!D.covered('posthog', 'account_utm_coverage', from, to)) return null;
+  // Non-Internal people by first-touch source / medium / campaign / content, from ph_accounts_utm (accounts
+  // created, the same people as Overview) or ph_builders_utm (verified). Null until the connector sends it.
+  const byUtmKey = (metric, coverage) => (from = S.from, to = S.to) => {
+    if (!D.covered('posthog', coverage, from, to)) return null;
     const out = new Map();
     for (const r of D.M()) {
-      if (r.source !== 'posthog' || r.metric !== 'ph_accounts_utm' || r.dim !== 'utm' || !inR(r.date, from, to)) continue;
-      const [source = '(not set)', medium = '(not set)', campaign = '(not set)'] = String(r.dim_value || '').split('|');
-      const o = out.get(r.dim_value) || { source, medium, campaign, accounts: 0 };
-      o.accounts += Number(r.value) || 0;
+      if (r.source !== 'posthog' || r.metric !== metric || r.dim !== 'utm' || !inR(r.date, from, to)) continue;
+      const [source = '(not set)', medium = '(not set)', campaign = '(not set)', content = '(not set)'] = String(r.dim_value || '').split('|');
+      const o = out.get(r.dim_value) || { source, medium, campaign, content, people: 0 };
+      o.people += Number(r.value) || 0;
       out.set(r.dim_value, o);
     }
-    return [...out.values()].sort((a, b) => b.accounts - a.accounts);
+    return [...out.values()].sort((a, b) => b.people - a.people);
   };
-  // Non-Internal accounts by first-touch channel (ph_accounts_origin, the Overview split). Null until covered.
-  D.accountsByOrigin = (from = S.from, to = S.to) => {
-    if (!D.covered('posthog', 'account_origin_coverage', from, to)) return null;
+  D.accountsByUtm = byUtmKey('ph_accounts_utm', 'account_utm_coverage');
+  D.verifiedByUtm = byUtmKey('ph_builders_utm', 'builders_utm_coverage');
+  // Non-Internal people by first-touch channel: accounts (ph_accounts_origin, the Overview split) or verified
+  // (ph_builders_origin). Null until covered.
+  const byOrigin = (metric, coverage) => (from = S.from, to = S.to) => {
+    if (!D.covered('posthog', coverage, from, to)) return null;
     const out = {};
-    for (const r of D.M()) if (r.source === 'posthog' && r.metric === 'ph_accounts_origin' && r.dim === 'origin' && inR(r.date, from, to)) out[r.dim_value] = (out[r.dim_value] || 0) + (Number(r.value) || 0);
+    for (const r of D.M()) if (r.source === 'posthog' && r.metric === metric && r.dim === 'origin' && inR(r.date, from, to)) out[r.dim_value] = (out[r.dim_value] || 0) + (Number(r.value) || 0);
     return out;
   };
+  D.accountsByOrigin = byOrigin('ph_accounts_origin', 'account_origin_coverage');
+  D.verifiedByOrigin = byOrigin('ph_builders_origin', 'builders_coverage');
   D.path = (p) => String(p || '(not set)').split('?')[0] || '/';
   // Persona = the pNN prefix of utm_content (p03, p03_video_a -> p03).
   D.persona = (v) => { const m = /^p(\d{1,2})(?!\d)/i.exec(String(v || '').trim()); return m ? `p${m[1].padStart(2, '0')}` : null; };

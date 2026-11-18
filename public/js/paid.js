@@ -10,10 +10,12 @@
     linkedin: ['linkedin', 'linked-in', 'linkedin.com'],
     google_ads: ['google', 'googleads', 'google-ads', 'adwords'],
   };
+  // A paid medium, whatever the platform (the goals spec: cpc, paid_social, paid, display...).
+  const paidMedium = (medium) => /^(paid|paid-social|paid-search|cpc|ppc|display|cpm)$/.test(norm(medium));
   const platform = (source, medium) => {
-    if (!/^(paid|paid-social|paid-search|cpc|ppc|display|cpm)$/.test(norm(medium))) return null;
+    if (!paidMedium(medium)) return null;
     return Object.keys(aliases).find((key) => aliases[key].includes(norm(source))) || null;
   };
   const cost = (spend, count, factor = 1) => spend != null && Number.isFinite(Number(spend)) && Number(count) > 0 ? Number(spend) / Number(count) * factor : null;
-  return { platform, cost };
+  return { platform, paidMedium, cost };
 });
