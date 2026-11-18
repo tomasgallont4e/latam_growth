@@ -380,9 +380,36 @@
     return Object.values(out);
   };
   // GA4 sessions by UTM / landing page / city for the period (snapshot rows carry their date).
+  // The connector splits the report into utm_attribution (part 1) and utm_attribution_2..N, all for the
+  // same window; older loads have part 1 only.
   D.utmRows = (from = S.from, to = S.to) => {
     const s = D.snap('ga4', 'utm_attribution');
-    return s ? (s.rows || []).filter((r) => inR(r.date, from, to)) : [];
+    if (!s) return [];
+    const parts = ((S.data && S.data.snapshots) || []).filter((x) => x.source === 'ga4' && /^utm_attribution_\d+$/.test(x.key) && x.from === s.from && x.to === s.to);
+    return [s, ...parts].flatMap((x) => x.rows || []).filter((r) => inR(r.date, from, to));
+  };
+  // Coverage row of the paged report ({ rows, parts, truncated }), or null for older loads.
+  D.utmCoverage = () => { const s = D.snap('ga4', 'utm_attribution_coverage'); return s && s.rows && s.rows[0] ? s.rows[0] : null; };
+  // Accounts created, non-Internal (the same people as Overview's accounts and channel split), by
+  // first-touch source / medium / campaign from ph_accounts_utm. Null until the connector sends it.
+  D.accountsByUtm = (from = S.from, to = S.to) => {
+    if (!D.covered('posthog', 'account_utm_coverage', from, to)) return null;
+    const out = new Map();
+    for (const r of D.M()) {
+      if (r.source !== 'posthog' || r.metric !== 'ph_accounts_utm' || r.dim !== 'utm' || !inR(r.date, from, to)) continue;
+      const [source = '(not set)', medium = '(not set)', campaign = '(not set)'] = String(r.dim_value || '').split('|');
+      const o = out.get(r.dim_value) || { source, medium, campaign, accounts: 0 };
+      o.accounts += Number(r.value) || 0;
+      out.set(r.dim_value, o);
+    }
+    return [...out.values()].sort((a, b) => b.accounts - a.accounts);
+  };
+  // Non-Internal accounts by first-touch channel (ph_accounts_origin, the Overview split). Null until covered.
+  D.accountsByOrigin = (from = S.from, to = S.to) => {
+    if (!D.covered('posthog', 'account_origin_coverage', from, to)) return null;
+    const out = {};
+    for (const r of D.M()) if (r.source === 'posthog' && r.metric === 'ph_accounts_origin' && r.dim === 'origin' && inR(r.date, from, to)) out[r.dim_value] = (out[r.dim_value] || 0) + (Number(r.value) || 0);
+    return out;
   };
   D.path = (p) => String(p || '(not set)').split('?')[0] || '/';
   // Persona = the pNN prefix of utm_content (p03, p03_video_a -> p03).
