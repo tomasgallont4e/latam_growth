@@ -262,30 +262,41 @@
   };
   const pctLabel = (v) => `${+(v * 100).toFixed(1)}%`;
   C.targetLabel = (t) => `${t.atLeast ? 'at least ' : ''}${t.max != null ? `${+(t.pct * 100).toFixed(1)}–${pctLabel(t.max)}` : pctLabel(t.pct)}`;
-  // The % versus the previous step, large and to the right, with a short verdict against the step's target.
+  // Compact target for the verdict box: the same size as the actual %, so "at least" becomes ≥.
+  const targetShort = (t) => `${t.atLeast ? '≥' : ''}${t.max != null ? `${+(t.pct * 100).toFixed(1)}–${pctLabel(t.max)}` : pctLabel(t.pct)}`;
+  // The % versus the previous step and its target, the same size on one line with a meter between them
+  // (how much of the target is reached), under a short verdict.
   function verdict(steps, k, weak) {
     const s = steps[k];
     const note = (t) => `<span class="fv-note">${U.esc(t)}</span>`;
-    const block = (cls, big, head, sub) => `<div class="funnel-verdict ${cls}"><span class="fv-text"><b>${U.esc(head)}</b>${sub ? `<small>${U.esc(sub)}</small>` : ''}</span><span class="fv-pct">${U.esc(big)}</span></div>`;
+    const tgt = s.target != null ? targetShort({ pct: s.target, max: s.targetMax, atLeast: s.targetAtLeast }) : null;
+    const block = (cls, big, head, sub, target, fill) => {
+      const meter = target != null ? `<span class="fv-meter" aria-hidden="true"><i style="width:${Math.round(Math.max(0, Math.min(1, fill || 0)) * 100)}%"></i></span>` : '';
+      const goal = target != null ? `<span class="fv-target"><span class="sr-only">target </span>${U.esc(target)}</span>` : '';
+      return `<div class="funnel-verdict ${cls}"><span class="fv-head"><b>${U.esc(head)}</b>${sub ? `<small>${U.esc(sub)}</small>` : ''}</span>`
+        + `<span class="fv-nums${target != null ? '' : ' no-target'}"><span class="fv-pct"><span class="sr-only">actual </span>${U.esc(big)}</span>${meter}${goal}</span></div>`;
+    };
     if (k === 0) return s.n == null ? block('is-empty', '–', 'No data yet', 'not zero') : note('Start of the funnel');
     if (s.aside) return note('Reference · not part of the %');
     if (s.kind === 'rate' || s.separate) return note(s.bridge || 'Separate path');
     const p = prevOf(steps, k), a = steps[p].n, b = s.n;
     const vs = p === k - 1 ? '' : `vs ${steps[p].name}`;
-    if (a == null || b == null) return block('is-empty', '–', 'No data yet', 'not zero');
+    if (a == null || b == null) return block('is-empty', '–', 'No data yet', 'not zero', tgt, 0);
     if (a && b > a) {
       const r = b / a;
-      return block('is-over', r >= 1.5 ? `${r.toFixed(1)}×` : `+${Math.round((r - 1) * 100)}%`, 'More than the step above', s.why || '');
+      return block('is-over', r >= 1.5 ? `${r.toFixed(1)}×` : `+${Math.round((r - 1) * 100)}%`, 'More than the step above', s.why || 'not comparable', tgt != null ? '–' : null, 0);
     }
     const kp = a ? b / a : 0;
     const big = U.pct(kp, kp && kp < 0.001 ? 2 : 1);
-    if (s.target == null) return block('is-plain', big, 'continue', vs);
-    const sub = [`target ${C.targetLabel({ pct: s.target, max: s.targetMax, atLeast: s.targetAtLeast })}`, vs].filter(Boolean).join(' · ');
-    if (kp >= s.target) return block('is-met', big, 'On target', sub);
-    if (kp >= s.target * 0.8) return block('is-close', big, 'Close to target', sub);
+    if (tgt == null) return block('is-plain', big, 'continue', vs);
+    const fill = kp / s.target;
+    if (kp >= s.target) return block('is-met', big, 'On target', vs, tgt, 1);
+    if (kp >= s.target * 0.8) return block('is-close', big, 'Close to target', vs, tgt, fill);
     const times = kp ? s.target / kp : Infinity;
-    const head = k === weak ? 'Biggest leak' : !kp ? 'No one continued' : times >= 2 ? `${Math.round(times)}× below target` : 'Below target';
-    return block(`is-below${k === weak ? ' is-weak' : ''}`, big, head, sub);
+    const gap = !kp ? 'No one continued' : times >= 2 ? `${Math.round(times)}× below target` : 'Below target';
+    const head = k === weak ? 'Biggest leak' : gap;
+    const sub = [k === weak ? gap : '', vs].filter(Boolean).join(' · ');
+    return block(`is-below${k === weak ? ' is-weak' : ''}`, big, head, sub, tgt, fill);
   }
   C.funnel = (steps, label = 'Independent measurement stages', opts = {}) => {
     const baseStep = steps.find((s) => s.kind !== 'rate' && s.n != null);
