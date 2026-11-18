@@ -120,14 +120,33 @@
         ...verifiedCols,
       ], personaRows) + `<p class="card-note">Personas p01 to p13 per the UTM convention. Creator links carry the creator's user and Gmail ads the piece in utm_content, so they show as No persona code. Where paid ads put the persona code is still to be confirmed with the web team. ${attrNote}</p>` : U.empty('No accounts in this period') });
 
-    const costTable = !attrOk ? U.card({ title: 'Spend per account by paid platform', body: U.empty('Attribution not recorded yet', utmPending) }) : U.card({ title: 'Spend per account by paid platform', sub: `${aWin} · accounts whose first-touch UTM names the platform with a paid medium`, body: U.table([
-      { t: 'Platform', f: (r) => `<span class="ch-dot" style="--ch:${r.color};margin-right:8px"></span>${U.esc(r.name)}` },
+    // Paid funnel by platform (the 2026-11-06 decision: drill from the aggregate funnel to each channel), every
+    // step in the attribution window so the rates compare the same days. Click to session under 50% is flagged
+    // (goals spec): slow landing or incomplete measurement.
+    const funnelRows = attrOk ? platforms.map((p) => { const s = D.paidStats(p.key, aFrom, aTo); return { ...p, impressions: s.impressions, clicks: s.clicks, sessions: s.sessions, forms: s.forms }; }) : [];
+    if (funnelRows.length) {
+      const add = (k) => (funnelRows.some((r) => r[k] != null) ? funnelRows.reduce((s, r) => s + (r[k] || 0), 0) : null);
+      funnelRows.push({ name: 'All paid', color: 'transparent', total: true, ...Object.fromEntries(['spend', 'impressions', 'clicks', 'sessions', 'forms', 'accounts', 'verified'].map((k) => [k, add(k)])) });
+    }
+    const n = (v) => (v == null ? '<span class="text-muted">–</span>' : U.fmt(v));
+    const rate = (a, b, digits) => (a == null || !b ? '–' : U.pct(a / b, digits));
+    const clickToSession = (r) => {
+      if (r.sessions == null || !r.clicks) return '–';
+      const v = r.sessions / r.clicks;
+      return v < 0.5 ? `${U.pct(v)} ${U.pill('warning', 'Under 50%')}` : U.pct(v);
+    };
+    const paidFunnel = !attrOk ? U.card({ title: 'Paid funnel by platform', body: U.empty('Attribution not recorded yet', utmPending) }) : U.card({ title: 'Paid funnel by platform', sub: `${aWin} · impressions → clicks → landing sessions → form sign-ups → accounts → verified, each from its own source`, body: U.table([
+      { t: 'Platform', f: (r) => (r.total ? `<b>${U.esc(r.name)}</b>` : `<span class="ch-dot" style="--ch:${r.color};margin-right:8px"></span>${U.esc(r.name)}`) },
+      { t: 'Impressions', num: 1, f: (r) => n(r.impressions) },
+      { t: 'Clicks', num: 1, f: (r) => n(r.clicks) }, { t: 'CTR', num: 1, f: (r) => rate(r.clicks, r.impressions, 2) },
+      { t: 'Landing sessions', num: 1, f: (r) => n(r.sessions) }, { t: 'Click → session', num: 1, f: clickToSession },
+      { t: 'Form sign-ups', num: 1, f: (r) => n(r.forms) },
+      { t: 'Accounts', num: 1, f: (r) => n(r.accounts) }, { t: 'Session → account', num: 1, f: (r) => rate(r.accounts, r.sessions) },
+      { t: 'Verified', num: 1, f: (r) => n(r.verified) },
       { t: 'Spend', num: 1, f: (r) => (r.spend == null ? '<span class="text-muted">Not connected</span>' : U.money(r.spend)) },
-      { t: 'Accounts', num: 1, f: (r) => (r.accounts == null ? '–' : U.fmt(r.accounts)) },
       { t: 'Per account', num: 1, f: (r) => (r.spend == null || r.accounts == null ? '–' : r.accounts ? U.money(P.cost(r.spend, r.accounts)) : '<span class="text-muted">No accounts</span>') },
-      { t: 'Verified', num: 1, f: (r) => (r.verified == null ? '–' : U.fmt(r.verified)) },
       { t: 'Per verified', num: 1, f: (r) => (r.spend == null || r.verified == null ? '–' : r.verified ? U.money(P.cost(r.spend, r.verified)) : '<span class="text-muted">None verified</span>') },
-    ], platforms) + `<p class="card-note">Spend in US dollars, converted at sync. A paid sign-up that lost its UTM is not counted, so spend per account is an upper bound. ${attrNote}</p>` });
+    ], funnelRows) + `<p class="card-note">Impressions and clicks from each ad platform (Meta counts link clicks); landing sessions from GA4 by paid UTM; form sign-ups from HubSpot by paid UTM; accounts and verified people from PostHog first-touch UTMs. The sources are not linked person by person, so each rate compares totals. Click → session under 50% points to a slow landing or incomplete measurement. Spend in US dollars, converted at sync; a paid sign-up that lost its UTM is not counted, so spend per account is an upper bound. ${attrNote}</p>` });
 
     // By campaign: accounts and verified people per source / medium / campaign (utm_content summed).
     const campKey = (r) => [r.campaign, r.source, r.medium].join('\u0001');
@@ -148,8 +167,8 @@
 
     return U.section('Users acquired', `${U.win(S.from, S.to)} · accounts created in the platform (PostHog), internal excluded · splits by UTM from ${U.dshort(ATTRIBUTION_FROM)} · change compares the latest two complete ${grain.toLowerCase()} buckets since launch`, kpis)
       + `<section class="section grid-2">${byChannel}${byCountry}</section>`
-      + `<section class="section grid-2">${byPersona}${costTable}</section>`
-      + `<section class="section">${campaigns}</section>`;
+      + `<section class="section">${paidFunnel}</section>`
+      + `<section class="section grid-2">${byPersona}${campaigns}</section>`;
   }
 
   function render() {
@@ -178,21 +197,24 @@
     const hasBucketGA = !!(bucketNow || bucketPrevious);
     const countDelta = (metric) => bucketComparison ? U.delta(bucketNow && bucketNow[metric], bucketPrevious && bucketPrevious[metric]) : null;
     const rateDelta = () => bucketComparison ? U.deltaPoints(bucketNow && bucketNow.rate, bucketPrevious && bucketPrevious.rate) : null;
+    // The two complete buckets' own values, so each change reads with its numbers ("Nov 9–15: 5,018 · Nov 2–8: 2,979").
+    const bucketValues = (metric, format = U.fmt) => bucketComparison
+      ? `${bucketComparison.current.label}: ${format(bucketNow && bucketNow[metric])} · ${bucketComparison.previous.label}: ${format(bucketPrevious && bucketPrevious[metric])}` : bucketDeltaLabel;
     const missingRangeKpi = (label, delta, note) => hasBucketGA
       ? U.kpi({ label, source: 'GA4', value: '–', delta, compare: `No selected-range value · ${note} · ${bucketDeltaLabel}` })
       : U.kpi({ label, source: 'GA4', awaiting: 'GA4' });
 
     const kpis = U.kpiRow([
-      !g ? missingRangeKpi('GA4 sessions', countDelta('sessions'), 'bucket counts are still shown') : U.kpi({ label: 'GA4 sessions', source: 'GA4', value: U.fmt(g.sessions), delta: countDelta('sessions'), spark: D.series(gaSessDay), compare: `Selected-range total · ${bucketDeltaLabel}` }),
+      !g ? missingRangeKpi('GA4 sessions', countDelta('sessions'), 'bucket counts are still shown') : U.kpi({ label: 'GA4 sessions', source: 'GA4', value: U.fmt(g.sessions), delta: countDelta('sessions'), spark: D.series(gaSessDay), compare: `Selected-range total · ${bucketDeltaLabel} · ${bucketValues('sessions')}` }),
       // Unique visitors are deduplicated over the whole range; GA4 daily uniques cannot be added, so there is no period change.
       !g ? U.kpi({ label: 'Unique visitors', source: 'GA4', awaiting: 'GA4' })
         : U.kpi({ label: 'Unique visitors', source: 'GA4', value: g.users == null ? '–' : U.fmt(g.users), compare: g.users == null ? 'Deduplicated total not available for this range' : 'Deduplicated selected-range total · no period change: daily unique visitors cannot be added' }),
       !g ? missingRangeKpi('New users', countDelta('newUsers'), 'bucket counts are still shown')
         : g.newUsers == null ? U.kpi({ label: 'New users', source: 'GA4', value: '–', delta: countDelta('newUsers'), compare: `New-user total unavailable for this range · ${bucketDeltaLabel}` })
-          : U.kpi({ label: 'New users', source: 'GA4', value: U.fmt(g.newUsers), delta: countDelta('newUsers'), spark: gaNewDay ? D.series(gaNewDay) : null, compare: `First visits; selected-range total · ${bucketDeltaLabel}` }),
+          : U.kpi({ label: 'New users', source: 'GA4', value: U.fmt(g.newUsers), delta: countDelta('newUsers'), spark: gaNewDay ? D.series(gaNewDay) : null, compare: `First visits; selected-range total · ${bucketDeltaLabel} · ${bucketValues('newUsers')}` }),
       !g ? missingRangeKpi('Engagement rate', rateDelta(), 'bucket rates are still shown when both rates exist')
         : !g.sessions ? U.kpi({ label: 'Engagement rate', source: 'GA4', value: '–', delta: rateDelta(), compare: `No selected-range sessions · ${bucketDeltaLabel}` })
-          : U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(g.rate), delta: rateDelta(), spark: D.seriesRate(gaEngDay, gaSessDay), compare: `${U.fmt(g.engaged)} engaged of ${U.fmt(g.sessions)} range sessions · ${bucketDeltaLabel}` }),
+          : U.kpi({ label: 'Engagement rate', source: 'GA4', value: U.pct(g.rate), delta: rateDelta(), spark: D.seriesRate(gaEngDay, gaSessDay), compare: `${U.fmt(g.engaged)} engaged of ${U.fmt(g.sessions)} range sessions · ${bucketDeltaLabel} · ${bucketValues('rate', U.pct)}` }),
       topChannel ? U.kpi({ label: 'Top channel', source: 'GA4', value: U.esc(topChannel.channel), small: true, compare: `Selected-range share · ${U.fmt(topChannel.sessions)} sessions · ${U.pct(channelTotal ? topChannel.sessions / channelTotal : null)} of total · ${channelDeltaLabel}` })
         : (currentTop || previousTop) ? U.kpi({ label: 'Top channel', source: 'GA4', value: '–', small: true, compare: `No top channel in selected range · ${channelDeltaLabel}` })
           : U.kpi({ label: 'Top channel', source: 'GA4', awaiting: 'GA4' }),
@@ -251,6 +273,30 @@
       }
       return Object.values(countries);
     }).sort((a, b) => periodIndex.get(a.periodKey) - periodIndex.get(b.periodKey) || (b.sessions || 0) - (a.sessions || 0) || (b.forms || 0) - (a.forms || 0));
+    // Deduplicated GA4 visitors per country for the synced window (launch to the last sync). GA4 users cannot be
+    // added across days, so this is the only per-country visitor count; it does not follow the date range.
+    const countrySnap = D.snap('ga4', 'countries');
+    const countryUsers = countrySnap ? (countrySnap.rows || []).filter((r) => Number(r.users) > 0).sort((a, b) => Number(b.users) - Number(a.users)) : [];
+    const countryUsersTotal = countryUsers.reduce((s, r) => s + Number(r.users), 0);
+    const visitorsByCountry = U.details('Visitors by country since launch (GA4, deduplicated)', countrySnap ? `${U.fmt(countryUsers.length)} countries · ${U.win(countrySnap.from, countrySnap.to)}` : '', countrySnap ? (countryUsers.length ? U.table([
+      { t: 'Country', k: 'country' }, { t: 'Visitors', num: 1, f: (r) => U.fmt(Number(r.users)) },
+      { t: 'Share', num: 1, f: (r) => U.pct(countryUsersTotal ? Number(r.users) / countryUsersTotal : null) },
+      { t: 'Engaged sessions', num: 1, f: (r) => U.fmt(Number(r.engaged_sessions)) }, { t: 'Key events', num: 1, f: (r) => U.fmt(Number(r.key_events)) },
+    ], countryUsers.slice(0, 50)) + `<p class="card-note" style="padding:0 20px 16px">Each person counted once per country over the synced window (${U.win(countrySnap.from, countrySnap.to)}), whatever the date range or Group by at the top. Shares are of the visitors with a country; a person seen in two countries counts in both.</p>` : U.empty('No GA4 visitors by country yet')) : U.awaiting('ga4'));
+    // HubSpot traffic by its own source labels: a cross-check on GA4 (the goals spec), not the landing number.
+    const srcRows = periods.flatMap((period) => {
+      const total = D.sessions(period.from, period.to);
+      return D.byDim('hubspot', 'sessions', period.from, period.to).map(([k, s]) => {
+        const match = (r) => (r.dim_value || 'Total') === k;
+        return { periodKey: period.key, period: period.label, k, s, total, pv: D.sum('hubspot', 'pageviews', match, period.from, period.to), b: D.sum('hubspot', 'bounces', match, period.from, period.to), c: D.sum('hubspot', 'contacts', match, period.from, period.to) };
+      });
+    }).sort((a, b) => periodIndex.get(a.periodKey) - periodIndex.get(b.periodKey) || b.s - a.s);
+    const hubspotCheck = U.details('HubSpot sessions by source and period (cross-check)', `${U.fmt(srcRows.length)} source-period rows · ${grain} · whole HubSpot-tracked site`, srcRows.length ? U.table([
+      { t: 'Period', f: (r) => U.esc(r.period) },
+      { t: 'Source', f: (r) => `<span class="ch-dot" style="--ch:${C.CHANNELS[C.channelOf(r.k)].color};margin-right:8px"></span>${U.esc(r.k)}` },
+      { t: 'Sessions', num: 1, f: (r) => U.fmt(r.s) }, { t: 'Share in period', num: 1, f: (r) => U.pct(r.total ? r.s / r.total : null) },
+      { t: 'Page views', num: 1, f: (r) => U.fmt(r.pv) }, { t: 'Bounce rate', num: 1, f: (r) => U.pct(r.s ? r.b / r.s : null) }, { t: 'New contacts', num: 1, f: (r) => U.fmt(r.c) },
+    ], srcRows.slice(-300)) + periodRowsNote(srcRows.length, 300) + '<p class="card-note" style="padding:0 20px 16px">HubSpot counts every page carrying its tracking code, with no domain filter, so these sessions check GA4 rather than match it; GA4 is the source for landing sessions. New contacts use HubSpot\'s original source: accounts the portal creates in HubSpot show as Offline sources.</p>' : U.awaiting('hubspot'));
     const details = `<div class="detail-group">
       ${channelPeriodDetails}
       ${U.details('UTM campaigns by period (GA4)', utmSnap ? `${U.fmt(utm.length)} campaign-period rows · ${grain} · snapshot ${U.win(utmSnap.from, utmSnap.to)}` : '', utmSnap ? (utm.length ? U.table([
@@ -265,6 +311,8 @@
         { t: 'Engagement', num: 1, f: rateOf }, { t: 'Key events', num: 1, f: (r) => U.fmt(r.key_events) },
         { t: 'Form sign-ups (HubSpot)', num: 1, f: (r) => U.fmt(r.forms || 0) },
       ], crow.slice(-300)) + periodRowsNote(crow.length, 300) : U.empty('No country data yet', 'GA4 country rows and HubSpot form sign-ups by country appear here once loaded.'))}
+      ${visitorsByCountry}
+      ${hubspotCheck}
     </div>`;
 
     return acquired(U, C, D, S)

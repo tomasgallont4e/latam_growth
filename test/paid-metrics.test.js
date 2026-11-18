@@ -779,7 +779,7 @@ test('Acquisition channel engagement detail follows the selected period buckets'
   assert.match(html, /Organic Search/);
 });
 
-test('Acquisition groups UTM and country detail by period, without the whole-site HubSpot table or summed users', () => {
+test('Acquisition groups HubSpot, UTM and country detail by period without summing daily unique users', () => {
   const A = dashboard(); A.S.from = '2026-10-19'; A.S.to = '2026-10-29'; A.S.grain = 'week'; A.ui.today = () => '2026-10-30';
   const m = (source, metricName, value, date, dim, dim_value) => ({ source, metric: metricName, value, date, dim, dim_value });
   A.S.data.metrics = [
@@ -798,8 +798,13 @@ test('Acquisition groups UTM and country detail by period, without the whole-sit
   A.S.data.snapshots = [{ source: 'ga4', key: 'utm_attribution', from: A.S.from, to: A.S.to, rows }];
   A.S.data.events = [{ kind: 'form_signup', date: '2026-10-20', country: 'Colombia', internal: false }];
   const html = A.views.acquisition.render();
-  // HubSpot's traffic report covers the whole site with no domain filter, so it contradicted GA4 here.
-  assert.doesNotMatch(html, /HubSpot sessions by source and period/);
+  // HubSpot's traffic report covers the whole site with no domain filter: kept as a labelled cross-check on GA4.
+  assert.match(html, /HubSpot sessions by source and period \(cross-check\)/);
+  assert.match(html, /whole HubSpot-tracked site/);
+  assert.match(html, /these sessions check GA4 rather than match it/);
+  const hubspot = html.slice(html.indexOf('HubSpot sessions by source and period'));
+  assert.match(hubspot, /Organic Search[\s\S]*?<td class="td-num">12<\/td>/);
+  assert.match(hubspot, /Bounce rate/); assert.match(hubspot, /New contacts/);
   assert.match(html, /UTM campaigns by period \(GA4\)/);
   assert.match(html, /Entry pages by period \(GA4\)/);
   assert.match(html, /Countries by period \(GA4\)/);
@@ -2042,6 +2047,34 @@ test('a step larger than the one above is grey with the multiple, a met step is 
   assert.doesNotMatch(C.funnel([{ name: 'A', src: 'a', n: 10 }, { name: 'B', src: 'b', n: 5 }], 'y'), /funnel-verdict/, 'other funnels keep their layout');
 });
 
+test('Acquisition shows deduplicated GA4 visitors by country since launch, whatever the grouping', () => {
+  for (const grain of ['day', 'week', 'month', 'quarter']) {
+    const A = dashboard(); A.S.from = '2026-10-19'; A.S.to = '2026-10-29'; A.S.grain = grain; A.ui.today = () => '2026-10-30';
+    A.S.data.snapshots = [{ source: 'ga4', key: 'countries', from: '2026-10-01', to: '2026-10-30', rows: [
+      { country: 'Colombia', users: 300, engaged_sessions: 200, key_events: 9 }, { country: 'Mexico', users: 100, engaged_sessions: 50, key_events: 1 }, { country: 'Peru', users: 0 },
+    ] }];
+    const html = A.views.acquisition.render();
+    const card = html.slice(html.indexOf('Visitors by country since launch (GA4, deduplicated)'));
+    assert.match(card, /2 countries · Oct 1 – Oct 30/, grain);
+    assert.match(card, /Colombia<\/td><td class="td-num">300<\/td><td class="td-num">75\.0%/, grain);
+    assert.doesNotMatch(card.slice(0, card.indexOf('</table>')), /Peru/, 'countries without visitors are left out');
+  }
+});
+
+test('Acquisition traffic tiles show both complete buckets\' own values next to the change', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
+  const row = (metricName, value, date, channel) => ({ source: 'ga4', metric: metricName, value, date, dim: channel ? 'channel' : '', dim_value: channel || '' });
+  A.S.data.metrics = [
+    row('ga_sessions', 100, '2026-10-27', 'Organic Search'), row('ga_engaged_sessions', 50, '2026-10-27', 'Organic Search'), row('ga_new_users', 5, '2026-10-27'),
+    row('ga_sessions', 150, '2026-10-28', 'Paid Social'), row('ga_engaged_sessions', 90, '2026-10-28', 'Paid Social'), row('ga_new_users', 8, '2026-10-28'),
+  ];
+  const kpis = trafficKpis(A.views.acquisition.render());
+  assert.match(kpis, /Oct 28: 150 · Oct 27: 100/);
+  assert.match(kpis, /Oct 28: 8 · Oct 27: 5/);
+  assert.match(kpis, /Oct 28: 60\.0% · Oct 27: 50\.0%/);
+});
+
 // Users acquired (Acquisition): PostHog accounts, non-Internal, the same people Overview counts.
 // November data: attribution splits start on 2026-11-06, so the 2026-11-03 accounts count in the total only.
 function acquiredData(A, { utm = true } = {}) {
@@ -2108,7 +2141,8 @@ test('Acquisition splits accounts by channel, persona, campaign and platform fro
   assert.match(html, /Paid \/ organic[\s\S]*?3 \/ 7/);
   // Spend in the window only: (30 + 12.5) / 3 accounts and / 3 verified; the Nov 3 Meta spend is left out.
   assert.match(html, /\$42\.50 ÷ 3 accounts from Meta, Google Ads and LinkedIn UTMs · \$14\.17 per verified account/);
-  assert.match(html, /Meta<\/td><td class="td-num">\$30\.00<\/td><td class="td-num">2<\/td><td class="td-num">\$15\.00<\/td><td class="td-num">2<\/td><td class="td-num">\$15\.00/);
+  // Paid funnel row for Meta: accounts 2, verified 2, spend $30, $15 per account and per verified.
+  assert.match(html, /Meta<\/td>(<td class="td-num">[^<]*(<span[^>]*>[^<]*<\/span>)?<\/td>){6}<td class="td-num">2<\/td><td class="td-num">–<\/td><td class="td-num">2<\/td><td class="td-num">\$30\.00<\/td><td class="td-num">\$15\.00<\/td><td class="td-num">\$15\.00/);
   assert.match(html, /Spend in US dollars, converted at sync/);
   // Channel table with verified people: Other UTM 3 accounts, 2 verified.
   assert.match(html, /Other UTM<\/td><td class="td-num">3<\/td><td class="td-num">30\.0%<\/td><td class="td-num">2<\/td><td class="td-num">66\.7%/);
@@ -2122,6 +2156,29 @@ test('Acquisition splits accounts by channel, persona, campaign and platform fro
   assert.match(html, /6 accounts have no first-touch UTM and are not listed/);
   assert.match(html, /Executive's campaign funnel splits a different population/);
   assert.match(html, /Not connected/, 'LinkedIn without spend data');
+});
+
+test('Acquisition paid funnel runs impressions to verified per platform in the attribution window', () => {
+  const A = dashboard();
+  acquiredData(A);
+  const m = (source, metricName, value, date, dim = 'campaign', dim_value = 'c') => ({ source, metric: metricName, value, date, dim, dim_value });
+  A.S.data.metrics.push(
+    m('meta', 'ad_impressions', 99999, '2026-11-03'), // before Nov 6: left out
+    m('meta', 'ad_impressions', 10000, '2026-11-10'), m('meta', 'ad_link_clicks', 200, '2026-11-10'),
+    m('google_ads', 'ad_impressions', 4000, '2026-11-10'), m('google_ads', 'ad_clicks', 100, '2026-11-10'),
+    m('ga4', 'ga_paid_sessions', 80, '2026-11-10', 'platform', 'meta'), m('ga4', 'ga_paid_sessions', 60, '2026-11-10', 'platform', 'google_ads'),
+  );
+  A.S.data.snapshots.push({ source: 'ga4', key: 'paid_sessions', from: '2026-10-01', to: '2026-11-20', rows: [{ available: true }] });
+  const html = acquiredSection(A.views.acquisition.render());
+  const funnel = html.slice(html.indexOf('Paid funnel by platform'), html.indexOf('Accounts by persona'));
+  // Meta: 10,000 impressions, 200 clicks (2.00%), 80 sessions (40.0%, flagged under 50%), 2 accounts (2.50% of sessions).
+  assert.match(funnel, /Meta<\/td><td class="td-num">10,000<\/td><td class="td-num">200<\/td><td class="td-num">2\.00%<\/td><td class="td-num">80<\/td><td class="td-num">40\.0% <span class="pill pill-warning">Under 50%/);
+  assert.match(funnel, /<td class="td-num">2<\/td><td class="td-num">2\.50%<\/td>/);
+  // Google Ads: 100 clicks → 60 sessions is 60%, not flagged.
+  assert.match(funnel, /Google Ads<\/td><td class="td-num">4,000<\/td><td class="td-num">100<\/td><td class="td-num">2\.50%<\/td><td class="td-num">60<\/td><td class="td-num">60\.0%<\/td>/);
+  // All paid adds the platforms: 14,000 impressions, 300 clicks, 140 sessions, 3 accounts, $42.50.
+  assert.match(funnel, /<b>All paid<\/b><\/td><td class="td-num">14,000<\/td><td class="td-num">300<\/td>[\s\S]*?<td class="td-num">140<\/td>[\s\S]*?\$42\.50/);
+  assert.match(funnel, /The sources are not linked person by person/);
 });
 
 test('Acquisition attribution splits wait for Nov 6 and for the PostHog sync, never showing zero', () => {
