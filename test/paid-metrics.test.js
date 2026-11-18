@@ -2006,8 +2006,8 @@ test('each funnel step shows its % large on the right with a verdict against its
     { source: 'ga4', metric: 'ga_exec_geo_sessions', value: 300, date: d, dim: 'country', dim_value: 'Colombia' },
   );
   const html = A.views.overview.render();
-  assert.match(html, /<div class="funnel-verdict is-below is-weak"><span class="fv-text"><b>Biggest leak<\/b><small>target 10%<\/small><\/span><span class="fv-pct">4\.0%<\/span>/, 'clicks 4% are under the 10% target');
-  assert.match(html, /<div class="funnel-verdict is-close"><span class="fv-text"><b>Close to target<\/b><small>target 85%<\/small><\/span><span class="fv-pct">75\.0%<\/span>/, 'sessions 75% are within 20% of 85%');
+  assert.match(html, /<div class="funnel-verdict is-below is-weak"><span class="fv-head"><b>Biggest leak<\/b><small>3× below target<\/small><\/span><span class="fv-nums"><span class="fv-pct"><span class="sr-only">actual <\/span>4\.0%<\/span><span class="fv-meter" aria-hidden="true"><i style="width:40%"><\/i><\/span><span class="fv-target"><span class="sr-only">target <\/span>10%<\/span>/, 'clicks 4% are under the 10% target, actual and target side by side with the meter at 40%');
+  assert.match(html, /<div class="funnel-verdict is-close"><span class="fv-head"><b>Close to target<\/b><\/span><span class="fv-nums"><span class="fv-pct"><span class="sr-only">actual <\/span>75\.0%<\/span><span class="fv-meter" aria-hidden="true"><i style="width:88%"><\/i><\/span><span class="fv-target"><span class="sr-only">target <\/span>85%<\/span>/, 'sessions 75% are within 20% of 85%');
   assert.match(html, /Started sign-up · target at least 50%/);
   assert.match(html, /Targets per step/);
   const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
@@ -2040,9 +2040,9 @@ test('a step larger than the one above is grey with the multiple, a met step is 
     { name: 'Landing sessions', src: 'c', n: 180, why: 'organic too' },
     { name: 'Started sign-up', src: 'd', n: null },
   ], 'x', { verdicts: true });
-  assert.match(html, /funnel-verdict is-met"><span class="fv-text"><b>On target<\/b><small>target 7–10%<\/small><\/span><span class="fv-pct">10\.0%/);
-  assert.match(html, /funnel-verdict is-over"><span class="fv-text"><b>More than the step above<\/b><small>organic too<\/small><\/span><span class="fv-pct">1\.8×/);
-  assert.match(html, /funnel-verdict is-empty"><span class="fv-text"><b>No data yet<\/b><small>not zero/);
+  assert.match(html, /funnel-verdict is-met"><span class="fv-head"><b>On target<\/b><\/span><span class="fv-nums"><span class="fv-pct"><span class="sr-only">actual <\/span>10\.0%<\/span><span class="fv-meter" aria-hidden="true"><i style="width:100%"><\/i><\/span><span class="fv-target"><span class="sr-only">target <\/span>7–10%/);
+  assert.match(html, /funnel-verdict is-over"><span class="fv-head"><b>More than the step above<\/b><small>organic too<\/small><\/span><span class="fv-nums[^"]*"><span class="fv-pct"><span class="sr-only">actual <\/span>1\.8×/);
+  assert.match(html, /funnel-verdict is-empty"><span class="fv-head"><b>No data yet<\/b><small>not zero/);
   assert.doesNotMatch(html, /drop-off|funnel-conn/, 'verdicts replace the connector lines');
   assert.doesNotMatch(C.funnel([{ name: 'A', src: 'a', n: 10 }, { name: 'B', src: 'b', n: 5 }], 'y'), /funnel-verdict/, 'other funnels keep their layout');
 });
