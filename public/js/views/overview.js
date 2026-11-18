@@ -187,15 +187,9 @@
     }
     return [...seen].sort((a, b) => a.localeCompare(b));
   }
-  // Targets for the % that should continue from the step above. Clicks and Started sign-up are team targets
-  // (2026-11-17); the rest come from market benchmarks. Logins have none: they are a reference, not part of the step %.
-  const STEP_TARGETS = {
-    'Clicks to the landing': { pct: 0.1, basis: 'team target; the market CTR for technology ads is about 2 to 4% (WordStream)' },
-    'Landing sessions': { pct: 0.85, basis: 'ad clicks that become GA4 sessions, normally 85 to 95%' },
-    'Started sign-up': { pct: 0.5, atLeast: true, basis: 'team target, half of the landing sessions start signing up; the SaaS landing page median is 3.8% (Unbounce)' },
-    'Accounts created': { pct: 0.7, basis: 'sign-up completion after an email code; no solid benchmark, a verification gate costs 8 to 20 points' },
-    'Projects created': { pct: 0.4, basis: '7-day activation, median about 41.7% and average 37.5% (Userpilot)' },
-  };
+  // Targets for the % that should continue from the step above, shared with Acquisition (public/js/charts.js).
+  // Logins have none: they are a reference, not part of the step %.
+  const STEP_TARGETS = A.charts.STEP_TARGETS;
   function funnelSteps(from, to, country) {
     const D = A.D, all = !country || country === 'all';
     const inCountry = (r) => r.dim === 'country' && r.dim_value === country;

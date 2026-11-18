@@ -1807,7 +1807,11 @@ test('PostHog accounts by channel come from the same rows as Accounts created an
   assert.match(accountSql, /utm_source_first/);
   const sum = (metric, f = () => true) => load.metrics.filter((r) => r.metric === metric && f(r)).reduce((n, r) => n + r.value, 0);
   const ch = (key) => sum('ph_accounts_origin', (r) => r.dim_value === key);
-  assert.deepEqual(['referral', 'gmail', 'linkedin', 'other', 'none', 'test'].map(ch), [3, 5, 1, 1, 3, 1]);
+  // The qa / test account is left out once in the connector, so no tab counts it.
+  assert.deepEqual(['referral', 'gmail', 'linkedin', 'other', 'none', 'test'].map(ch), [3, 5, 1, 1, 3, 0]);
+  assert.equal(sum('ph_accounts', (r) => r.dim_value !== 'Internal'), 13, 'test accounts are not accounts created');
+  assert.equal(sum('ph_accounts_geo', (r) => r.dim_value === 'Peru'), 0);
+  assert.ok(!load.metrics.some((r) => r.metric === 'ph_accounts_utm' && /^qa\|/.test(r.dim_value)));
   assert.equal(sum('ph_accounts_origin'), sum('ph_accounts', (r) => r.dim_value !== 'Internal'), 'channels add up to step 5');
   assert.equal(load.snapshots.find((s) => s.key === 'account_origin_coverage').rows[0].available, true);
 });
@@ -2140,9 +2144,12 @@ test('Acquisition splits accounts by channel, persona, campaign and platform fro
   // Paid = paid medium (Meta paid_social, Google cpc); organic includes Instagram social and no UTM.
   assert.match(html, /Paid \/ organic[\s\S]*?3 \/ 7/);
   // Spend in the window only: (30 + 12.5) / 3 accounts and / 3 verified; the Nov 3 Meta spend is left out.
-  assert.match(html, /\$42\.50 ÷ 3 accounts from Meta, Google Ads and LinkedIn UTMs · \$14\.17 per verified account/);
+  assert.match(html, /\$42\.50 ÷ 3 accounts from Meta, Google Ads UTMs · \$14\.17 per verified account/);
+  // Cards split by UTM carry their real dates in the title.
+  for (const t of ['Accounts by channel', 'Accounts by persona', 'Accounts by campaign', 'Paid funnel by platform']) assert.match(html, new RegExp(`card-title">${t} · Nov 6 – Nov 20<`));
   // Paid funnel row for Meta: accounts 2, verified 2, spend $30, $15 per account and per verified.
-  assert.match(html, /Meta<\/td>(<td class="td-num">[^<]*(<span[^>]*>[^<]*<\/span>)?<\/td>){6}<td class="td-num">2<\/td><td class="td-num">–<\/td><td class="td-num">2<\/td><td class="td-num">\$30\.00<\/td><td class="td-num">\$15\.00<\/td><td class="td-num">\$15\.00/);
+  const metaRow = html.slice(html.indexOf('pf-meta'), html.indexOf('</tr>', html.indexOf('pf-meta')));
+  assert.match(metaRow, /<td class="td-num">2<\/td><td class="td-num">–<\/td><td class="td-num">2<\/td><td class="td-num">\$30\.00<\/td><td class="td-num">\$15\.00<\/td><td class="td-num">\$15\.00/);
   assert.match(html, /Spend in US dollars, converted at sync/);
   // Channel table with verified people: Other UTM 3 accounts, 2 verified.
   assert.match(html, /Other UTM<\/td><td class="td-num">3<\/td><td class="td-num">30\.0%<\/td><td class="td-num">2<\/td><td class="td-num">66\.7%/);
@@ -2171,14 +2178,38 @@ test('Acquisition paid funnel runs impressions to verified per platform in the a
   A.S.data.snapshots.push({ source: 'ga4', key: 'paid_sessions', from: '2026-10-01', to: '2026-11-20', rows: [{ available: true }] });
   const html = acquiredSection(A.views.acquisition.render());
   const funnel = html.slice(html.indexOf('Paid funnel by platform'), html.indexOf('Accounts by persona'));
-  // Meta: 10,000 impressions, 200 clicks (2.00%), 80 sessions (40.0%, flagged under 50%), 2 accounts (2.50% of sessions).
-  assert.match(funnel, /Meta<\/td><td class="td-num">10,000<\/td><td class="td-num">200<\/td><td class="td-num">2\.00%<\/td><td class="td-num">80<\/td><td class="td-num">40\.0% <span class="pill pill-warning">Under 50%/);
-  assert.match(funnel, /<td class="td-num">2<\/td><td class="td-num">2\.50%<\/td>/);
-  // Google Ads: 100 clicks → 60 sessions is 60%, not flagged.
-  assert.match(funnel, /Google Ads<\/td><td class="td-num">4,000<\/td><td class="td-num">100<\/td><td class="td-num">2\.50%<\/td><td class="td-num">60<\/td><td class="td-num">60\.0%<\/td>/);
-  // All paid adds the platforms: 14,000 impressions, 300 clicks, 140 sessions, 3 accounts, $42.50.
-  assert.match(funnel, /<b>All paid<\/b><\/td><td class="td-num">14,000<\/td><td class="td-num">300<\/td>[\s\S]*?<td class="td-num">140<\/td>[\s\S]*?\$42\.50/);
-  assert.match(funnel, /The sources are not linked person by person/);
+  const row = (name) => funnel.slice(funnel.indexOf(`${name}</`), funnel.indexOf('</tr>', funnel.indexOf(`${name}</`)));
+  // Meta: 10,000 impressions, 200 clicks; CTR 2.00% and click → session 40.0% in Overview's box against the same
+  // targets (10% and 85%); 2 accounts are 2.50% of 80 sessions.
+  const meta = row('Meta');
+  assert.match(meta, /10,000<\/td><td class="td-num">200<\/td>/);
+  assert.match(meta, /funnel-verdict is-below is-compact[\s\S]*?5× below target[\s\S]*?2\.0%[\s\S]*?fv-target"><span class="sr-only">target <\/span>10%/);
+  assert.match(meta, /<td class="td-num">80<\/td><td class=""><div class="funnel-verdict is-below is-compact">[\s\S]*?2× below target[\s\S]*?40\.0%[\s\S]*?85%/);
+  assert.match(meta, /<td class="td-num">2<\/td><td class="td-num">2\.50%<\/td>/);
+  // Google Ads: 100 clicks → 60 sessions is 60%, under 80% of the 85% target.
+  assert.match(row('Google Ads'), /4,000<\/td><td class="td-num">100<\/td>[\s\S]*?60\.0%[\s\S]*?85%/);
+  assert.equal((funnel.match(/T\['Landing sessions'\]|Under 50%/g) || []).length, 0, 'no second threshold for click → session');
+  // All paid adds the platforms: 14,000 impressions, 300 clicks, 140 sessions, 3 accounts, $42.50 of tracked spend.
+  assert.match(row('<b>All paid'), /14,000<\/td><td class="td-num">300<\/td>[\s\S]*?<td class="td-num">140<\/td>[\s\S]*?\$42\.50/);
+  // HubSpot forms are a separate path at the end, never between sessions and accounts.
+  assert.match(funnel, /HubSpot forms · separate path<\/th><\/tr>/);
+  assert.match(funnel, /6-digit code without HubSpot/);
+  assert.doesNotMatch(funnel, /landing sessions → form sign-ups/);
+  assert.match(funnel, /use Overview's targets for the same steps/);
+});
+
+test('Acquisition names a paid platform with spend but no UTM accounts instead of reading it as no results', () => {
+  const A = dashboard();
+  acquiredData(A);
+  // Meta keeps its spend but no account carries a Meta UTM (its ads have no UTM yet).
+  A.S.data.metrics = A.S.data.metrics.filter((r) => !(['ph_accounts_utm', 'ph_builders_utm'].includes(r.metric) && /^meta\|/.test(r.dim_value)));
+  const html = acquiredSection(A.views.acquisition.render());
+  assert.match(html, /Meta has spend but no account carries its UTM: most likely the ads have no UTM yet/);
+  // Spend per paid account only uses Google Ads: $12.50 for 1 account.
+  assert.match(html, /Spend per paid account · Nov 6 – Nov 20[\s\S]*?\$12\.50[\s\S]*?\$12\.50 ÷ 1 accounts from Google Ads UTMs/);
+  const meta = html.slice(html.indexOf('pf-meta'), html.indexOf('</tr>', html.indexOf('pf-meta')));
+  assert.match(meta, /No account with its UTM/);
+  assert.doesNotMatch(meta, /No accounts<|\$30\.00<\/td><td class="td-num">\$/);
 });
 
 test('Acquisition attribution splits wait for Nov 6 and for the PostHog sync, never showing zero', () => {

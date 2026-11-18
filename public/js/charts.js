@@ -264,18 +264,43 @@
   C.targetLabel = (t) => `${t.atLeast ? 'at least ' : ''}${t.max != null ? `${+(t.pct * 100).toFixed(1)}–${pctLabel(t.max)}` : pctLabel(t.pct)}`;
   // Compact target for the verdict box: the same size as the actual %, so "at least" becomes ≥.
   const targetShort = (t) => `${t.atLeast ? '≥' : ''}${t.max != null ? `${+(t.pct * 100).toFixed(1)}–${pctLabel(t.max)}` : pctLabel(t.pct)}`;
+  // Targets for the % that should continue from the step above, shared by every tab that reads one of these
+  // steps (Overview's funnel, Acquisition's paid funnel), so a rate has one target everywhere. Clicks and Started
+  // sign-up are team targets (2026-11-17); the rest come from market benchmarks.
+  C.STEP_TARGETS = {
+    'Clicks to the landing': { pct: 0.1, basis: 'team target; the market CTR for technology ads is about 2 to 4% (WordStream)' },
+    'Landing sessions': { pct: 0.85, basis: 'ad clicks that become GA4 sessions, normally 85 to 95%' },
+    'Started sign-up': { pct: 0.5, atLeast: true, basis: 'team target, half of the landing sessions start signing up; the SaaS landing page median is 3.8% (Unbounce)' },
+    'Accounts created': { pct: 0.7, basis: 'sign-up completion after an email code; no solid benchmark, a verification gate costs 8 to 20 points' },
+    'Projects created': { pct: 0.4, basis: '7-day activation, median about 41.7% and average 37.5% (Userpilot)' },
+  };
+  // The actual-vs-target box: the % and its target at the same size, a meter between them and a short verdict.
+  const verdictBox = (cls, big, head, sub, target, fill) => {
+    const meter = target != null ? `<span class="fv-meter" aria-hidden="true"><i style="width:${Math.round(Math.max(0, Math.min(1, fill || 0)) * 100)}%"></i></span>` : '';
+    const goal = target != null ? `<span class="fv-target"><span class="sr-only">target </span>${U.esc(target)}</span>` : '';
+    return `<div class="funnel-verdict ${cls}"><span class="fv-head"><b>${U.esc(head)}</b>${sub ? `<small>${U.esc(sub)}</small>` : ''}</span>`
+      + `<span class="fv-nums${target != null ? '' : ' no-target'}"><span class="fv-pct"><span class="sr-only">actual </span>${U.esc(big)}</span>${meter}${goal}</span></div>`;
+  };
+  // One rate against a target outside the funnel, with the funnel's thresholds: on target at the target, close
+  // from 80% of it, below under that. compact = the table-cell size (class is-compact).
+  C.rateVerdict = (num, den, t, compact) => {
+    const c = compact ? ' is-compact' : '';
+    if (num == null || !den) return verdictBox(`is-empty${c}`, '–', 'No data yet', 'not zero', t ? targetShort(t) : null, 0);
+    const kp = num / den, big = U.pct(kp, kp && kp < 0.001 ? 2 : 1);
+    if (!t) return verdictBox(`is-plain${c}`, big, 'continue', '');
+    const tgt = targetShort(t), fill = kp / t.pct;
+    if (kp >= t.pct) return verdictBox(`is-met${c}`, big, 'On target', '', tgt, 1);
+    if (kp >= t.pct * 0.8) return verdictBox(`is-close${c}`, big, 'Close to target', '', tgt, fill);
+    const times = kp ? t.pct / kp : Infinity;
+    return verdictBox(`is-below${c}`, big, !kp ? 'No one continued' : times >= 2 ? `${Math.round(times)}× below target` : 'Below target', '', tgt, fill);
+  };
   // The % versus the previous step and its target, the same size on one line with a meter between them
   // (how much of the target is reached), under a short verdict.
   function verdict(steps, k, weak) {
     const s = steps[k];
     const note = (t) => `<span class="fv-note">${U.esc(t)}</span>`;
     const tgt = s.target != null ? targetShort({ pct: s.target, max: s.targetMax, atLeast: s.targetAtLeast }) : null;
-    const block = (cls, big, head, sub, target, fill) => {
-      const meter = target != null ? `<span class="fv-meter" aria-hidden="true"><i style="width:${Math.round(Math.max(0, Math.min(1, fill || 0)) * 100)}%"></i></span>` : '';
-      const goal = target != null ? `<span class="fv-target"><span class="sr-only">target </span>${U.esc(target)}</span>` : '';
-      return `<div class="funnel-verdict ${cls}"><span class="fv-head"><b>${U.esc(head)}</b>${sub ? `<small>${U.esc(sub)}</small>` : ''}</span>`
-        + `<span class="fv-nums${target != null ? '' : ' no-target'}"><span class="fv-pct"><span class="sr-only">actual </span>${U.esc(big)}</span>${meter}${goal}</span></div>`;
-    };
+    const block = verdictBox;
     if (k === 0) return s.n == null ? block('is-empty', '–', 'No data yet', 'not zero') : note('Start of the funnel');
     if (s.aside) return note('Reference · not part of the %');
     if (s.kind === 'rate' || s.separate) return note(s.bridge || 'Separate path');

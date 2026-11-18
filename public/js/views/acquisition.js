@@ -51,22 +51,32 @@
     const paid = acc ? sum(acc.filter((r) => P.paidMedium(r.medium))) : null;
     const byPlatform = (rows, key) => (rows ? sum(rows.filter((r) => P.platform(r.source, r.medium) === key)) : null);
     const platforms = C.PLATFORMS.map((p) => ({ ...p, spend: attrOk ? D.paidStats(p.key, aFrom, aTo).spend : null, accounts: byPlatform(acc, p.key), verified: byPlatform(ver, p.key) }));
+    // A platform with spend but no account carrying its UTM most likely runs ads without UTMs: its spend is left
+    // out of spend per account and named, so it never reads as "the platform brings no one".
+    const untracked = acc ? platforms.filter((p) => p.spend > 0 && !p.accounts) : [];
+    const tracked = platforms.filter((p) => p.spend > 0 && p.accounts > 0);
     const spendAll = platforms.some((p) => p.spend != null) ? platforms.reduce((s, p) => s + (p.spend || 0), 0) : null;
-    const platformAccounts = acc ? platforms.reduce((s, p) => s + (p.accounts || 0), 0) : null;
-    const platformVerified = ver ? platforms.reduce((s, p) => s + (p.verified || 0), 0) : null;
+    const spendTracked = tracked.reduce((s, p) => s + p.spend, 0);
+    const platformAccounts = tracked.reduce((s, p) => s + p.accounts, 0);
+    const platformVerified = ver ? tracked.reduce((s, p) => s + (p.verified || 0), 0) : null;
+    const untrackedNote = untracked.length ? `${untracked.map((p) => p.name).join(', ')} ${untracked.length > 1 ? 'have' : 'has'} spend but no account carries ${untracked.length > 1 ? 'their' : 'its'} UTM: most likely the ads have no UTM yet, so ${untracked.length > 1 ? 'they are' : 'it is'} left out of spend per account rather than read as bringing no one.` : '';
+    // Splits by UTM run on the attribution window, so their titles carry the real dates.
+    const inWin = (title) => (attrOk ? `${title} · ${aWin}` : title);
 
     const kpis = U.kpiRow([
       U.kpi({ label: 'Accounts created', source: 'PostHog', hero: true, value: U.fmt(total), delta: cmp ? U.delta(now, before) : null,
         spark: D.series(D.byDay('posthog', 'ph_accounts', S.from, S.to, external)),
         compare: `Selected-range total · first account_created or $identify per person · internal excluded, same count as Overview · ${cmpLabel}` }),
       goalTile,
-      acc ? U.kpi({ label: 'With a first-touch UTM', source: 'PostHog', value: U.fmt(withUtm), compare: `${U.pct(accAll ? withUtm / accAll : null)} of ${U.fmt(accAll)} accounts · ${aWin} · the rest arrived with no UTM, so their campaign is unknown` })
+      acc ? U.kpi({ label: inWin('With a first-touch UTM'), source: 'PostHog', value: U.fmt(withUtm), compare: `${U.pct(accAll ? withUtm / accAll : null)} of ${U.fmt(accAll)} accounts · ${aWin} · the rest arrived with no UTM, so their campaign is unknown` })
         : U.kpi({ label: 'With a first-touch UTM', source: 'PostHog', value: '–', compare: utmPending }),
-      acc ? U.kpi({ label: 'Paid / organic', source: 'PostHog · UTM', value: `${U.fmt(paid)} / ${U.fmt(accAll - paid)}`, small: true, compare: `${U.pct(accAll ? paid / accAll : null)} paid · ${aWin} · paid = a paid utm_medium (cpc, paid_social, display…); organic is the rest, no UTM included` })
+      acc ? U.kpi({ label: inWin('Paid / organic'), source: 'PostHog · UTM', value: `${U.fmt(paid)} / ${U.fmt(accAll - paid)}`, small: true, compare: `${U.pct(accAll ? paid / accAll : null)} paid · ${aWin} · paid = a paid utm_medium (cpc, paid_social, display…); organic is the rest, no UTM included` })
         : U.kpi({ label: 'Paid / organic', source: 'PostHog · UTM', value: '–', compare: utmPending }),
       spendAll == null ? U.kpi({ label: 'Spend per paid account', source: 'Ads · PostHog', awaiting: 'Ads' })
-        : U.kpi({ label: 'Spend per paid account', source: 'Ads · PostHog', value: U.money(P.cost(spendAll, platformAccounts)),
-          compare: `${U.money(spendAll)} ÷ ${U.fmt(platformAccounts)} accounts from Meta, Google Ads and LinkedIn UTMs · ${U.money(P.cost(spendAll, platformVerified))} per verified account · ${aWin} · an upper bound: paid sign-ups without a UTM are not counted` }),
+        : !acc ? U.kpi({ label: 'Spend per paid account', source: 'Ads · PostHog', value: '–', compare: utmPending })
+          : !tracked.length ? U.kpi({ label: inWin('Spend per paid account'), source: 'Ads · PostHog', value: '–', compare: `No paid platform has accounts with its UTM in ${aWin}. ${untrackedNote}` })
+            : U.kpi({ label: inWin('Spend per paid account'), source: 'Ads · PostHog', value: U.money(P.cost(spendTracked, platformAccounts)),
+              compare: `${U.money(spendTracked)} ÷ ${U.fmt(platformAccounts)} accounts from ${tracked.map((p) => p.name).join(', ')} UTMs · ${U.money(P.cost(spendTracked, platformVerified))} per verified account · ${aWin} · an upper bound: paid sign-ups without a UTM are not counted${untrackedNote ? ` · ${untrackedNote}` : ''}` }),
     ]);
 
     // By channel: Overview's channel split, with how many people verified in the same days.
@@ -79,7 +89,7 @@
       { t: 'Verified ÷ accounts', num: 1, f: (r) => (r.verified == null ? '–' : U.pct(r.accounts ? r.verified / r.accounts : null)) },
     ];
     const verNote = 'Verified = first account_verified per person in the same days (the Developer Network definition), so the ratio compares days, not a cohort.';
-    const byChannel = U.card({ title: 'Accounts by channel', sub: origin ? `${U.fmt(originTotal)} accounts · first-touch UTM · ${aWin}` : '', right: U.srcPill('posthog', 'first touch'),
+    const byChannel = U.card({ title: inWin('Accounts by channel'), sub: origin ? `${U.fmt(originTotal)} accounts · first-touch UTM · ${aWin}` : '', right: U.srcPill('posthog', 'first touch'),
       body: origin ? (originRows.length ? U.table([
         { t: 'Channel', f: (r) => U.esc(r.name) },
         { t: 'Accounts', num: 1, f: (r) => U.fmt(r.accounts) }, { t: 'Share', num: 1, f: (r) => U.pct(originTotal ? r.accounts / originTotal : null) },
@@ -113,7 +123,7 @@
     const personaAcc = group(acc, personaOf), personaVer = group(ver, personaOf);
     const personaRows = [...personaAcc.keys()].map((k) => ({ name: k, accounts: personaAcc.get(k) || 0, verified: ver ? personaVer.get(k) || 0 : null }))
       .sort((a, b) => (/^p\d/.test(b.name) - /^p\d/.test(a.name)) || (/^p\d/.test(a.name) ? a.name.localeCompare(b.name) : b.accounts - a.accounts));
-    const byPersona = U.card({ title: 'Accounts by persona', sub: acc ? `${U.fmt(accAll)} accounts · persona code at the start of utm_content · ${aWin}` : '', right: U.srcPill('posthog', 'first touch'),
+    const byPersona = U.card({ title: inWin('Accounts by persona'), sub: acc ? `${U.fmt(accAll)} accounts · persona code at the start of utm_content · ${aWin}` : '', right: U.srcPill('posthog', 'first touch'),
       body: !acc ? U.empty(attrOk ? 'Waiting for PostHog' : 'Attribution not recorded yet', utmPending) : personaRows.length ? U.table([
         { t: 'Persona', f: (r) => (/^p\d/.test(r.name) ? U.pill('info', r.name) : U.esc(r.name)) },
         { t: 'Accounts', num: 1, f: (r) => U.fmt(r.accounts) }, { t: 'Share', num: 1, f: (r) => U.pct(accAll ? r.accounts / accAll : null) },
@@ -121,8 +131,9 @@
       ], personaRows) + `<p class="card-note">Personas p01 to p13 per the UTM convention. Creator links carry the creator's user and Gmail ads the piece in utm_content, so they show as No persona code. Where paid ads put the persona code is still to be confirmed with the web team. ${attrNote}</p>` : U.empty('No accounts in this period') });
 
     // Paid funnel by platform (the 2026-11-06 decision: drill from the aggregate funnel to each channel), every
-    // step in the attribution window so the rates compare the same days. Click to session under 50% is flagged
-    // (goals spec): slow landing or incomplete measurement.
+    // step in the attribution window so the rates compare the same days. CTR and click → session are read against
+    // Overview's targets for the same steps (C.STEP_TARGETS), in the same actual-vs-target box. HubSpot forms are a
+    // separate path, not a step: the landing registers with email and a 6-digit code without HubSpot.
     const funnelRows = attrOk ? platforms.map((p) => { const s = D.paidStats(p.key, aFrom, aTo); return { ...p, impressions: s.impressions, clicks: s.clicks, sessions: s.sessions, forms: s.forms }; }) : [];
     if (funnelRows.length) {
       const add = (k) => (funnelRows.some((r) => r[k] != null) ? funnelRows.reduce((s, r) => s + (r[k] || 0), 0) : null);
@@ -130,30 +141,28 @@
     }
     const n = (v) => (v == null ? '<span class="text-muted">–</span>' : U.fmt(v));
     const rate = (a, b, digits) => (a == null || !b ? '–' : U.pct(a / b, digits));
-    const clickToSession = (r) => {
-      if (r.sessions == null || !r.clicks) return '–';
-      const v = r.sessions / r.clicks;
-      return v < 0.5 ? `${U.pct(v)} ${U.pill('warning', 'Under 50%')}` : U.pct(v);
-    };
-    const paidFunnel = !attrOk ? U.card({ title: 'Paid funnel by platform', body: U.empty('Attribution not recorded yet', utmPending) }) : U.card({ title: 'Paid funnel by platform', sub: `${aWin} · impressions → clicks → landing sessions → form sign-ups → accounts → verified, each from its own source`, body: U.table([
+    const T = C.STEP_TARGETS;
+    const isUntracked = (r) => untracked.some((p) => p.key === r.key);
+    const noUtm = '<span class="text-muted">No account with its UTM</span>';
+    const paidFunnel = !attrOk ? U.card({ title: 'Paid funnel by platform', body: U.empty('Attribution not recorded yet', utmPending) }) : U.card({ title: inWin('Paid funnel by platform'), sub: 'impressions → clicks → landing sessions → accounts → verified, each from its own source · targets as in Overview', body: U.table([
       { t: 'Platform', f: (r) => (r.total ? `<b>${U.esc(r.name)}</b>` : `<span class="ch-dot" style="--ch:${r.color};margin-right:8px"></span>${U.esc(r.name)}`) },
       { t: 'Impressions', num: 1, f: (r) => n(r.impressions) },
-      { t: 'Clicks', num: 1, f: (r) => n(r.clicks) }, { t: 'CTR', num: 1, f: (r) => rate(r.clicks, r.impressions, 2) },
-      { t: 'Landing sessions', num: 1, f: (r) => n(r.sessions) }, { t: 'Click → session', num: 1, f: clickToSession },
-      { t: 'Form sign-ups', num: 1, f: (r) => n(r.forms) },
-      { t: 'Accounts', num: 1, f: (r) => n(r.accounts) }, { t: 'Session → account', num: 1, f: (r) => rate(r.accounts, r.sessions) },
-      { t: 'Verified', num: 1, f: (r) => n(r.verified) },
+      { t: 'Clicks', num: 1, f: (r) => n(r.clicks) }, { t: 'CTR vs target', f: (r) => (r.impressions == null ? '–' : C.rateVerdict(r.clicks, r.impressions, T['Clicks to the landing'], true)) },
+      { t: 'Landing sessions', num: 1, f: (r) => n(r.sessions) }, { t: 'Click → session vs target', f: (r) => (r.clicks == null ? '–' : C.rateVerdict(r.sessions, r.clicks, T['Landing sessions'], true)) },
+      { t: 'Accounts', num: 1, f: (r) => (isUntracked(r) ? noUtm : n(r.accounts)) }, { t: 'Session → account', num: 1, f: (r) => (isUntracked(r) ? '–' : rate(r.accounts, r.sessions)) },
+      { t: 'Verified', num: 1, f: (r) => (isUntracked(r) ? '–' : n(r.verified)) },
       { t: 'Spend', num: 1, f: (r) => (r.spend == null ? '<span class="text-muted">Not connected</span>' : U.money(r.spend)) },
-      { t: 'Per account', num: 1, f: (r) => (r.spend == null || r.accounts == null ? '–' : r.accounts ? U.money(P.cost(r.spend, r.accounts)) : '<span class="text-muted">No accounts</span>') },
-      { t: 'Per verified', num: 1, f: (r) => (r.spend == null || r.verified == null ? '–' : r.verified ? U.money(P.cost(r.spend, r.verified)) : '<span class="text-muted">None verified</span>') },
-    ], funnelRows) + `<p class="card-note">Impressions and clicks from each ad platform (Meta counts link clicks); landing sessions from GA4 by paid UTM; form sign-ups from HubSpot by paid UTM; accounts and verified people from PostHog first-touch UTMs. The sources are not linked person by person, so each rate compares totals. Click → session under 50% points to a slow landing or incomplete measurement. Spend in US dollars, converted at sync; a paid sign-up that lost its UTM is not counted, so spend per account is an upper bound. ${attrNote}</p>` });
+      { t: 'Per account', num: 1, f: (r) => (isUntracked(r) ? '–' : r.spend == null || r.accounts == null ? '–' : r.accounts ? U.money(P.cost(r.total ? spendTracked : r.spend, r.accounts)) : '<span class="text-muted">No accounts</span>') },
+      { t: 'Per verified', num: 1, f: (r) => (isUntracked(r) ? '–' : r.spend == null || r.verified == null ? '–' : r.verified ? U.money(P.cost(r.total ? spendTracked : r.spend, r.verified)) : '<span class="text-muted">None verified</span>') },
+      { t: 'HubSpot forms · separate path', num: 1, f: (r) => n(r.forms) },
+    ], funnelRows) + `<p class="card-note">${untrackedNote ? `<b>${U.esc(untrackedNote)}</b> ` : ''}Impressions and clicks from each ad platform (Meta counts link clicks); landing sessions from GA4 by paid UTM; accounts and verified people from PostHog first-touch UTMs. The sources are not linked person by person, so each rate compares totals. CTR and click → session use Overview's targets for the same steps. HubSpot forms are a separate path, not a step between sessions and accounts: the landing registers with an email and a 6-digit code without HubSpot. Spend in US dollars, converted at sync; a paid sign-up that lost its UTM is not counted, so spend per account is an upper bound. ${attrNote}</p>` });
 
     // By campaign: accounts and verified people per source / medium / campaign (utm_content summed).
     const campKey = (r) => [r.campaign, r.source, r.medium].join('\u0001');
     const campAcc = new Map(), campVer = group((ver || []).filter(tagged), campKey);
     for (const r of (acc || []).filter(tagged)) { const k = campKey(r); const o = campAcc.get(k) || { campaign: r.campaign, source: r.source, medium: r.medium, accounts: 0 }; o.accounts += r.people; campAcc.set(k, o); }
     const campaignRows = [...campAcc.entries()].map(([k, o]) => ({ ...o, verified: ver ? campVer.get(k) || 0 : null })).sort((a, b) => b.accounts - a.accounts);
-    const campaigns = U.card({ title: 'Accounts by campaign', sub: acc ? `${U.fmt(campaignRows.length)} source / medium / campaign rows · first-touch UTM · ${aWin}` : '', right: U.srcPill('posthog', 'first touch'),
+    const campaigns = U.card({ title: inWin('Accounts by campaign'), sub: acc ? `${U.fmt(campaignRows.length)} source / medium / campaign rows · first-touch UTM · ${aWin}` : '', right: U.srcPill('posthog', 'first touch'),
       body: !acc ? U.empty(attrOk ? 'Waiting for PostHog' : 'Attribution not recorded yet', attrOk ? 'Accounts by campaign appear after the next PostHog sync.' : utmPending) : campaignRows.length ? U.table([
         { t: 'Campaign', f: (r) => `<code>${U.esc(r.campaign)}</code>` },
         { t: 'Source / medium', f: (r) => `${U.esc(r.source)} / ${U.esc(r.medium)}` },
