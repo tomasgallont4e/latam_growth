@@ -49,7 +49,10 @@
   };
   D.snapIn = (src, key, from, to) => { const s = D.snap(src, key, from, to); return s && s.from <= to && s.to >= from ? s : null; };
   D.source = (key) => ((S.data && S.data.sources) || []).find((s) => s.key === key) || { key, name: key, state: 'pending' };
-  D.isTestForm = (e) => !!e.internal || /^(qa|test)$/i.test(String(e.utm_medium || '')) || /^qa[_-]/i.test(String(e.utm_campaign || ''));
+  // A test form: internal, or a test by the shared rule (public/js/channels.js isTest) on its first-touch UTMs
+  // (what Overview's channel split reads) or on the submission's own UTMs.
+  D.isTestForm = (e) => !!e.internal || A.channels.isTest(A.channels.formUtm(e))
+    || A.channels.isTest({ source: e.utm_source, medium: e.utm_medium, campaign: e.utm_campaign });
   D.forms = (from = S.from, to = S.to) => ((S.data && S.data.events) || []).filter((e) => e.kind === 'form_signup' && inR(e.date, from, to) && (!S.exInt || !D.isTestForm(e)));
   D.formsAll = (from = S.from, to = S.to) => ((S.data && S.data.events) || []).filter((e) => e.kind === 'form_signup' && inR(e.date, from, to));
   D.covered = (src, key, from = S.from, to = S.to) => {

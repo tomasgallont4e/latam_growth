@@ -3,7 +3,7 @@
 // (App.channels) and Node (lib/connectors.js), like paid.js.
 // Same rule as the Early Builders dashboard (think4ever project 290, lib/campaigns.js): the official
 // links match on utm_source + utm_medium + utm_campaign, case-insensitive; utm_content is the piece and never
-// decides the channel; qa / test / prueba values are Tests. One difference, decided on 2026-11-17: the
+// decides the channel; Tests follow isTest() below (explicit markers, 2026-11-18). One difference, decided on 2026-11-17: the
 // Developer Network emails sent from HubSpot (hs_email, hs_automation, hubspot with medium email) count with
 // Referrals · Developer Network. Each builder's own referral link (any network, medium influencer, campaign
 // early_builders_co_202611; utm_content = the builder's public user) is its own channel, Influencers.
@@ -24,16 +24,37 @@
     { key: 'influencer', label: 'Influencers · builder links', rule: 'linkedin, instagram… / influencer / early_builders_co_202611 (each builder shares their own link)', group: 'program' },
     { key: 'other', label: 'Other UTM', rule: 'a UTM that matches none of the program links', group: 'general' },
     { key: 'none', label: 'No UTM', rule: 'no utm_source, utm_medium or utm_campaign', group: 'general' },
-    { key: 'test', label: 'Tests', rule: 'qa, test or prueba in any UTM value', group: 'test' },
+    { key: 'test', label: 'Tests', rule: 'utm_medium qa, test or prueba; source or campaign starting qa-, test- or prueba- (or _); known probes (posthog_prodcheck…)', group: 'test' },
   ];
   const EMPTY = new Set(['', '(not set)', '(none)', 'null', 'undefined']);
-  const TEST_RE = /(^|[^a-z])(qa|test|tests|testing|prueba|pruebas)([^a-z]|$)/;
   const norm = (v) => { const s = String(v == null ? '' : v).trim().toLowerCase(); return EMPTY.has(s) ? '' : s; };
 
+  // THE test rule (agreed 2026-11-18), the one place every tab and the PostHog connector read: explicit markers
+  // only, so a real campaign or an A/B piece that happens to contain "test" is never dropped.
+  //   utm_medium exactly qa, test or prueba;
+  //   utm_source or utm_campaign starting qa, test or prueba followed by - or _ (qa-sync-1106, qa_dn);
+  //   known probes: utm_source or utm_campaign starting posthog_prodcheck (also posthog-prodcheck, posthogprodcheck).
+  // utm_content never decides. The qa_probe event property is applied separately in the PostHog queries.
+  // The Early Builders dashboard (project 290) adopts the same rule.
+  const TEST_MEDIUMS = ['qa', 'test', 'prueba'];
+  const TEST_PREFIX = '^(qa|test|prueba)[-_]';
+  const TEST_PROBE = '^posthog[-_]?prodcheck';
+  const PREFIX_RE = new RegExp(TEST_PREFIX), PROBE_RE = new RegExp(TEST_PROBE);
+  function isTest({ source, medium, campaign } = {}) {
+    const s = norm(source), m = norm(medium), c = norm(campaign);
+    return TEST_MEDIUMS.includes(m) || [s, c].some((v) => PREFIX_RE.test(v) || PROBE_RE.test(v));
+  }
+  // The same rule as a HogQL condition over three SQL expressions (lower-cased here; '(not set)' never matches).
+  function testSql(source, medium, campaign) {
+    const low = (x) => `lower(toString(${x}))`;
+    return `(${low(medium)} IN (${TEST_MEDIUMS.map((v) => `'${v}'`).join(', ')})`
+      + [source, campaign].map((x) => ` OR match(${low(x)}, '${TEST_PREFIX}') OR match(${low(x)}, '${TEST_PROBE}')`).join('') + ')';
+  }
+
   function classify({ source, medium, campaign, content } = {}) {
-    const s = norm(source), m = norm(medium), c = norm(campaign), p = norm(content);
+    const s = norm(source), m = norm(medium), c = norm(campaign);
     if (!s && !m && !c) return 'none';
-    if ([s, m, c, p].some((v) => TEST_RE.test(v))) return 'test';
+    if (isTest({ source, medium, campaign })) return 'test';
     const hit = LINKS.find((l) => l.source === s && l.medium === m && l.campaign === c);
     if (hit) return hit.key;
     if (m === 'email' && DN_EMAIL_SOURCES.has(s)) return 'referral';
@@ -47,7 +68,7 @@
       ? first : { source: e.utm_source, medium: e.utm_medium, campaign: e.utm_campaign, content: e.utm_content };
   }
   const byKey = Object.fromEntries(CHANNELS.map((c) => [c.key, c]));
-  const api = { CHANNELS, classify, formUtm, label: (k) => (byKey[k] ? byKey[k].label : k), group: (k) => (byKey[k] ? byKey[k].group : 'general') };
+  const api = { CHANNELS, classify, isTest, testSql, TEST_RULE: { mediums: TEST_MEDIUMS, prefix: TEST_PREFIX, probe: TEST_PROBE }, formUtm, label: (k) => (byKey[k] ? byKey[k].label : k), group: (k) => (byKey[k] ? byKey[k].group : 'general') };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root && root.App) root.App.channels = api;
 })(typeof window !== 'undefined' ? window : this);

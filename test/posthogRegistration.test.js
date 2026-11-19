@@ -40,7 +40,9 @@ test('registration_started groups by person only and takes type and country from
   const load = await connectors.posthog();
   const sql = queries[0];
   assert.ok(sql, 'registration query should run');
-  assert.match(sql, /GROUP BY person_id\) GROUP BY d, account_type, country/);
+  // Test people (shared rule, public/js/channels.js) are left out between the per-person step and the grouping.
+  assert.match(sql, /GROUP BY person_id\) WHERE NOT \(lower\(toString\(t_medium\)\) IN \('qa', 'test', 'prueba'\)[\s\S]*?\) GROUP BY d, account_type, country/);
+  assert.match(sql, /any\(coalesce\(nullIf\(toString\(person\.properties\.utm_source_first\)/);
   assert.doesNotMatch(sql, /GROUP BY person_id, account_type/);
   assert.equal((sql.match(/argMin\(/g) || []).length, 2);
   assert.equal((sql.match(/tuple\(timestamp, uuid\)/g) || []).length, 2);

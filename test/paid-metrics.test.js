@@ -1775,7 +1775,8 @@ test('channels follow the Early Builders rule: exact source, medium and campaign
   assert.equal(classify({ source: 'linkedin', medium: 'influencer', campaign: 'early_builders_co_202611', content: 'jdoe_dev' }), 'influencer', 'a builder referral link');
   assert.equal(classify({ source: 'instagram', medium: 'influencer', campaign: 'early_builders_co_202611' }), 'influencer');
   assert.equal(classify({ source: 'instagram', medium: 'influencer', campaign: 'other_campaign' }), 'other');
-  assert.equal(classify({ source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611', content: 'prueba-01' }), 'test');
+  // utm_content never decides a test (2026-11-18 rule): the piece name is free text.
+  assert.equal(classify({ source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611', content: 'prueba-01' }), 'gmail');
   assert.equal(classify({ source: '(not set)', medium: '', campaign: null }), 'none');
   assert.deepEqual(formUtm({ first_utm_source: 'equipo', first_utm_medium: 'referral', first_utm_campaign: 'developer-network', utm_source: 'google' }).source, 'equipo', 'first touch wins');
   assert.equal(formUtm({ utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'x' }).source, 'google', 'falls back to the submission UTMs');
