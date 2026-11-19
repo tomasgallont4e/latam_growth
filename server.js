@@ -24,6 +24,7 @@ const ga4Range = require('./lib/ga4Range');
 const dailyFunnel = require('./lib/dailyFunnel');
 const monthReview = require('./lib/monthReview');
 const assistant = require('./lib/assistant');
+const metaCapi = require('./lib/metaCapi');
 const allowAssistantQuestion = assistant.createLimiter({ max: 10, windowMs: 60 * 1000 });
 
 const app = express();
@@ -216,6 +217,22 @@ async function runSync(k) {
   finally { syncing.delete(k); }
 }
 
+// Meta Conversions API (CompleteRegistration per new account). Admin only (POST). {"dry": true} previews
+// what would be sent without sending; otherwise the mode comes from the service variables (lib/metaCapi.js).
+let capiRunning = false;
+async function runCapi(opts = {}) {
+  if (capiRunning) throw Object.assign(new Error('Conversions API job already running'), { status: 409 });
+  capiRunning = true;
+  try { return await metaCapi.run({ store, ...opts }); }
+  finally { capiRunning = false; }
+}
+app.post('/api/capi/run', async (req, res) => {
+  const missing = metaCapi.REQUIRED.filter((name) => !String(process.env[name] || '').trim());
+  if (missing.length) return res.status(409).json({ error: `Service variables not set: ${missing.join(', ')}` });
+  try { res.json(await runCapi({ forceDry: req.body && req.body.dry === true })); }
+  catch (e) { console.error('capi', e.message); res.status(e.status || 502).json({ error: String(e.message).slice(0, 300) }); }
+});
+
 app.post('/api/sync/:source', async (req, res) => {
   const k = req.params.source;
   if (!connectors[k]) return res.status(404).json({ error: 'No automatic connector for this source' });
@@ -364,6 +381,11 @@ async function autoSync() {
     if (syncing.has(k)) { console.log('sync', k, 'skipped: already running'); continue; }
     try { const r = await runSync(k); console.log('sync', k, r.metrics, r.events); }
     catch (e) { console.error('sync', k, e.message); }
+  }
+  // After the connectors: new accounts to Meta (dry unless META_CAPI_TEST_CODE or META_CAPI_LIVE=1).
+  if (metaCapi.configured()) {
+    try { const r = await runCapi(); console.log('capi', r.mode, 'eligible', r.eligible, 'sent', r.sent, 'received', r.events_received || 0, JSON.stringify(r.skipped)); }
+    catch (e) { console.error('capi', e.message); }
   }
 }
 
