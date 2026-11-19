@@ -672,9 +672,13 @@ test('Overview and Acquisition compare the two latest complete buckets, not a pa
   const overview = A.views.overview.render(), acquisition = A.views.acquisition.render();
   assert.match(overview, /data-go="acquisition"/);
   assert.match(overview, /Last complete Daily period vs previous/);
-  assert.match(acquisition, /Last complete Daily period vs previous/);
-  assert.match(acquisition, /\+10\.0 pp/);
+  // Acquisition shows the change on its KPI tiles only; the separate comparison section repeated them.
+  assert.doesNotMatch(acquisition, /Last complete Daily period vs previous/);
+  assert.match(trafficKpis(acquisition), /\+10\.0 pp/);
 });
+
+// The traffic KPI row: from its section title to the first traffic card.
+function trafficKpis(html) { return html.slice(html.indexOf('Traffic to the sites'), html.indexOf('GA4 sessions by channel')); }
 
 test('Acquisition KPI strip shows last-complete-period deltas while preserving range totals', () => {
   const A = dashboard(); A.ui.today = () => '2026-10-29';
@@ -684,14 +688,11 @@ test('Acquisition KPI strip shows last-complete-period deltas while preserving r
     row('ga_sessions', 100, '2026-10-27', 'Organic Search'), row('ga_engaged_sessions', 50, '2026-10-27', 'Organic Search'), row('ga_new_users', 5, '2026-10-27'),
     row('ga_sessions', 150, '2026-10-28', 'Paid Social'), row('ga_engaged_sessions', 90, '2026-10-28', 'Paid Social'), row('ga_new_users', 8, '2026-10-28'),
   ];
-  const html = A.views.acquisition.render();
-  const comparisonSection = html.indexOf('Last complete Daily period vs previous');
-  const kpis = html.slice(0, comparisonSection);
+  const kpis = trafficKpis(A.views.acquisition.render());
   assert.match(kpis, /title="250">250/);
   assert.match(kpis, /\+50\.0%/);
   assert.match(kpis, /\+60\.0%/);
   assert.match(kpis, /\+10\.0 pp/);
-  assert.match(kpis, /per-bucket delta needs exact snapshots/);
   assert.match(kpis, /Latest complete Daily: Paid Social/);
   assert.match(kpis, /previous Daily: Organic Search/);
 });
@@ -704,9 +705,7 @@ test('Acquisition KPI deltas remain visible when the selected range has no daily
     row('ga_sessions', 100, '2026-10-27', 'Organic Search'), row('ga_engaged_sessions', 50, '2026-10-27', 'Organic Search'), row('ga_new_users', 5, '2026-10-27'),
     row('ga_sessions', 150, '2026-10-28', 'Paid Social'), row('ga_engaged_sessions', 90, '2026-10-28', 'Paid Social'), row('ga_new_users', 8, '2026-10-28'),
   ];
-  const html = A.views.acquisition.render();
-  const comparisonSection = html.indexOf('Last complete Daily period vs previous');
-  const kpis = html.slice(0, comparisonSection);
+  const kpis = trafficKpis(A.views.acquisition.render());
   assert.match(kpis, /\+50\.0%/);
   assert.match(kpis, /\+60\.0%/);
   assert.match(kpis, /\+10\.0 pp/);
@@ -721,15 +720,14 @@ test('Acquisition GA4 sessions KPI shows a sparkline rolled up to the selected g
     { source: 'ga4', metric: 'ga_sessions', value: 100, date: '2026-10-20', dim: 'channel', dim_value: 'Organic Search' },
     { source: 'ga4', metric: 'ga_sessions', value: 40, date: '2026-10-27', dim: 'channel', dim_value: 'Paid Social' },
   ];
-  const html = A.views.acquisition.render();
-  const kpis = html.slice(0, html.indexOf('Last complete Weekly period vs previous'));
+  const kpis = trafficKpis(A.views.acquisition.render());
   const sessions = kpis.slice(kpis.indexOf('GA4 sessions'), kpis.indexOf('Unique visitors'));
   assert.match(sessions, /title="140">140/);
   assert.match(sessions, /class="sparkline"/);
   assert.match(sessions, /points="2\.0,5\.0 94\.0,27\.0"/);
 });
 
-test('Acquisition unique-visitor delta uses exact snapshots for both complete buckets', () => {
+test('Acquisition shows the deduplicated unique-visitor total without a period change', () => {
   const A = dashboard(); A.ui.today = () => '2026-10-29';
   A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
   const row = (metricName, value, date, channel) => ({ source: 'ga4', metric: metricName, value, date, dim: channel ? 'channel' : '', dim_value: channel || '' });
@@ -742,31 +740,27 @@ test('Acquisition unique-visitor delta uses exact snapshots for both complete bu
     { source: 'ga4', key: 'totals', from: '2026-10-27', to: '2026-10-27', rows: [{ users: 80, sessions: 100, engaged_sessions: 50, new_users: 5 }] },
     { source: 'ga4', key: 'totals', from: '2026-10-28', to: '2026-10-28', rows: [{ users: 110, sessions: 150, engaged_sessions: 90, new_users: 8 }] },
   ];
-  const html = A.views.acquisition.render();
-  const kpis = html.slice(0, html.indexOf('Last complete Daily period vs previous'));
+  const kpis = trafficKpis(A.views.acquisition.render());
   const unique = kpis.slice(kpis.indexOf('Unique visitors'), kpis.indexOf('New users'));
   assert.match(unique, /title="500">500/);
-  assert.match(unique, /\+37\.5%/);
-  assert.match(unique, /Latest complete daily: Oct 28 vs Oct 27/);
+  // Even with exact bucket snapshots there is no change: the connector stores totals counted back from
+  // today, which never match calendar buckets, so a delta here was almost always "–".
+  assert.doesNotMatch(unique, /class="delta/);
+  assert.match(unique, /no period change: daily unique visitors cannot be added/);
 });
 
-test('Acquisition withholds unique-visitor delta when one complete bucket lacks an exact snapshot', () => {
+test('Acquisition shows no unique-visitor value when the range has no deduplicated total', () => {
   const A = dashboard(); A.ui.today = () => '2026-10-29';
   A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
   A.S.data.metrics = [
     { source: 'ga4', metric: 'ga_sessions', value: 100, date: '2026-10-27', dim: 'channel', dim_value: 'Organic Search' },
-    { source: 'ga4', metric: 'ga_sessions', value: 150, date: '2026-10-28', dim: 'channel', dim_value: 'Paid Social' },
+    { source: 'ga4', metric: 'ga_users', value: 70, date: '2026-10-27' },
+    { source: 'ga4', metric: 'ga_users', value: 90, date: '2026-10-28' },
   ];
-  A.S.data.snapshots = [
-    { source: 'ga4', key: 'totals', from: A.S.from, to: A.S.to, rows: [{ users: 500, sessions: 250, engaged_sessions: 0, new_users: 0 }] },
-    { source: 'ga4', key: 'totals', from: '2026-10-28', to: '2026-10-28', rows: [{ users: 110, sessions: 150, engaged_sessions: 0, new_users: 8 }] },
-  ];
-  const html = A.views.acquisition.render();
-  const kpis = html.slice(0, html.indexOf('Last complete Daily period vs previous'));
+  const kpis = trafficKpis(A.views.acquisition.render());
   const unique = kpis.slice(kpis.indexOf('Unique visitors'), kpis.indexOf('New users'));
-  assert.match(unique, /title="500">500/);
-  assert.match(unique, /No comparison for this period/);
-  assert.match(unique, /per-bucket change requires exact snapshots/);
+  assert.doesNotMatch(unique, /160/, 'daily users are never added into a unique-visitor total');
+  assert.match(unique, /Deduplicated total not available for this range/);
 });
 
 test('Acquisition channel engagement detail follows the selected period buckets', () => {
@@ -802,14 +796,26 @@ test('Acquisition groups HubSpot, UTM and country detail by period without summi
     { date: '2026-10-27', campaign: 'launch', source: 'google', medium: 'cpc', content: 'p01_video', landing_page: '/home', sessions: 3, engaged_sessions: 2, key_events: 0 },
   ];
   A.S.data.snapshots = [{ source: 'ga4', key: 'utm_attribution', from: A.S.from, to: A.S.to, rows }];
+  A.S.data.events = [{ kind: 'form_signup', date: '2026-10-20', country: 'Colombia', internal: false }];
   const html = A.views.acquisition.render();
-  assert.match(html, /HubSpot sessions by source and period/);
+  // HubSpot's traffic report covers the whole site with no domain filter: kept as a labelled cross-check on GA4.
+  assert.match(html, /HubSpot sessions by source and period \(cross-check\)/);
+  assert.match(html, /whole HubSpot-tracked site/);
+  assert.match(html, /these sessions check GA4 rather than match it/);
+  const hubspot = html.slice(html.indexOf('HubSpot sessions by source and period'));
+  assert.match(hubspot, /Organic Search[\s\S]*?<td class="td-num">12<\/td>/);
+  assert.match(hubspot, /Bounce rate/); assert.match(hubspot, /New contacts/);
   assert.match(html, /UTM campaigns by period \(GA4\)/);
   assert.match(html, /Entry pages by period \(GA4\)/);
   assert.match(html, /Countries by period \(GA4\)/);
   assert.match(html, /Oct 19–25/); assert.match(html, /Oct 26–29/);
   assert.match(html, /Colombia/); assert.match(html, /p01_video/);
-  assert.match(html, /daily unique-user counts are not summed/);
+  const countries = html.slice(html.indexOf('Countries by period (GA4)'));
+  // Per-period GA4 users needed a snapshot per bucket and were always empty; the HubSpot column counts forms.
+  assert.doesNotMatch(countries, /Users \(GA4\)/);
+  assert.match(countries, /Form sign-ups \(HubSpot\)/);
+  assert.doesNotMatch(countries, /CRM contacts/);
+  assert.match(html, /GA4 unique users are never summed across days/);
 });
 
 test('Acquisition row caps keep the highest-volume entries within the newest period', () => {
@@ -832,11 +838,11 @@ test('comparison treats an absent daily session row as zero but withholds a rate
     { ...metric('ga4', 'ga_sessions', 25), date: '2026-10-28' },
     { ...metric('ga4', 'ga_engaged_sessions', 15), date: '2026-10-28' },
   ];
-  const html = A.views.acquisition.render();
-  assert.match(html, /Oct 27: 0/);
-  assert.match(html, />new<\/span>/);
-  assert.match(html, /Oct 27: –/);
-  assert.match(html, /No comparison for this period/);
+  const kpis = trafficKpis(A.views.acquisition.render());
+  const sessions = kpis.slice(kpis.indexOf('GA4 sessions'), kpis.indexOf('Unique visitors'));
+  const rate = kpis.slice(kpis.indexOf('Engagement rate'), kpis.indexOf('Top channel'));
+  assert.match(sessions, />new<\/span>/);
+  assert.match(rate, /No comparison for this period/);
 });
 
 test('partial UTM snapshot coverage is disclosed when grouping dated rows', () => {
@@ -1769,7 +1775,8 @@ test('channels follow the Early Builders rule: exact source, medium and campaign
   assert.equal(classify({ source: 'linkedin', medium: 'influencer', campaign: 'early_builders_co_202611', content: 'jdoe_dev' }), 'influencer', 'a builder referral link');
   assert.equal(classify({ source: 'instagram', medium: 'influencer', campaign: 'early_builders_co_202611' }), 'influencer');
   assert.equal(classify({ source: 'instagram', medium: 'influencer', campaign: 'other_campaign' }), 'other');
-  assert.equal(classify({ source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611', content: 'prueba-01' }), 'test');
+  // utm_content never decides a test (2026-11-18 rule): the piece name is free text.
+  assert.equal(classify({ source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611', content: 'prueba-01' }), 'gmail');
   assert.equal(classify({ source: '(not set)', medium: '', campaign: null }), 'none');
   assert.deepEqual(formUtm({ first_utm_source: 'equipo', first_utm_medium: 'referral', first_utm_campaign: 'developer-network', utm_source: 'google' }).source, 'equipo', 'first touch wins');
   assert.equal(formUtm({ utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'x' }).source, 'google', 'falls back to the submission UTMs');
@@ -1801,7 +1808,11 @@ test('PostHog accounts by channel come from the same rows as Accounts created an
   assert.match(accountSql, /utm_source_first/);
   const sum = (metric, f = () => true) => load.metrics.filter((r) => r.metric === metric && f(r)).reduce((n, r) => n + r.value, 0);
   const ch = (key) => sum('ph_accounts_origin', (r) => r.dim_value === key);
-  assert.deepEqual(['referral', 'gmail', 'linkedin', 'other', 'none', 'test'].map(ch), [3, 5, 1, 1, 3, 1]);
+  // The qa / test account is left out once in the connector, so no tab counts it.
+  assert.deepEqual(['referral', 'gmail', 'linkedin', 'other', 'none', 'test'].map(ch), [3, 5, 1, 1, 3, 0]);
+  assert.equal(sum('ph_accounts', (r) => r.dim_value !== 'Internal'), 13, 'test accounts are not accounts created');
+  assert.equal(sum('ph_accounts_geo', (r) => r.dim_value === 'Peru'), 0);
+  assert.ok(!load.metrics.some((r) => r.metric === 'ph_accounts_utm' && /^qa\|/.test(r.dim_value)));
   assert.equal(sum('ph_accounts_origin'), sum('ph_accounts', (r) => r.dim_value !== 'Internal'), 'channels add up to step 5');
   assert.equal(load.snapshots.find((s) => s.key === 'account_origin_coverage').rows[0].available, true);
 });
@@ -2039,4 +2050,196 @@ test('a step larger than the one above is grey with the multiple, a met step is 
   assert.match(html, /funnel-verdict is-empty"><span class="fv-head"><b>No data yet<\/b><small>not zero/);
   assert.doesNotMatch(html, /drop-off|funnel-conn/, 'verdicts replace the connector lines');
   assert.doesNotMatch(C.funnel([{ name: 'A', src: 'a', n: 10 }, { name: 'B', src: 'b', n: 5 }], 'y'), /funnel-verdict/, 'other funnels keep their layout');
+});
+
+test('Acquisition shows deduplicated GA4 visitors by country since launch, whatever the grouping', () => {
+  for (const grain of ['day', 'week', 'month', 'quarter']) {
+    const A = dashboard(); A.S.from = '2026-10-19'; A.S.to = '2026-10-29'; A.S.grain = grain; A.ui.today = () => '2026-10-30';
+    A.S.data.snapshots = [{ source: 'ga4', key: 'countries', from: '2026-10-01', to: '2026-10-30', rows: [
+      { country: 'Colombia', users: 300, engaged_sessions: 200, key_events: 9 }, { country: 'Mexico', users: 100, engaged_sessions: 50, key_events: 1 }, { country: 'Peru', users: 0 },
+    ] }];
+    const html = A.views.acquisition.render();
+    const card = html.slice(html.indexOf('Visitors by country since launch (GA4, deduplicated)'));
+    assert.match(card, /2 countries · Oct 1 – Oct 30/, grain);
+    assert.match(card, /Colombia<\/td><td class="td-num">300<\/td><td class="td-num">75\.0%/, grain);
+    assert.doesNotMatch(card.slice(0, card.indexOf('</table>')), /Peru/, 'countries without visitors are left out');
+  }
+});
+
+test('Acquisition traffic tiles show both complete buckets\' own values next to the change', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  A.S.from = '2026-10-01'; A.S.to = '2026-10-29'; A.S.grain = 'day';
+  const row = (metricName, value, date, channel) => ({ source: 'ga4', metric: metricName, value, date, dim: channel ? 'channel' : '', dim_value: channel || '' });
+  A.S.data.metrics = [
+    row('ga_sessions', 100, '2026-10-27', 'Organic Search'), row('ga_engaged_sessions', 50, '2026-10-27', 'Organic Search'), row('ga_new_users', 5, '2026-10-27'),
+    row('ga_sessions', 150, '2026-10-28', 'Paid Social'), row('ga_engaged_sessions', 90, '2026-10-28', 'Paid Social'), row('ga_new_users', 8, '2026-10-28'),
+  ];
+  const kpis = trafficKpis(A.views.acquisition.render());
+  assert.match(kpis, /Oct 28: 150 · Oct 27: 100/);
+  assert.match(kpis, /Oct 28: 8 · Oct 27: 5/);
+  assert.match(kpis, /Oct 28: 60\.0% · Oct 27: 50\.0%/);
+});
+
+// Users acquired (Acquisition): PostHog accounts, non-Internal, the same people Overview counts.
+// November data: attribution splits start on 2026-11-06, so the 2026-11-03 accounts count in the total only.
+function acquiredData(A, { utm = true } = {}) {
+  A.S.from = '2026-10-01'; A.S.to = '2026-11-20'; A.S.goalMonth = '2026-11'; A.ui.today = () => '2026-11-21';
+  A.S.data.goalPlan = require('../lib/targets').DEFAULT_PLAN;
+  const day = (d) => `2026-11-${String(d).padStart(2, '0')}`;
+  const row = (metricName, dim, value, d, dim_value) => ({ source: 'posthog', metric: metricName, value, date: day(d), dim, dim_value });
+  const acc = (value, d, type = 'External') => row('ph_accounts', 'account_type', value, d, type);
+  const spend = (source, value, d) => ({ source, metric: 'ad_spend', value, date: day(d), dim: 'campaign', dim_value: 'c' });
+  A.S.data.metrics = [
+    acc(5, 3), acc(6, 10), acc(4, 11), acc(3, 11, 'Internal'),
+    row('ph_accounts_origin', 'origin', 5, 3, 'none'),
+    row('ph_accounts_origin', 'origin', 3, 10, 'other'), row('ph_accounts_origin', 'origin', 1, 10, 'gmail'), row('ph_accounts_origin', 'origin', 2, 10, 'none'), row('ph_accounts_origin', 'origin', 4, 11, 'none'),
+    row('ph_builders_origin', 'origin', 2, 10, 'other'), row('ph_builders_origin', 'origin', 1, 11, 'gmail'),
+    ...(utm ? [
+      row('ph_accounts_utm', 'utm', 5, 3, 'meta|paid_social|latam_co|p01_video'),
+      row('ph_accounts_utm', 'utm', 2, 10, 'meta|paid_social|latam_co|p01_video'), row('ph_accounts_utm', 'utm', 1, 10, 'instagram|social|organic_ig|p03_reel'),
+      row('ph_accounts_utm', 'utm', 1, 10, 'google|cpc|early_builders_co_202611|gmail_promo_01'),
+      row('ph_accounts_utm', 'utm', 2, 10, '(not set)|(not set)|(not set)|(not set)'), row('ph_accounts_utm', 'utm', 4, 11, '(not set)|(not set)|(not set)|(not set)'),
+      row('ph_builders_utm', 'utm', 2, 10, 'meta|paid_social|latam_co|p01_video'), row('ph_builders_utm', 'utm', 1, 11, 'google|cpc|early_builders_co_202611|gmail_promo_01'),
+    ] : []),
+    spend('meta', 50, 3), spend('meta', 30, 10), spend('google_ads', 12.5, 10),
+    row('ph_accounts_geo', 'country', 5, 10, 'Colombia'), row('ph_accounts_geo', 'country', 1, 10, 'Spain'),
+  ];
+  const cov = (key) => ({ source: 'posthog', key, from: '2026-10-01', to: '2026-11-20', rows: [{ available: true }] });
+  A.S.data.snapshots = ['account_coverage', 'account_origin_coverage', 'builders_coverage', ...(utm ? ['account_utm_coverage', 'builders_utm_coverage'] : [])].map(cov);
+}
+function acquiredSection(html) { return html.slice(html.indexOf('Users acquired'), html.indexOf('Traffic to the sites')); }
+
+test('Acquisition counts accounts like Overview: non-Internal, whatever the internal-tests toggle says', () => {
+  for (const exInt of [true, false]) {
+    const A = dashboard(); A.S.exInt = exInt;
+    acquiredData(A);
+    const html = acquiredSection(A.views.acquisition.render());
+    assert.match(html, /title="15">15/, 'internal accounts never counted; the total keeps accounts before Nov 6');
+    assert.match(html, /same count as Overview/);
+  }
+});
+
+test('Acquisition reads accounts against the month goal and each country goal, like Overview', () => {
+  const A = dashboard();
+  acquiredData(A);
+  const html = acquiredSection(A.views.acquisition.render());
+  const g = A.D.goalAccounts();
+  assert.equal(g.value, 15);
+  assert.match(html, new RegExp(`Month goal[\\s\\S]*?${A.ui.pct(g.ratio).replace('.', '\\.')}`));
+  assert.match(html, /15 of 500,000 accounts · November 2026/);
+  assert.match(html, /500K plan/);
+  // Colombia against its monthly goal from the plan; Spain has no goal; the rest has no country.
+  assert.match(html, /Colombia<\/td><td class="td-num">5<\/td><td class="td-num">57,598/);
+  assert.match(html, /Other countries<\/td><td class="td-num">1</);
+  assert.match(html, /No country<\/td><td class="td-num">9</);
+});
+
+test('Acquisition splits accounts by channel, persona, campaign and platform from Nov 6, with verified people', () => {
+  const A = dashboard();
+  acquiredData(A);
+  const html = acquiredSection(A.views.acquisition.render());
+  // Attribution window Nov 6 – Nov 20: 10 accounts, 4 with a UTM; the 5 Meta accounts of Nov 3 are left out.
+  assert.match(html, /With a first-touch UTM[\s\S]*?title="4">4/);
+  assert.match(html, /40\.0% of 10 accounts · Nov 6 – Nov 20/);
+  assert.match(html, /First-touch UTMs are recorded from Nov 6; earlier accounts are left out of this split/);
+  // Paid = paid medium (Meta paid_social, Google cpc); organic includes Instagram social and no UTM.
+  assert.match(html, /Paid \/ organic[\s\S]*?3 \/ 7/);
+  // Spend in the window only: (30 + 12.5) / 3 accounts and / 3 verified; the Nov 3 Meta spend is left out.
+  assert.match(html, /\$42\.50 ÷ 3 accounts from Meta, Google Ads UTMs · \$14\.17 per verified account/);
+  // Cards split by UTM carry their real dates in the title.
+  for (const t of ['Accounts by channel', 'Accounts by persona', 'Accounts by campaign', 'Paid funnel by platform']) assert.match(html, new RegExp(`card-title">${t} · Nov 6 – Nov 20<`));
+  // Paid funnel row for Meta: accounts 2, verified 2, spend $30, $15 per account and per verified.
+  const metaRow = html.slice(html.indexOf('pf-meta'), html.indexOf('</tr>', html.indexOf('pf-meta')));
+  assert.match(metaRow, /<td class="td-num">2<\/td><td class="td-num">–<\/td><td class="td-num">2<\/td><td class="td-num">\$30\.00<\/td><td class="td-num">\$15\.00<\/td><td class="td-num">\$15\.00/);
+  assert.match(html, /Spend in US dollars, converted at sync/);
+  // Channel table with verified people: Other UTM 3 accounts, 2 verified.
+  assert.match(html, /Other UTM<\/td><td class="td-num">3<\/td><td class="td-num">30\.0%<\/td><td class="td-num">2<\/td><td class="td-num">66\.7%/);
+  // Persona from utm_content; Gmail's piece has no persona code.
+  assert.match(html, /p01<\/span><\/td><td class="td-num">2</);
+  assert.match(html, /p03<\/span><\/td><td class="td-num">1</);
+  assert.match(html, /No persona code<\/td><td class="td-num">1</);
+  assert.match(html, /No UTM<\/td><td class="td-num">6</);
+  // Campaigns sum utm_content; Meta named even though its channel is Other UTM; Executive difference explained.
+  assert.match(html, /latam_co<\/code>[\s\S]*?meta \/ paid_social[\s\S]*?Other UTM[\s\S]*?Paid · Meta[\s\S]*?<td class="td-num">2<\/td>/);
+  assert.match(html, /6 accounts have no first-touch UTM and are not listed/);
+  assert.match(html, /Executive's campaign funnel splits a different population/);
+  assert.match(html, /Not connected/, 'LinkedIn without spend data');
+});
+
+test('Acquisition paid funnel runs impressions to verified per platform in the attribution window', () => {
+  const A = dashboard();
+  acquiredData(A);
+  const m = (source, metricName, value, date, dim = 'campaign', dim_value = 'c') => ({ source, metric: metricName, value, date, dim, dim_value });
+  A.S.data.metrics.push(
+    m('meta', 'ad_impressions', 99999, '2026-11-03'), // before Nov 6: left out
+    m('meta', 'ad_impressions', 10000, '2026-11-10'), m('meta', 'ad_link_clicks', 200, '2026-11-10'),
+    m('google_ads', 'ad_impressions', 4000, '2026-11-10'), m('google_ads', 'ad_clicks', 100, '2026-11-10'),
+    m('ga4', 'ga_paid_sessions', 80, '2026-11-10', 'platform', 'meta'), m('ga4', 'ga_paid_sessions', 60, '2026-11-10', 'platform', 'google_ads'),
+  );
+  A.S.data.snapshots.push({ source: 'ga4', key: 'paid_sessions', from: '2026-10-01', to: '2026-11-20', rows: [{ available: true }] });
+  const html = acquiredSection(A.views.acquisition.render());
+  const funnel = html.slice(html.indexOf('Paid funnel by platform'), html.indexOf('Accounts by persona'));
+  const row = (name) => funnel.slice(funnel.indexOf(`${name}</`), funnel.indexOf('</tr>', funnel.indexOf(`${name}</`)));
+  // Meta: 10,000 impressions, 200 clicks; CTR 2.00% and click → session 40.0% in Overview's box against the same
+  // targets (10% and 85%); 2 accounts are 2.50% of 80 sessions.
+  const meta = row('Meta');
+  assert.match(meta, /10,000<\/td><td class="td-num">200<\/td>/);
+  assert.match(meta, /funnel-verdict is-below is-compact[\s\S]*?5× below target[\s\S]*?2\.0%[\s\S]*?fv-target"><span class="sr-only">target <\/span>10%/);
+  assert.match(meta, /<td class="td-num">80<\/td><td class=""><div class="funnel-verdict is-below is-compact">[\s\S]*?2× below target[\s\S]*?40\.0%[\s\S]*?85%/);
+  assert.match(meta, /<td class="td-num">2<\/td><td class="td-num">2\.50%<\/td>/);
+  // Google Ads: 100 clicks → 60 sessions is 60%, under 80% of the 85% target.
+  assert.match(row('Google Ads'), /4,000<\/td><td class="td-num">100<\/td>[\s\S]*?60\.0%[\s\S]*?85%/);
+  assert.equal((funnel.match(/T\['Landing sessions'\]|Under 50%/g) || []).length, 0, 'no second threshold for click → session');
+  // All paid adds the platforms: 14,000 impressions, 300 clicks, 140 sessions, 3 accounts, $42.50 of tracked spend.
+  assert.match(row('<b>All paid'), /14,000<\/td><td class="td-num">300<\/td>[\s\S]*?<td class="td-num">140<\/td>[\s\S]*?\$42\.50/);
+  // HubSpot forms are a separate path at the end, never between sessions and accounts.
+  assert.match(funnel, /HubSpot forms · separate path<\/th><\/tr>/);
+  assert.match(funnel, /6-digit code without HubSpot/);
+  assert.doesNotMatch(funnel, /landing sessions → form sign-ups/);
+  assert.match(funnel, /use Overview's targets for the same steps/);
+});
+
+test('Acquisition names a paid platform with spend but no UTM accounts instead of reading it as no results', () => {
+  const A = dashboard();
+  acquiredData(A);
+  // Meta keeps its spend but no account carries a Meta UTM (its ads have no UTM yet).
+  A.S.data.metrics = A.S.data.metrics.filter((r) => !(['ph_accounts_utm', 'ph_builders_utm'].includes(r.metric) && /^meta\|/.test(r.dim_value)));
+  const html = acquiredSection(A.views.acquisition.render());
+  assert.match(html, /Meta has spend but no account carries its UTM: most likely the ads have no UTM yet/);
+  // Spend per paid account only uses Google Ads: $12.50 for 1 account.
+  assert.match(html, /Spend per paid account · Nov 6 – Nov 20[\s\S]*?\$12\.50[\s\S]*?\$12\.50 ÷ 1 accounts from Google Ads UTMs/);
+  const meta = html.slice(html.indexOf('pf-meta'), html.indexOf('</tr>', html.indexOf('pf-meta')));
+  assert.match(meta, /No account with its UTM/);
+  assert.doesNotMatch(meta, /No accounts<|\$30\.00<\/td><td class="td-num">\$/);
+});
+
+test('Acquisition attribution splits wait for Nov 6 and for the PostHog sync, never showing zero', () => {
+  const A = dashboard(); A.ui.today = () => '2026-10-29';
+  assert.match(acquiredSection(A.views.acquisition.render()), /Awaiting PostHog/);
+  acquiredData(A, { utm: false });
+  let html = acquiredSection(A.views.acquisition.render());
+  assert.match(html, /title="15">15/);
+  assert.match(html, /Waiting for the next PostHog sync \(accounts by first-touch UTM\)/);
+  assert.match(html, /Accounts by campaign appear after the next PostHog sync/);
+  acquiredData(A); A.S.to = '2026-11-05';
+  html = acquiredSection(A.views.acquisition.render());
+  assert.match(html, /First-touch UTMs are recorded from Nov 6; pick a range that reaches it/);
+  assert.doesNotMatch(html, /Nov 6 – Nov 5/);
+});
+
+test('UTM detail joins every stored part of the GA4 report for the same window', () => {
+  const A = dashboard(); A.S.from = '2026-10-19'; A.S.to = '2026-10-29'; A.S.grain = 'week'; A.ui.today = () => '2026-10-30';
+  const row = (campaign) => ({ date: '2026-10-27', campaign, source: 'google', medium: 'cpc', content: 'p01', landing_page: '/home', sessions: 2, engaged_sessions: 1, key_events: 0 });
+  const part = (key, rows, from = A.S.from) => ({ source: 'ga4', key, from, to: A.S.to, rows });
+  A.S.data.snapshots = [
+    part('utm_attribution', [row('part-one')]), part('utm_attribution_2', [row('part-two')]),
+    part('utm_attribution_2', [row('stale-window')], '2026-10-01'),
+    { source: 'ga4', key: 'utm_attribution_coverage', from: A.S.from, to: A.S.to, rows: [{ available: true, rows: 2, parts: 2, truncated: false }] },
+  ];
+  assert.deepEqual([...A.D.utmRows().map((r) => r.campaign)], ['part-one', 'part-two']);
+  const html = A.views.acquisition.render();
+  assert.match(html, /part-two/); assert.doesNotMatch(html, /stale-window/);
+  assert.doesNotMatch(html, /reached its row limit/);
+  A.S.data.snapshots[3].rows[0].truncated = true;
+  assert.match(A.views.acquisition.render(), /reached its row limit/);
 });

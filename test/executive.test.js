@@ -479,3 +479,13 @@ test('Executive November goal is read from stored targets and projects only from
   assert.equal(later.view.chart.days.find((day) => day.date === '2026-11-10').signups, null);
   assert.equal(later.view.chart.days.find((day) => day.date === '2026-11-02').cumulative, 9);
 });
+
+test('Executive GA4 attribution returns every stored part of the UTM report for the same window', async () => {
+  const row = (date, campaign) => ({ date, campaign, source: 'google', medium: 'cpc', content: 'p01', landing_page: '/latam', city: 'Bogotá', sessions: 1, engaged_sessions: 1, key_events: 0 });
+  const part = (key, rows, from = '2026-10-01') => ({ source: 'ga4', key, from, to: '2026-11-17', rows });
+  const data = await build(storeWithMetrics([{ source: 'ga4', metric: 'ga_sessions', date: '2026-11-17', value: 1, dim: 'channel', dim_value: 'Direct' }], [
+    part('utm_attribution', [row('2026-11-17', 'newest')]), part('utm_attribution_2', [row('2026-10-02', 'older')]),
+    part('utm_attribution_2', [row('2026-10-03', 'other-window')], '2026-09-01'),
+  ]), '2026-11');
+  assert.deepEqual(data.attribution.ga4.map((r) => r.campaign), ['newest', 'older']);
+});
