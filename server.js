@@ -208,13 +208,17 @@ app.post('/api/ingest', async (req, res, next) => {
   } catch (e) { e.status ? res.status(e.status).json({ error: e.message }) : next(e); }
 });
 
-// One sync per source at a time, shared by "Sync now" and the automatic sync, so two
-// overlapping pulls can never write the same source twice.
+// One sync at a time across ALL sources, shared by "Sync now" and the automatic sync. A sync
+// requested while another one runs waits its turn in a global queue instead of writing
+// gd_items at the same time (concurrent writes caused MySQL deadlocks). The same source still
+// cannot be queued twice (the route answers 409 and autoSync skips it).
 const syncing = new Set();
-async function runSync(k) {
+let syncQueue = Promise.resolve();
+function runSync(k) {
   syncing.add(k);
-  try { return await ingest(await connectors[k](), 'connector'); }
-  finally { syncing.delete(k); }
+  const job = syncQueue.then(async () => ingest(await connectors[k](), 'connector'));
+  syncQueue = job.catch(() => {});
+  return job.finally(() => syncing.delete(k));
 }
 
 // Meta Conversions API (CompleteRegistration per new account). Admin only (POST). {"dry": true} previews
