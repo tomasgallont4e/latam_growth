@@ -677,6 +677,7 @@ body[data-page="executive"] .check-chip { display: none; }
 .acct-stat { padding: 12px 14px; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface-2); }
 .acct-hero-side .acct-stat dd { font-size: 18px; }
 .acct-hero-side .acct-stat dd.acct-hero-hint { font: 500 11px var(--font-body); color: var(--color-text-muted); }
+.acct-hero-side .acct-stat dd small.acct-stat-share { margin-left: 4px; font: 500 12px var(--font-body); color: var(--color-text-muted); white-space: nowrap; }
 .acct-hero-trend-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--color-border); border-radius: 999px; }
 .seg .btn { border-radius: 999px; }

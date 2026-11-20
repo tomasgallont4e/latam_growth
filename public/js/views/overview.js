@@ -147,7 +147,7 @@
     const fit = canFit && !S.ovPaceFull;
     const scaleToggle = canFit ? `<div class="seg" role="group" aria-label="Chart scale"><button type="button" class="btn btn-ghost btn-sm" data-ov-scale="fit" aria-pressed="${fit}">Fit to actual</button><button type="button" class="btn btn-ghost btn-sm" data-ov-scale="full" aria-pressed="${!fit}">Full goal</button></div>` : '';
     const side = [
-      ['Of which LATAM', loaded ? `${U.fmt(g.latam)}<small>${U.esc(U.pct(g.latamShare || 0, 1))}</small>` : '–', 'The 11 plan countries'],
+      ['Of which LATAM', loaded ? `${U.fmt(g.latam)} <small class="acct-stat-share">· ${U.esc(U.pct(g.latamShare || 0, 1))}</small>` : '–', 'The 11 plan countries'],
       ['Minimum to date', paceOk ? U.fmt(Math.ceil(p.required)) : '–', 'Goal × day ÷ days in month'],
       ['Pace', paceVal, 'Versus the minimum to date'],
       ['vs previous month', loaded ? A.goalPrevHtml(g) : '–', A.goalPrevHint(g)],
@@ -199,21 +199,32 @@
     // 1. Impressions: Meta Ads + Google Ads + the organic LinkedIn company page (no LinkedIn Ads, memory #151).
     // LinkedIn page statistics have no country, so a country view counts the ads only.
     const impMetric = all ? 'ad_impressions' : 'ad_impressions_geo';
+    // A platform counts only when it has at least one reported day inside the window. When none has,
+    // the step is Pending (with the last day that has data), never 0: the current day is not reported yet.
+    const reported = (src, metric, f) => D.M().some((r) => r.source === src && r.metric === metric && r.date >= from && r.date <= to && (!f || f(r)));
+    const pendingNote = (pairs) => {
+      let last = '';
+      for (const r of D.M()) if (r.date > last && pairs.some(([s, k]) => r.source === s && r.metric === k)) last = r.date;
+      return last ? `Pending · last data ${A.ui.dshort(last)}` : 'Pending · no data reported yet';
+    };
     const impNets = ['meta', 'google_ads'].filter((k) => D.has(k, impMetric));
-    const liImp = all && D.has('linkedin', 'post_impressions') ? D.sum('linkedin', 'post_impressions', null, from, to) : null;
+    const liOn = all && D.has('linkedin', 'post_impressions');
+    const liImp = liOn ? D.sum('linkedin', 'post_impressions', null, from, to) : null;
     const impSrc = all ? 'Meta Ads · Google Ads · LinkedIn page' : 'Meta Ads · Google Ads';
-    if (impNets.length || liImp != null) steps.push({ name: 'Impressions', src: impSrc, n: add([...impNets.map((k) => D.sum(k, impMetric, all ? null : inCountry, from, to)), liImp]) });
+    const impReported = impNets.some((k) => reported(k, impMetric, all ? null : inCountry)) || (liOn && reported('linkedin', 'post_impressions'));
+    if ((impNets.length || liOn) && impReported) steps.push({ name: 'Impressions', src: impSrc, n: add([...impNets.map((k) => D.sum(k, impMetric, all ? null : inCountry, from, to)), liImp]) });
+    else if (impNets.length || liOn) steps.push({ name: 'Impressions', src: impSrc, n: null, note: pendingNote([...impNets.map((k) => [k, impMetric]), ...(liOn ? [['linkedin', 'post_impressions']] : [])]) });
     else steps.push(all ? { name: 'Impressions', src: impSrc, n: null, note: 'No ad platform has reported' } : split('Impressions', impSrc));
     steps[0].group = all ? 'Ads and LinkedIn page' : 'Ads';
     // 2. Clicks: Meta outbound + Google Ads clicks + clicks on the LinkedIn company page posts (decided
     // 2026-11-17). LinkedIn reports every click on a post, not only clicks to the landing. Never split by country.
     if (!all) steps.push(split('Clicks to the landing', 'Meta outbound · Google Ads clicks · LinkedIn page clicks'));
     else {
-      const parts = [];
-      if (D.has('meta', 'ad_outbound_clicks')) parts.push(D.sum('meta', 'ad_outbound_clicks', null, from, to));
-      if (D.has('google_ads', 'ad_clicks')) parts.push(D.sum('google_ads', 'ad_clicks', null, from, to));
-      if (D.has('linkedin', 'post_clicks')) parts.push(D.sum('linkedin', 'post_clicks', null, from, to));
-      steps.push({ name: 'Clicks to the landing', src: 'Meta outbound · Google Ads clicks · LinkedIn page clicks', n: parts.length ? add(parts) : null, note: 'No outbound clicks reported' });
+      const clickPairs = [['meta', 'ad_outbound_clicks'], ['google_ads', 'ad_clicks'], ['linkedin', 'post_clicks']].filter(([s, k]) => D.has(s, k));
+      const parts = clickPairs.map(([s, k]) => D.sum(s, k, null, from, to));
+      const clicksReported = clickPairs.some(([s, k]) => reported(s, k));
+      const clickNote = parts.length && !clicksReported ? pendingNote(clickPairs) : 'No outbound clicks reported';
+      steps.push({ name: 'Clicks to the landing', src: 'Meta outbound · Google Ads clicks · LinkedIn page clicks', n: parts.length && clicksReported ? add(parts) : null, note: clickNote });
     }
     // 3. Landing sessions (GA4, go.think4ever.com only)
     // Bars restart here: impressions are ~100x larger than every on-site step, so one scale would
