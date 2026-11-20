@@ -200,13 +200,9 @@
     // LinkedIn page statistics have no country, so a country view counts the ads only.
     const impMetric = all ? 'ad_impressions' : 'ad_impressions_geo';
     // A platform counts only when it has at least one reported day inside the window. When none has,
-    // the step is Pending (with the last day that has data), never 0: the current day is not reported yet.
+    // the step is Pending (daily sync limit reached), never 0: the current day is not reported yet.
     const reported = (src, metric, f) => D.M().some((r) => r.source === src && r.metric === metric && r.date >= from && r.date <= to && (!f || f(r)));
-    const pendingNote = (pairs) => {
-      let last = '';
-      for (const r of D.M()) if (r.date > last && pairs.some(([s, k]) => r.source === s && r.metric === k)) last = r.date;
-      return last ? `Pending · last data ${A.ui.dshort(last)}` : 'Pending · no data reported yet';
-    };
+    const pendingNote = () => 'Pending · daily sync limit reached';
     const impNets = ['meta', 'google_ads'].filter((k) => D.has(k, impMetric));
     const liOn = all && D.has('linkedin', 'post_impressions');
     const liImp = liOn ? D.sum('linkedin', 'post_impressions', null, from, to) : null;
