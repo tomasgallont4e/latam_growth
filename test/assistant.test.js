@@ -406,3 +406,58 @@ test('structured findings come back parsed, and the panel shows the decision fir
   assert.match(html, /<span>Why<\/span>Likely the code step\./);
   assert.match(html, /<span>Do<\/span>Test a one-field form/);
 });
+
+test('Nov 23: Landing sessions are never sized against clicks, and Meta reads its own clicks against its own UTM sessions', () => {
+  // All countries, Nov 23: 1,201 clicks, all Meta; 291 landing sessions from every source, 140 of them with Meta's UTM.
+  const overview_funnel = {
+    window: 'Nov 23', country: 'All countries',
+    steps: [
+      { step: 'Impressions', value: 6350 },
+      { step: 'Clicks to the landing', value: 1201, pct_of_previous: 1201 / 6350, previous_step: 'Impressions', target_pct_of_previous: 0.1 },
+      { step: 'Landing sessions', value: 291, pct_of_previous: 291 / 1201, previous_step: 'Clicks to the landing', target_pct_of_previous: 0.85 },
+      { step: 'Started sign-up', value: 10, with_registration_started: 8, pct_of_previous: 10 / 291, previous_step: 'Landing sessions', target_pct_of_previous: 0.5 },
+      { step: 'Accounts created', value: 6, pct_of_previous: 0.6, previous_step: 'Started sign-up', target_pct_of_previous: 0.7 },
+    ],
+    weakest_step: { from: 'Clicks to the landing', to: 'Landing sessions', continue: 291 / 1201 },
+    channels: [{ channel: 'Meta Ads', impressions: 6350, clicks: 1201, sessions_from_its_utm: 140 }],
+    spend: [{ platform: 'Meta Ads', spend: 11.46 }],
+    by_channel: [
+      { channel: 'Meta Ads · Instagram and Facebook', group: 'general', platform: 'Meta Ads', accounts: 0, builders: 0 },
+      { channel: 'No UTM', group: 'general', accounts: 6, builders: 1 },
+    ],
+  };
+  const { context } = cleanRequest({ mode: 'insights', question: 'q', context: { overview_funnel } });
+  const d = context.derived;
+  assert.equal(context.overview_funnel.channels[0].sessions_from_its_utm, 140, 'the sessions with its UTM reach the model');
+  assert.equal(d.steps_vs_target.some((x) => x.step === 'Landing sessions'), false, 'no people "missing" between clicks and sessions');
+  assert.notEqual(d.worst_step_vs_target && d.worst_step_vs_target.step, 'Landing sessions');
+  assert.equal(d.not_sized_steps.includes('Landing sessions'), false);
+  assert.ok(d.steps_vs_target.some((x) => x.step === 'Started sign-up'), 'Started sign-up stays sized');
+  assert.equal(context.overview_funnel.weakest_step, null, 'the card weakest step to Landing sessions is dropped');
+  const meta = d.spend.by_platform.find((x) => x.platform === 'Meta Ads');
+  assert.equal(meta.attribution, 'campaign link');
+  assert.equal(meta.accounts_from_its_links, 0, 'Meta has its link: zero accounts from it, not unknown');
+  assert.equal(meta.sessions_from_its_utm, 140);
+  assert.equal(meta.click_to_session_pct, 11.7);
+});
+
+test('click to session by platform is null when its sessions or clicks are missing', () => {
+  const { deriveSignals } = require('../lib/assistant');
+  const d = deriveSignals({
+    steps: [{ step: 'Impressions', value: 1000 }],
+    spend: [{ platform: 'Meta Ads', spend_usd: 5 }, { platform: 'Google Ads', spend_usd: 5 }],
+    channels: [{ channel: 'Meta Ads', clicks: 100, sessions_from_its_utm: null }, { channel: 'Google Ads', clicks: null, sessions_from_its_utm: 3 }],
+  });
+  assert.deepEqual(d.spend.by_platform.map((x) => x.click_to_session_pct), [null, null]);
+});
+
+test('both prompts say clicks to sessions is not a share of clickers, and the findings never invent ad settings', () => {
+  const { SYSTEM, INSIGHTS_SYSTEM } = require('../lib/assistant');
+  for (const p of [SYSTEM, INSIGHTS_SYSTEM]) {
+    assert.match(p, /Landing sessions count visits from every source/);
+    assert.match(p, /is not the share of clickers who arrived/);
+    assert.match(p, /click_to_session_pct/);
+  }
+  assert.match(INSIGHTS_SYSTEM, /Never name an ad platform setting \(placements, Audience Network/);
+  assert.match(INSIGHTS_SYSTEM, /there are no LinkedIn ads/);
+});

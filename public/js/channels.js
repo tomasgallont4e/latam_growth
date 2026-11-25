@@ -7,6 +7,9 @@
 // Developer Network emails sent from HubSpot (hs_email, hs_automation, hubspot with medium email) count with
 // Referrals · Developer Network. Each builder's own referral link (any network, medium influencer, campaign
 // early_builders_co_202611; utm_content = the builder's public user) is its own channel, Influencers.
+// One difference from project 290, decided on 2026-11-23: the Meta Ads (boosted Instagram posts) land with
+// instagram or facebook / paid_social and their own campaign (launch_latam_202611), so any campaign with that
+// source and a paid medium is its own channel, Meta Ads, instead of Other UTM.
 (function (root) {
   const LINKS = [
     { key: 'referral', source: 'equipo', medium: 'referral', campaign: 'developer-network' },
@@ -15,6 +18,8 @@
   ];
   const DN_EMAIL_SOURCES = new Set(['hs_email', 'hs_automation', 'hubspot']);
   const PROGRAM_CAMPAIGN = 'early_builders_co_202611';
+  const META_SOURCES = new Set(['instagram', 'facebook', 'ig', 'fb', 'meta']);
+  const META_MEDIUMS = new Set(['paid_social', 'paid-social', 'paid', 'cpc', 'ppc']);
   // group: 'program' = the official links of the Developer Network (Early Builders) program, 'general' = everything
   // else, 'test' = left out.
   const CHANNELS = [
@@ -22,7 +27,8 @@
     { key: 'gmail', label: 'Gmail ads · Google Ads', rule: 'google / cpc / early_builders_co_202611 · piece gmail_promo_01', group: 'program', platform: 'Google Ads' },
     { key: 'linkedin', label: 'LinkedIn paid', rule: 'linkedin / paid_social / early_builders_co_202611', group: 'program', platform: 'LinkedIn Ads' },
     { key: 'influencer', label: 'Influencers · builder links', rule: 'linkedin, instagram… / influencer / early_builders_co_202611 (each builder shares their own link)', group: 'program' },
-    { key: 'other', label: 'Other UTM', rule: 'a UTM that matches none of the program links', group: 'general' },
+    { key: 'meta', label: 'Meta Ads · Instagram and Facebook', rule: 'instagram or facebook / paid_social (paid-social, paid, cpc) / any campaign', group: 'general', platform: 'Meta Ads' },
+    { key: 'other', label: 'Other UTM', rule: 'a UTM that matches none of the program links or Meta Ads', group: 'general' },
     { key: 'none', label: 'No UTM', rule: 'no utm_source, utm_medium or utm_campaign', group: 'general' },
     { key: 'test', label: 'Tests', rule: 'utm_medium qa, test or prueba; source or campaign starting qa-, test- or prueba- (or _); known probes (posthog_prodcheck…)', group: 'test' },
   ];
@@ -59,6 +65,7 @@
     if (hit) return hit.key;
     if (m === 'email' && DN_EMAIL_SOURCES.has(s)) return 'referral';
     if (m === 'influencer' && c === PROGRAM_CAMPAIGN) return 'influencer';
+    if (META_SOURCES.has(s) && META_MEDIUMS.has(m)) return 'meta';
     return 'other';
   }
   // A HubSpot form row: its first-touch UTMs when it has any, otherwise the UTMs of the submission.
@@ -68,7 +75,7 @@
       ? first : { source: e.utm_source, medium: e.utm_medium, campaign: e.utm_campaign, content: e.utm_content };
   }
   const byKey = Object.fromEntries(CHANNELS.map((c) => [c.key, c]));
-  const api = { CHANNELS, classify, isTest, testSql, TEST_RULE: { mediums: TEST_MEDIUMS, prefix: TEST_PREFIX, probe: TEST_PROBE }, formUtm, label: (k) => (byKey[k] ? byKey[k].label : k), group: (k) => (byKey[k] ? byKey[k].group : 'general') };
+  const api = { CHANNELS, classify, isTest, testSql, TEST_RULE: { mediums: TEST_MEDIUMS, prefix: TEST_PREFIX, probe: TEST_PROBE }, formUtm, isMetaPaid: ({ source, medium } = {}) => META_SOURCES.has(norm(source)) && META_MEDIUMS.has(norm(medium)), label: (k) => (byKey[k] ? byKey[k].label : k), group: (k) => (byKey[k] ? byKey[k].group : 'general') };
   if (typeof module === 'object' && module.exports) module.exports = api;
   else if (root && root.App) root.App.channels = api;
 })(typeof window !== 'undefined' ? window : this);

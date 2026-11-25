@@ -1763,7 +1763,7 @@ test('Overview groups by week by default and splits impressions to clicks by ad 
   assert.equal(fed.steps[1].value, 140, 'and to the funnel clicks');
 });
 
-test('Overview separates clicks that open the page and pairs each network with its own sessions', () => {
+test('Overview keeps the one-line click split; the network table lives in Social and Paid', () => {
   const A = dashboard();
   A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
   const d = '2026-11-12';
@@ -1791,14 +1791,119 @@ test('Overview separates clicks that open the page and pairs each network with i
     ] },
   );
   const html = A.views.overview.render();
-  assert.match(html, /Clicks that open the page → landing sessions, by network/);
+  assert.doesNotMatch(html, /Clicks that open the page → landing sessions, by network|class="ov-click-split"|Ad clicks that load the page/, 'the network table moved to Social and Paid');
   assert.match(html, /Clicks to the landing: 1,444 = 1,044 open the page, 100 are Gmail video clicks that do not, 300 are LinkedIn page post clicks that cannot be separated\./);
   assert.match(html, /Paired with their own sessions \(Google Ads\): 431 of 1,044 clicks that open the page became a landing session \(41%\); 613 were lost after the click\./);
-  assert.match(html, /Google Ads by device/);
+  assert.doesNotMatch(html, /Google Ads by device/);
+  const social = A.views.social.render();
+  assert.match(social, /Ad clicks that load the page/);
+  assert.match(social, /Google Ads<\/td><td class="td-num">1,044<\/td>(<td class="td-num"><span class="text-muted">–<\/span><\/td>){3}<td class="td-num">431<\/td><td class="td-num">41\.3% <small class="text-muted">estimate<\/small><\/td>/);
+  assert.match(social, /LinkedIn page<\/td><td class="td-num">300 <small class="text-muted">all post clicks<\/small><\/td>(<td class="td-num"><span class="text-muted">–<\/span><\/td>){3}<td class="td-num">120<\/td><td class="td-num"><span class="text-muted">–<\/span><\/td>/);
   const fed = A.overviewFunnel();
   assert.equal(fed.steps[1].value, 1444, 'step 2 keeps its total');
   assert.equal(fed.click_split.networks.find((n) => n.network === 'Google Ads').devices.find((x) => x.device === 'Phone').lost_after_click, 600);
   assert.equal(fed.click_split.paired_total.lost_after_click, 613);
+});
+
+// Social and Paid · Ad clicks that load the page. Meta clicks before the Meta Pixel (2026-11-18) are left out so
+// clicks and page loads cover the same days.
+function pageLoadFixture(A, { pixel = true } = {}) {
+  A.S.from = '2026-11-10'; A.S.to = '2026-11-23';
+  const win = { from: '2026-10-01', to: '2026-11-24', pulled_at: '2026-11-24T12:00:00Z' };
+  const m = (source, name, value, date, dim_value) => ({ source, metric: name, value, date, dim: 'campaign', dim_value });
+  A.S.data.metrics.push(
+    m('meta', 'ad_impressions', 4000, '2026-11-15', 'Launch A'), m('meta', 'ad_platform_clicks', 150, '2026-11-15', 'Launch A'),
+    m('meta', 'ad_outbound_clicks', 70, '2026-11-15', 'Launch A'),
+    m('meta', 'ad_impressions', 6000, '2026-11-19', 'Launch A'), m('meta', 'ad_platform_clicks', 200, '2026-11-19', 'Launch A'),
+    m('meta', 'ad_outbound_clicks', 120, '2026-11-19', 'Launch A'), m('meta', 'ad_landing_page_views', 84, '2026-11-19', 'Launch A'),
+    m('meta', 'ad_impressions', 3000, '2026-11-21', 'Retarget B'), m('meta', 'ad_platform_clicks', 90, '2026-11-21', 'Retarget B'),
+    m('meta', 'ad_outbound_clicks', 40, '2026-11-21', 'Retarget B'), m('meta', 'ad_landing_page_views', 34, '2026-11-21', 'Retarget B'),
+    m('google_ads', 'ad_impressions', 2000, '2026-11-12', 'Search'), m('google_ads', 'ad_clicks', 100, '2026-11-12', 'Search'),
+  );
+  const u = (date, source, medium, sessions) => ({ date, source, medium, campaign: 'c', content: '(not set)', sessions });
+  A.S.data.snapshots.push(
+    { source: 'meta', key: 'outbound_coverage', ...win, rows: [{ available: true }] },
+    ...(pixel ? [{ source: 'meta', key: 'landing_view_coverage', ...win, rows: [{ available: true, pixel_since: '2026-11-18' }] }] : []),
+    { source: 'ga4', key: 'executive_landing_utm', ...win, rows: [{ available: true }] },
+    { source: 'ga4', key: 'executive_landing_utm_1', ...win, rows: [
+      u('2026-11-15', 'instagram', 'paid_social', 30), u('2026-11-19', 'instagram', 'paid_social', 60), u('2026-11-21', 'facebook', 'paid_social', 20),
+      u('2026-11-12', 'google', 'cpc', 45), u('2026-11-12', '(direct)', '(none)', 500),
+    ] },
+  );
+}
+const cell = (v) => `<td class="td-num">${v}</td>`;
+const none = '<span class="text-muted">–</span>';
+
+test('Social and Paid shows ad clicks that load the page, with the Meta row clipped to the Meta Pixel date', () => {
+  const A = dashboard();
+  pageLoadFixture(A);
+  const html = A.views.social.render();
+  assert.ok(html.indexOf('Ad clicks that load the page') > 0, 'the section is drawn');
+  assert.ok(html.indexOf('Ad clicks that load the page') < html.indexOf('unit costs by paid channel'), 'right after the goals strip, before the unit costs');
+  for (const t of ['Network', 'Clicks that open the page', 'Page loaded', 'Did not load', 'Loaded %', 'GA4 landing sessions', 'Session / click']) assert.ok(html.includes(`>${t}</th>`), t);
+  // Meta from 18 Nov: 160 outbound clicks (the 70 of 15 Nov are left out), 118 page loads, 42 did not load, 73.8%,
+  // 80 GA4 sessions with the Meta UTM (the 30 of 15 Nov are left out), 50.0% session per click.
+  assert.ok(html.includes(`Meta Ads</td>${cell('160')}${cell('118')}${cell('42')}${cell('73.8%')}${cell('80')}${cell('50.0%')}`), 'Meta row');
+  assert.ok(!html.includes(`Meta Ads</td>${cell('230')}`), 'clicks before the pixel are not counted');
+  // Google Ads: normal window, no page loads reported, session per click is an estimate.
+  assert.ok(html.includes(`Google Ads</td>${cell('100')}${cell(none)}${cell(none)}${cell(none)}${cell('45')}${cell('45.0% <small class="text-muted">estimate</small>')}`), 'Google Ads row');
+  assert.match(html, /LinkedIn page <small class="text-muted">No data in these dates<\/small>/);
+  assert.match(html, /Meta: Nov 18 – Nov 23 · Google Ads and LinkedIn: Nov 10 – Nov 23/);
+  assert.match(html, /Meta row counts from 18 Nov, when the Meta Pixel went live\./);
+  assert.match(html, /Page loaded = the Meta Pixel fired on go\.think4ever\.com after the click\. Did not load = the person clicked but the pixel never fired: the page did not finish loading, the person went back first, or the pixel was blocked\./);
+  assert.match(html, /GA4 sessions lower than Page loaded means the page loaded but GA4 did not record the visit with the network&#39;s UTM/);
+  // Meta per campaign, same window, sorted by clicks.
+  assert.match(html, /Meta campaigns · clicks that load the page<span class="count">2 campaigns · Nov 18 – Nov 23<\/span>/);
+  const a = html.indexOf(`Launch A</td>${cell('120')}${cell('84')}${cell('36')}${cell('70.0%')}`);
+  const b = html.indexOf(`Retarget B</td>${cell('40')}${cell('34')}${cell('6')}${cell('85.0%')}`);
+  assert.ok(a > 0 && b > a, 'campaign rows, most clicks first');
+  assert.doesNotMatch(html, /NaN|Infinity/);
+  const section = html.slice(html.indexOf('ad-page-loads'), html.indexOf('unit costs by paid channel'));
+  assert.doesNotMatch(section, /—/, 'no em dashes in the new section');
+});
+
+test('Social and Paid shows – for Meta page loads without the pixel coverage snapshot or before the pixel', () => {
+  const A = dashboard();
+  pageLoadFixture(A, { pixel: false });
+  const html = A.views.social.render();
+  // Without the coverage snapshot the Meta row uses the normal window and leaves the page-load cells empty.
+  assert.ok(html.includes(`Meta Ads</td>${cell('230')}${cell(none)}${cell(none)}${cell(none)}${cell('110')}${cell('47.8%')}`), 'Meta row without pixel data');
+  assert.match(html, /Meta page loads are not available yet: they need the Meta Pixel \(live since 18 Nov\) and the next Meta sync\./);
+  assert.doesNotMatch(html, /Meta row counts from 18 Nov|Meta campaigns · clicks that load the page/);
+  assert.doesNotMatch(html, /NaN|Infinity/);
+
+  const B = dashboard();
+  pageLoadFixture(B);
+  B.S.from = '2026-11-01'; B.S.to = '2026-11-16';
+  const before = B.views.social.render();
+  assert.ok(before.includes(`Meta Ads</td>${cell('70')}${cell(none)}${cell(none)}${cell(none)}${cell('30')}`), 'dates before the pixel: clicks shown, page loads –');
+  assert.match(before, /These dates end before 18 Nov, when the Meta Pixel went live, so Meta page loads are not available\./);
+  assert.doesNotMatch(before, /NaN|Infinity/);
+});
+
+test('Social and Paid page loads never show NaN, Infinity or a fake 0', () => {
+  const A = dashboard();
+  A.S.from = '2026-11-18'; A.S.to = '2026-11-23';
+  const win = { from: '2026-10-01', to: '2026-11-24', pulled_at: '2026-11-24T12:00:00Z' };
+  A.S.data.metrics.push(
+    { source: 'meta', metric: 'ad_impressions', value: 500, date: '2026-11-20', dim_value: 'Zero' },
+    { source: 'meta', metric: 'ad_platform_clicks', value: 0, date: '2026-11-20', dim_value: 'Zero' },
+    { source: 'meta', metric: 'ad_outbound_clicks', value: 0, date: '2026-11-20', dim_value: 'Zero' },
+    { source: 'meta', metric: 'ad_landing_page_views', value: 0, date: '2026-11-20', dim_value: 'Zero' },
+    { source: 'linkedin', metric: 'post_clicks', value: 12, date: '2026-11-01' },
+  );
+  A.S.data.snapshots.push(
+    { source: 'meta', key: 'outbound_coverage', ...win, rows: [{ available: true }] },
+    { source: 'meta', key: 'landing_view_coverage', ...win, rows: [{ available: true }] },
+  );
+  const html = A.views.social.render();
+  assert.ok(html.includes(`Meta Ads</td>${cell('0')}${cell('0')}${cell('0')}${cell(none)}${cell(none)}${cell(none)}`), 'zero clicks: loaded % and session per click are –');
+  assert.match(html, /Google Ads <small class="text-muted">No data in these dates<\/small>/);
+  assert.match(html, /LinkedIn page <small class="text-muted">No data in these dates<\/small><\/td>(<td class="td-num"><span class="text-muted">–<\/span><\/td>){6}/, 'no LinkedIn rows in these dates: –, never 0');
+  assert.doesNotMatch(html, /NaN|Infinity/);
+  const empty = dashboard();
+  assert.doesNotMatch(empty.views.social.render(), /NaN|Infinity/);
+  assert.match(empty.views.social.render(), /Meta Ads <small class="text-muted">No data in these dates<\/small>/);
 });
 
 test('channels follow the Early Builders rule: exact source, medium and campaign, HubSpot emails with Referrals', () => {
@@ -1816,6 +1921,11 @@ test('channels follow the Early Builders rule: exact source, medium and campaign
   // utm_content never decides a test (2026-11-18 rule): the piece name is free text.
   assert.equal(classify({ source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611', content: 'prueba-01' }), 'gmail');
   assert.equal(classify({ source: '(not set)', medium: '', campaign: null }), 'none');
+  // Meta Ads (boosted Instagram posts) land with their own source and paid medium: their own channel.
+  assert.equal(classify({ source: 'instagram', medium: 'paid_social', campaign: 'launch_latam_202611' }), 'meta');
+  assert.equal(classify({ source: 'Facebook', medium: 'paid-social', campaign: 'any' }), 'meta');
+  assert.equal(classify({ source: 'instagram', medium: 'influencer', campaign: 'early_builders_co_202611' }), 'influencer', 'a builder link on Instagram stays Influencers');
+  assert.equal(classify({ source: 'instagram', medium: 'social', campaign: 'organic_ig' }), 'other', 'an organic Instagram post is not Meta Ads');
   assert.deepEqual(formUtm({ first_utm_source: 'equipo', first_utm_medium: 'referral', first_utm_campaign: 'developer-network', utm_source: 'google' }).source, 'equipo', 'first touch wins');
   assert.equal(formUtm({ utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'x' }).source, 'google', 'falls back to the submission UTMs');
 });
@@ -1847,7 +1957,7 @@ test('PostHog accounts by channel come from the same rows as Accounts created an
   const sum = (metric, f = () => true) => load.metrics.filter((r) => r.metric === metric && f(r)).reduce((n, r) => n + r.value, 0);
   const ch = (key) => sum('ph_accounts_origin', (r) => r.dim_value === key);
   // The qa / test account is left out once in the connector, so no tab counts it.
-  assert.deepEqual(['referral', 'gmail', 'linkedin', 'other', 'none', 'test'].map(ch), [3, 5, 1, 1, 3, 0]);
+  assert.deepEqual(['referral', 'gmail', 'linkedin', 'meta', 'other', 'none', 'test'].map(ch), [3, 5, 1, 1, 0, 3, 0], 'facebook / paid_social is Meta Ads');
   assert.equal(sum('ph_accounts', (r) => r.dim_value !== 'Internal'), 13, 'test accounts are not accounts created');
   assert.equal(sum('ph_accounts_geo', (r) => r.dim_value === 'Peru'), 0);
   assert.ok(!load.metrics.some((r) => r.metric === 'ph_accounts_utm' && /^qa\|/.test(r.dim_value)));
@@ -1855,7 +1965,7 @@ test('PostHog accounts by channel come from the same rows as Accounts created an
   assert.equal(load.snapshots.find((s) => s.key === 'account_origin_coverage').rows[0].available, true);
 });
 
-test('Overview funnel splits forms and accounts by channel into campaigns and general traffic, Pending before the sync', () => {
+test('Overview funnel card has no campaigns vs general traffic block; the assistant still gets forms and accounts by channel', () => {
   const A = dashboard();
   A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
   const d = '2026-11-10';
@@ -1864,7 +1974,6 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
     { kind: 'form_signup', date: d, form: 'T4E – Early Builders Colombia', utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'early_builders_co_202611' },
     { kind: 'form_signup', date: d, form: 'T4E – Registro LATAM' },
   );
-  assert.match(A.views.overview.render(), /Pending is not zero/);
   A.S.data.snapshots.push(
     { source: 'posthog', key: 'account_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
     { source: 'posthog', key: 'account_origin_coverage', from: '2026-10-01', to: '2026-11-14', rows: [{ available: true }] },
@@ -1874,9 +1983,7 @@ test('Overview funnel splits forms and accounts by channel into campaigns and ge
     ...[['gmail', 5], ['referral', 3], ['none', 2]].map(([v, n]) => ({ source: 'posthog', metric: 'ph_accounts_origin', date: d, dim: 'origin', dim_value: v, value: n })),
   );
   const html = A.views.overview.render();
-  assert.match(html, /<b>Campaigns<\/b> <small class="text-muted">2 forms<\/small><\/td><td class="td-num"><b><span class="kpi-awaiting">Pending<\/span><\/b><\/td><td class="td-num">8<\/td>/);
-  assert.match(html, /<b>General traffic<\/b> <small class="text-muted">1 form<\/small><\/td><td class="td-num"><b><span class="kpi-awaiting">Pending<\/span><\/b><\/td><td class="td-num">2<\/td>/);
-  assert.doesNotMatch(html, /Gmail ads · Google Ads <small/, 'no per-channel rows');
+  assert.doesNotMatch(html, /campaigns vs general traffic|<b>Campaigns<\/b>|<b>General traffic<\/b>/, 'no Builders block');
   assert.match(html, /How each step is measured/);
   assert.doesNotMatch(html, /<span class="funnel-name">Form submissions/, 'HubSpot forms are not a funnel step');
   assert.match(html, /HubSpot form submissions: <b>3<\/b>/);
@@ -1945,6 +2052,37 @@ test('steps 1 and 2 add the organic LinkedIn page impressions and post clicks', 
 });
 
 
+test('the assistant gets each network go-host GA4 sessions with its own UTM, and null without that report', () => {
+  const A = dashboard();
+  A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
+  const d = '2026-11-10';
+  A.S.data.metrics.push(
+    { source: 'meta', metric: 'ad_impressions', value: 10000, date: d }, { source: 'meta', metric: 'ad_outbound_clicks', value: 100, date: d },
+    { source: 'google_ads', metric: 'ad_impressions', value: 2000, date: d }, { source: 'google_ads', metric: 'ad_clicks', value: 60, date: d },
+    { source: 'linkedin', metric: 'post_impressions', value: 3000, date: d }, { source: 'linkedin', metric: 'post_clicks', value: 90, date: d },
+  );
+  const before = JSON.parse(JSON.stringify(A.overviewFunnel()));
+  assert.deepEqual(before.channels.map((c) => c.sessions_from_its_utm), [null, null, null], 'no go-host UTM report: unknown, not zero');
+  const html = A.views.overview.render();
+  const u = (source, medium, campaign, sessions, date = d) => ({ date, source, medium, campaign, content: '(not set)', sessions });
+  A.S.data.snapshots.push(
+    { source: 'ga4', key: 'executive_landing_utm', from: '2026-10-01', to: '2026-11-20', rows: [{ available: true }] },
+    { source: 'ga4', key: 'executive_landing_utm_1', from: '2026-10-01', to: '2026-11-20', rows: [
+      u('instagram', 'paid_social', 'launch_latam_202611', 40), u('facebook', 'paid-social', 'x', 2), u('instagram', 'influencer', 'early_builders_co_202611', 9),
+      u('google', 'cpc', 'early_builders_co_202611', 30), u('google', 'organic', '(not set)', 50),
+      u('linkedin', 'paid-social', 'launch_latam_202611', 25), u('linkedin', 'social', '(not set)', 5),
+      u('(direct)', '(none)', '(not set)', 70), u('instagram', 'paid_social', 'launch_latam_202611', 99, '2026-11-18'),
+    ] },
+  );
+  const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
+  assert.deepEqual(f.channels.map((c) => [c.channel, c.sessions_from_its_utm]), [['Meta Ads', 42], ['Google Ads', 30], ['LinkedIn · organic page', 30]], 'only days in the window, each network by its own UTM');
+  const strip = (x) => x.replace(/<p class="card-note ov-click-split-line">[\s\S]*?<\/p>/, '');
+  const after = A.views.overview.render();
+  assert.doesNotMatch(after, /class="ov-click-split"/, 'the click split table is no longer on the Overview');
+  assert.notEqual(after, html, 'the click split line now pairs each network with its landing sessions');
+  assert.equal(strip(after), strip(html), 'outside the click split line nothing new is drawn on the card');
+});
+
 test('started sign-up always holds the accounts created, and logins are unique people without internal accounts', () => {
   const A = dashboard();
   A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
@@ -1999,7 +2137,7 @@ test('PostHog started sign-up counts the first registration_started, account_cre
 });
 
 
-test('builders by channel are verified accounts, like Early Builders; forms sit small next to each channel', () => {
+test('Overview funnel card shows no Builders block and no notes under the channel table or the card; the assistant keeps builders by channel', () => {
   const A = dashboard();
   A.S.from = '2026-10-01'; A.S.to = '2026-11-17'; A.S.ovWin = 'range';
   const d = '2026-11-10';
@@ -2012,13 +2150,17 @@ test('builders by channel are verified accounts, like Early Builders; forms sit 
     { source: 'posthog', metric: 'ph_builders_internal', date: d, dim: 'account_type', dim_value: 'Internal', value: 9 },
     { source: 'google_ads', metric: 'ad_spend', date: d, dim: 'campaign', dim_value: 'Early Builders CO - Gmail - 2026-11', value: 490 },
     { source: 'google_ads', metric: 'ad_clicks', date: d, dim: 'campaign', dim_value: 'Early Builders CO - Gmail - 2026-11', value: 1044 },
+    { source: 'linkedin', metric: 'post_impressions', date: d, value: 2000 }, { source: 'linkedin', metric: 'post_clicks', date: d, value: 40 },
   );
   A.S.data.events.push({ kind: 'form_signup', date: d, form: 'T4E – Early Builders Colombia', utm_source: 'google', utm_medium: 'cpc', utm_campaign: 'early_builders_co_202611' });
   const html = A.views.overview.render();
-  assert.match(html, /<h4 class="cf-sub">Builders · campaigns vs general traffic<\/h4>/);
-  assert.match(html, /<b>Campaigns<\/b> <small class="text-muted">1 form<\/small><\/td><td class="td-num"><b>17<\/b><\/td><td class="td-num">19<\/td>/);
-  assert.match(html, /<b>General traffic<\/b> <small class="text-muted">0 forms<\/small><\/td><td class="td-num"><b>10<\/b><\/td><td class="td-num">16<\/td>/);
-  assert.match(html, /9 internal builders left out\./);
+  assert.match(html, /<h4 class="cf-sub">Impressions → clicks by channel<\/h4>/, 'channel table still drawn');
+  assert.match(html, /LinkedIn · organic page/);
+  assert.doesNotMatch(html, /Builders · campaigns vs general traffic|<b>General traffic<\/b>|internal builders? left out/, 'no Builders block');
+  assert.doesNotMatch(html, /Steps 1 and 2 add up the three rows/, 'no note under the channel table');
+  assert.doesNotMatch(html, /Accounts created is the same number as the 500K goal/, 'no closing note on the card');
+  const f = JSON.parse(JSON.stringify(A.overviewFunnel()));
+  assert.deepEqual(f.by_channel.filter((r) => r.builders).map((r) => [r.channel, r.builders]), [['Referrals · Developer Network', 3], ['Gmail ads · Google Ads', 14], ['No UTM', 10]]);
 });
 
 test('PostHog builders are the first account_verified per person, by channel, internal excluded', async (t) => {
@@ -2197,8 +2339,8 @@ test('Acquisition splits accounts by channel, persona, campaign and platform fro
   assert.match(html, /p03<\/span><\/td><td class="td-num">1</);
   assert.match(html, /No persona code<\/td><td class="td-num">1</);
   assert.match(html, /No UTM<\/td><td class="td-num">6</);
-  // Campaigns sum utm_content; Meta named even though its channel is Other UTM; Executive difference explained.
-  assert.match(html, /latam_co<\/code>[\s\S]*?meta \/ paid_social[\s\S]*?Other UTM[\s\S]*?Paid · Meta[\s\S]*?<td class="td-num">2<\/td>/);
+  // Campaigns sum utm_content; meta / paid_social is the Meta Ads channel; Executive difference explained.
+  assert.match(html, /latam_co<\/code>[\s\S]*?meta \/ paid_social[\s\S]*?Meta Ads · Instagram and Facebook[\s\S]*?Paid · Meta[\s\S]*?<td class="td-num">2<\/td>/);
   assert.match(html, /6 accounts have no first-touch UTM and are not listed/);
   assert.match(html, /Executive's campaign funnel splits a different population/);
   assert.match(html, /Not connected/, 'LinkedIn without spend data');

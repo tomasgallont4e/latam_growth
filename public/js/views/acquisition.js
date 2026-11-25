@@ -94,7 +94,7 @@
         { t: 'Channel', f: (r) => U.esc(r.name) },
         { t: 'Accounts', num: 1, f: (r) => U.fmt(r.accounts) }, { t: 'Share', num: 1, f: (r) => U.pct(originTotal ? r.accounts / originTotal : null) },
         ...verifiedCols,
-      ], originRows) : U.empty('No accounts in this period')) + `<p class="card-note">Channels follow the Developer Network links. Meta and any campaign outside those links count as Other UTM; the campaign table names them. ${verNote} ${attrNote}</p>`
+      ], originRows) : U.empty('No accounts in this period')) + `<p class="card-note">Channels follow the Developer Network links, plus Meta Ads (instagram or facebook with a paid medium). Any other campaign counts as Other UTM; the campaign table names them. ${verNote} ${attrNote}</p>`
         : U.empty(attrOk ? 'Waiting for PostHog' : 'Attribution not recorded yet', attrOk ? 'Accounts by channel appear after the next PostHog sync.' : utmPending) });
 
     // By country against each market's monthly goal (goal plan), on the top-bar Month like the goal tile.

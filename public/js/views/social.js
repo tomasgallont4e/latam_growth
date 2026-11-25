@@ -95,6 +95,96 @@
       `${tiles}<p class="card-note">Posts are filtered by publication date. Their statistics are lifetime snapshots, not daily performance; content clicks are not proven outbound site visits.</p><div class="detail-group" style="margin-top:16px">${U.details('LinkedIn posts', `${(posts.rows || []).length} posts in snapshot`, table)}</div>`);
   }
 
+  // Ad clicks that open the page, split into those where the page loaded (Meta Pixel landing page view) and
+  // those where it did not, next to each network's GA4 landing sessions (public/js/clickSplit.js). The Meta row
+  // starts at the Meta Pixel go-live date, so its clicks and page loads cover the same days.
+  function landingLoads() {
+    const U = A.ui, S = A.S, CS = A.clickSplit;
+    if (!CS) return '';
+    const metrics = A.D.M();
+    const snapshots = (S.data && S.data.snapshots) || [];
+    const PIX = CS.PIXEL_SINCE;
+    const pixelDay = U.dshort(PIX).split(' ').reverse().join(' ');
+    const stamp = (s) => String(s.pulled_at || s._at || s.to || '');
+    const cov = snapshots.filter((s) => s.source === 'meta' && s.key === 'landing_view_coverage').sort((a, b) => stamp(b).localeCompare(stamp(a)))[0];
+    const covReady = !!(cov && (cov.rows || [])[0] && cov.rows[0].available === true);
+    const net = (out, key) => ((out && out.networks) || []).find((n) => n.key === key) || null;
+    const all = CS.build({ metrics, snapshots, from: S.from, to: S.to });
+    const pixelReady = covReady && S.to >= PIX;
+    const mFrom = S.from < PIX ? PIX : S.from;
+    const clipped = pixelReady && S.from < PIX;
+    const meta = pixelReady ? net(CS.build({ metrics, snapshots, from: mFrom, to: S.to }), 'meta') : net(all, 'meta');
+    const google = net(all, 'google_ads');
+    const linkedin = net(all, 'linkedin');
+    const loaded = (n) => !!(n && n.status === 'loaded');
+    const dash = '<span class="text-muted">–</span>';
+    const n = (v) => (v == null || !Number.isFinite(Number(v)) ? dash : U.fmt(v));
+    const share = (a, b, more) => (a == null || b == null || !(b > 0) ? dash : a > b ? `${U.pct(1, 0)} <small class="text-muted">${more}</small>` : U.pct(a / b));
+
+    const metaPv = pixelReady && loaded(meta) ? meta.page_views : null;
+    const metaOpen = loaded(meta) ? meta.open_page : null;
+    const rows = [
+      { name: 'Meta Ads', on: loaded(meta), open: n(metaOpen), pv: n(metaPv),
+        lost: metaPv != null && metaOpen != null ? n(Math.max(0, metaOpen - metaPv)) : dash,
+        rate: metaPv != null ? share(metaPv, metaOpen, 'more page loads than clicks') : dash,
+        sessions: n(loaded(meta) ? meta.sessions : null),
+        perClick: loaded(meta) ? share(meta.sessions, meta.open_page, 'more sessions than clicks') : dash },
+      { name: 'Google Ads', on: loaded(google), open: n(loaded(google) ? google.open_page : null), pv: dash, lost: dash, rate: dash,
+        sessions: n(loaded(google) ? google.sessions : null),
+        perClick: loaded(google) && google.sessions != null && google.open_page > 0 ? `${share(google.sessions, google.open_page, 'more sessions than clicks')} <small class="text-muted">estimate</small>` : dash },
+      { name: 'LinkedIn page', on: loaded(linkedin), open: loaded(linkedin) && linkedin.all_clicks != null ? `${U.fmt(linkedin.all_clicks)} <small class="text-muted">all post clicks</small>` : dash,
+        pv: dash, lost: dash, rate: dash, sessions: n(loaded(linkedin) ? linkedin.sessions : null), perClick: dash },
+    ];
+    const table = U.table([
+      { t: 'Network', f: (r) => `${U.esc(r.name)}${r.on ? '' : ' <small class="text-muted">No data in these dates</small>'}` },
+      { t: 'Clicks that open the page', num: 1, f: (r) => (r.on ? r.open : dash) },
+      { t: 'Page loaded', num: 1, f: (r) => (r.on ? r.pv : dash) },
+      { t: 'Did not load', num: 1, f: (r) => (r.on ? r.lost : dash) },
+      { t: 'Loaded %', num: 1, f: (r) => (r.on ? r.rate : dash) },
+      { t: 'GA4 landing sessions', num: 1, f: (r) => (r.on ? r.sessions : dash) },
+      { t: 'Session / click', num: 1, f: (r) => (r.on ? r.perClick : dash) },
+    ], rows);
+
+    // Meta per campaign, same clipped window: outbound clicks against Meta Pixel landing page views.
+    let campaigns = '';
+    if (metaPv != null && metaOpen != null) {
+      const by = new Map();
+      for (const r of metrics) {
+        if (r.source !== 'meta' || !r.date || r.date < mFrom || r.date > S.to) continue;
+        if (r.metric !== 'ad_outbound_clicks' && r.metric !== 'ad_landing_page_views') continue;
+        const c = String(r.dim_value || '').trim() || '(no campaign)';
+        const row = by.get(c) || { c, clicks: 0, pv: 0 };
+        const v = Number(r.value);
+        if (Number.isFinite(v)) row[r.metric === 'ad_outbound_clicks' ? 'clicks' : 'pv'] += v;
+        by.set(c, row);
+      }
+      const list = [...by.values()].sort((a, b) => b.clicks - a.clicks || (a.c < b.c ? -1 : 1));
+      if (list.length) {
+        campaigns = `<div class="detail-group" style="margin-top:16px">${U.details('Meta campaigns · clicks that load the page', `${list.length} campaigns · ${U.win(mFrom, S.to)}`, U.table([
+          { t: 'Campaign', k: 'c' },
+          { t: 'Clicks that open the page', num: 1, f: (x) => U.fmt(x.clicks) },
+          { t: 'Page loaded', num: 1, f: (x) => U.fmt(x.pv) },
+          { t: 'Did not load', num: 1, f: (x) => U.fmt(Math.max(0, x.clicks - x.pv)) },
+          { t: 'Loaded %', num: 1, f: (x) => share(x.pv, x.clicks, 'more page loads than clicks') },
+        ], list))}</div>`;
+      }
+    }
+
+    const notes = [
+      'Page loaded = the Meta Pixel fired on go.think4ever.com after the click.',
+      'Did not load = the person clicked but the pixel never fired: the page did not finish loading, the person went back first, or the pixel was blocked.',
+      "GA4 sessions lower than Page loaded means the page loaded but GA4 did not record the visit with the network's UTM (UTM lost, GA4 fired later or was blocked).",
+      'Google Ads does not report page loads, so its Session / click is an estimate: GA4 sessions with the Google Ads UTM divided by its clicks that open the page.',
+      'LinkedIn reports every click on a post, not only clicks on the link.',
+    ];
+    if (clipped) notes.push(`Meta row counts from ${pixelDay}, when the Meta Pixel went live.`);
+    if (!pixelReady) notes.push(S.to < PIX
+      ? `These dates end before ${pixelDay}, when the Meta Pixel went live, so Meta page loads are not available.`
+      : `Meta page loads are not available yet: they need the Meta Pixel (live since ${pixelDay}) and the next Meta sync.`);
+    const sub = pixelReady && mFrom !== S.from ? `Meta: ${U.win(mFrom, S.to)} · Google Ads and LinkedIn: ${U.win(S.from, S.to)}` : U.win(S.from, S.to);
+    return `<section class="section">${U.card({ cls: 'ad-page-loads', title: 'Ad clicks that load the page', sub, body: `${table}${campaigns}<p class="card-note">${U.esc(notes.join(' '))}</p>` })}</section>`;
+  }
+
   function render() {
     const U = A.ui, C = A.charts, D = A.D, S = A.S;
     const prev = D.prev();
@@ -146,6 +236,7 @@
 
     return U.section('Social and paid at a glance', `${U.win(S.from, S.to)} · ${cmp} · cost metrics read green when they go down`, kpis)
       + goals
+      + landingLoads()
       + `<section class="section">${unitCosts}</section>`
       + `<section class="section">${attribution}</section>`
       + `<section class="section grid-2">${byPlat}${clicksMix}</section>`

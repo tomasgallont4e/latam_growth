@@ -19,7 +19,7 @@ test('one test rule: explicit markers only, utm_content never decides', () => {
   assert.equal(t('posthog_prodcheck', '', ''), true);
   // A/B piece names in utm_content are never tests
   assert.equal(t('meta', 'paid_social', 'latam_co_202611', 'p03_test_b'), false);
-  assert.equal(channels.classify({ source: 'meta', medium: 'paid_social', campaign: 'latam_co_202611', content: 'p03_test_b' }), 'other');
+  assert.equal(channels.classify({ source: 'meta', medium: 'paid_social', campaign: 'latam_co_202611', content: 'p03_test_b' }), 'meta');
   assert.equal(channels.classify({ source: 'x', medium: 'y', campaign: 'qa-sync-1106' }), 'test');
 });
 

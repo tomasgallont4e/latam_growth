@@ -305,7 +305,7 @@
         };
       }),
       weakest_step: weak > 0 ? { from: steps[C.prevStep(steps, weak)].name, to: steps[weak].name, continue: steps[weak].n / steps[C.prevStep(steps, weak)].n } : null,
-      channels: all ? channelRows(w.from, w.to).map((r) => ({ channel: r.name, impressions: r.impressions, clicks: r.clicks, clicks_kind: r.kind, impressions_to_clicks: r.ctr, organic: !!r.organic })) : [],
+      channels: all ? channelRows(w.from, w.to).map((r) => ({ channel: r.name, impressions: r.impressions, clicks: r.clicks, clicks_kind: r.kind, impressions_to_clicks: r.ctr, organic: !!r.organic, sessions_from_its_utm: r.sessions })) : [],
       forms: all ? formRows(w.from, w.to).map(([form, n]) => ({ form, submissions: n })) : [],
       by_channel: byChannel ? byChannel.rows.map((r) => ({ channel: r.label, group: r.group, platform: r.platform, builders: r.builders, accounts: r.accounts, forms: r.forms })) : null,
       click_split: (() => {
@@ -322,17 +322,31 @@
   };
   // Step 1 → 2 per channel, from the same metrics and window as the funnel: the rows add up to steps 1 and 2.
   // LinkedIn is the organic company page (no LinkedIn Ads); its clicks are every click on a post.
+  // sessions: GA4 go.think4ever.com sessions in the window whose UTM belongs to that network (the same host as
+  // Landing sessions), null when the go-host UTM report does not cover the window. Only the assistant reads it.
   function channelRows(from, to) {
-    const D = A.D;
+    const D = A.D, utm = landingUtmRows(from, to);
+    const low = (v) => String(v == null ? '' : v).trim().toLowerCase();
     return [
-      { name: 'Meta Ads', imp: ['meta', 'ad_impressions'], clk: ['meta', 'ad_outbound_clicks'], kind: 'outbound clicks' },
-      { name: 'Google Ads', imp: ['google_ads', 'ad_impressions'], clk: ['google_ads', 'ad_clicks'], kind: 'clicks' },
-      { name: 'LinkedIn · organic page', imp: ['linkedin', 'post_impressions'], clk: ['linkedin', 'post_clicks'], kind: 'content clicks', organic: true },
-    ].filter((c) => D.has(c.imp[0], c.imp[1])).map((c) => {
+      { name: 'Meta Ads', imp: ['meta', 'ad_impressions'], clk: ['meta', 'ad_outbound_clicks'], kind: 'outbound clicks', fromUtm: (r) => A.channels.isMetaPaid(r) },
+      { name: 'Google Ads', imp: ['google_ads', 'ad_impressions'], clk: ['google_ads', 'ad_clicks'], kind: 'clicks', fromUtm: (r) => low(r.source) === 'google' && low(r.medium) === 'cpc' },
+      { name: 'LinkedIn · organic page', imp: ['linkedin', 'post_impressions'], clk: ['linkedin', 'post_clicks'], kind: 'content clicks', organic: true, fromUtm: (r) => low(r.source) === 'linkedin' },
+    ].filter((c) => D.has(c.imp[0], c.imp[1])).map(({ fromUtm, ...c }) => {
       const imp = D.sum(c.imp[0], c.imp[1], null, from, to);
       const clicks = D.has(c.clk[0], c.clk[1]) ? D.sum(c.clk[0], c.clk[1], null, from, to) : null;
-      return { ...c, impressions: imp, clicks, ctr: clicks != null && imp ? clicks / imp : null };
+      const sessions = utm ? utm.filter(fromUtm).reduce((t, r) => t + (Number(r.sessions) || 0), 0) : null;
+      return { ...c, impressions: imp, clicks, ctr: clicks != null && imp ? clicks / imp : null, sessions };
     });
+  }
+  // GA4 go.think4ever.com sessions by UTM source / medium / campaign (executive_landing_utm, parts _1.._N), or null
+  // when that report is missing or does not cover the whole window.
+  function landingUtmRows(from, to) {
+    const D = A.D;
+    if (!D.covered('ga4', 'executive_landing_utm', from, to)) return null;
+    const head = D.snapIn('ga4', 'executive_landing_utm', from, to);
+    return ((A.S.data && A.S.data.snapshots) || [])
+      .filter((x) => x.source === 'ga4' && /^executive_landing_utm_\d+$/.test(String(x.key || '')) && x.from === head.from && x.to === head.to)
+      .flatMap((x) => x.rows || []).filter((r) => r.date >= from && r.date <= to);
   }
   function channelCtr(from, to) {
     const U = A.ui, rows = channelRows(from, to);
@@ -345,8 +359,7 @@
       { t: 'Clicks to the landing', num: 1, f: (r) => (r.clicks == null ? '<span class="text-muted">Pending</span>' : `${U.fmt(r.clicks)} <small class="text-muted">${r.kind}</small>`) },
       { t: 'Impressions → clicks', num: 1, f: (r) => (r.ctr == null ? '–' : !r.organic && r.ctr === best && paid.length > 1 && best > 0 ? `<b>${U.pct(r.ctr, 2)}</b>` : U.pct(r.ctr, 2)) },
     ], rows);
-    const note = rows.some((r) => r.organic) ? '<p class="card-note">Steps 1 and 2 add up the three rows. LinkedIn is the organic company page: it reports every click on a post, so its clicks can include clicks that do not open the landing.</p>' : '';
-    return `<div class="ov-channel-ctr"><h4 class="cf-sub">Impressions → clicks by channel</h4>${table}${note}</div>`;
+    return `<div class="ov-channel-ctr"><h4 class="cf-sub">Impressions → clicks by channel</h4>${table}</div>`;
   }
   // Step 2 → 3 by network (public/js/clickSplit.js): clicks that open the page apart from clicks that never request
   // it, each network paired with its own landing sessions, so the loss after the click is the real one.
@@ -364,34 +377,6 @@
     const t = cs.total;
     const paired = t && t.open_page > 0 ? ` Paired with their own sessions (${U.esc(t.networks.join(' + '))}): ${U.fmt(t.sessions)} of ${U.fmt(t.open_page)} clicks that open the page became a landing session (${U.pct(t.click_to_session, 0)}); ${U.fmt(t.lost_after_click)} were lost after the click.` : '';
     return `<p class="card-note ov-click-split-line">Clicks to the landing: ${U.fmt(s.counted)} = ${parts.join(', ')}.${paired}</p>`;
-  }
-  function clickSplitTable(cs) {
-    const U = A.ui;
-    if (!cs) return '';
-    const n = (v) => (v == null ? '<span class="text-muted">–</span>' : U.fmt(v));
-    const rate = (r) => (r.click_to_session == null ? '<span class="text-muted">–</span>' : r.more_sessions_than_clicks ? `${U.pct(1, 0)} <small class="text-muted">more sessions than clicks</small>` : U.pct(r.click_to_session, 0));
-    const rows = cs.networks.map((r) => ({ ...r, label: r.name }));
-    if (cs.total && cs.total.networks.length > 1) rows.push({ ...cs.total, label: `<b>${U.esc(cs.total.networks.join(' + '))}</b>`, raw: true, all_clicks: null, no_page: null });
-    const table = U.table([
-      { t: 'Network', f: (r) => (r.raw ? r.label : `${U.esc(r.label)}${r.status === 'loaded' ? '' : ' <small class="text-muted">No data in these dates</small>'}`) },
-      { t: 'All clicks', num: 1, f: (r) => n(r.all_clicks) },
-      { t: 'Do not open the page', num: 1, f: (r) => n(r.no_page) },
-      { t: 'Open the page', num: 1, f: (r) => (r.raw ? `<b>${n(r.open_page)}</b>` : n(r.open_page)) },
-      { t: 'Landing sessions', num: 1, f: (r) => n(r.sessions) },
-      { t: 'Lost after the click', num: 1, f: (r) => (r.raw ? `<b>${n(r.lost_after_click)}</b>` : n(r.lost_after_click)) },
-      { t: 'Click → session', num: 1, f: rate },
-    ], rows);
-    const google = cs.networks.find((r) => r.key === 'google_ads' && r.devices && r.devices.length);
-    const devices = google ? `<h4 class="cf-sub">Google Ads by device · clicks that open the page → landing sessions</h4>${U.table([
-      { t: 'Device', f: (r) => U.esc(r.device) },
-      { t: 'Open the page', num: 1, f: (r) => n(r.open_page) },
-      { t: 'Landing sessions', num: 1, f: (r) => n(r.sessions) },
-      { t: 'Lost after the click', num: 1, f: (r) => n(r.lost_after_click) },
-      { t: 'Click → session', num: 1, f: rate },
-    ], google.devices)}` : '';
-    const notes = cs.networks.flatMap((r) => [r.note, r.page_views != null ? `Meta landing page views (the page loaded, per the Meta Pixel): ${U.fmt(r.page_views)}. ${r.page_views_note || ''}` : null].filter(Boolean).map((x) => `${r.name}: ${x}`));
-    const how = 'Open the page: Meta outbound clicks and Google Ads clicks on image ads. Do not open the page: Meta clicks that stay on Instagram or Facebook (profile, reactions, expanding the image) and Gmail video ad clicks. Landing sessions: GA4 sessions on go.think4ever.com whose UTM source and medium belong to the network; a visit without UTM is not given to any network. Lost after the click = open the page − landing sessions: the page did not load, or the person left before it did.';
-    return `<div class="ov-click-split"><h4 class="cf-sub">Clicks that open the page → landing sessions, by network</h4>${table}${devices}<p class="card-note">${U.esc(how)}${notes.length ? ` ${U.esc(notes.join(' '))}` : ''}</p></div>`;
   }
   // Steps 4 and 5 by channel (public/js/channels.js, the rule of the Early Builders dashboard): forms from the
   // HubSpot first-touch UTMs of each submission, accounts from the PostHog person first-touch UTMs (classified
@@ -423,30 +408,13 @@
     }
     return Object.entries(byForm).sort((a, b) => b[1] - a[1]);
   }
-  function channelTable(from, to, steps) {
-    const U = A.ui, sp = channelSplit(from, to);
-    const sum = (rs, f) => rs.reduce((t, r) => t + (r[f] || 0), 0);
-    const group = (key, label) => {
-      const rs = sp.rows.filter((r) => r.group === key);
-      return { label, forms: sum(rs, 'forms'), builders: sp.buildersReady ? sum(rs, 'builders') : null, accounts: sp.accountsReady ? sum(rs, 'accounts') : null };
-    };
-    const rows = [group('program', 'Campaigns'), group('general', 'General traffic')];
-    const n = (v) => (v == null ? '<span class="kpi-awaiting">Pending</span>' : U.fmt(v));
-    const table = U.table([
-      { t: '', f: (r) => `<b>${U.esc(r.label)}</b> <small class="text-muted">${U.fmt(r.forms)} form${r.forms === 1 ? '' : 's'}</small>` },
-      { t: 'Builders (verified)', num: 1, f: (r) => `<b>${n(r.builders)}</b>` },
-      { t: 'Accounts created', num: 1, f: (r) => n(r.accounts) },
-    ], rows);
-    const internal = sp.internalBuilders ? ` ${U.fmt(sp.internalBuilders)} internal builder${sp.internalBuilders === 1 ? '' : 's'} left out.` : '';
-    return `<div class="ov-by-channel"><h4 class="cf-sub">Builders · campaigns vs general traffic</h4>${table}<p class="card-note">Campaigns = the Developer Network program links (Gmail ads, LinkedIn paid, Referrals and HubSpot emails, builder links). Builders = verified accounts, as in Early Builders.${U.esc(internal)}${sp.buildersReady ? '' : ' Pending is not zero.'}</p></div>`;
-  }
   // One line per step: where the number comes from and what it counts, so a step larger than the one above reads as expected.
   function howMeasured() {
     const U = A.ui;
     const items = [
       ['Impressions', 'Meta Ads and Google Ads, plus the posts of the LinkedIn company page (organic). Ads are campaign traffic; the LinkedIn page is general.'],
       ['Clicks to the landing', 'Meta outbound clicks, Google Ads clicks and the clicks on the LinkedIn company page posts. LinkedIn reports every click on a post, so its part can include clicks that do not open the landing.'],
-      ['Clicks that open the page', 'Of the step 2 clicks, Meta outbound clicks and Google Ads clicks on image ads request the page. Gmail video ad clicks open the video and never request it; LinkedIn page post clicks cannot be separated. The table under the funnel pairs each network with its own landing sessions, so its loss after the click is real loss, not counting.'],
+      ['Clicks that open the page', 'Of the step 2 clicks, Meta outbound clicks and Google Ads clicks on image ads request the page. Gmail video ad clicks open the video and never request it; LinkedIn page post clicks cannot be separated. Social and Paid shows, per network, the clicks that loaded the page (Meta Pixel) and the landing sessions that carry the UTM of that network.'],
       ['Landing sessions', 'GA4 sessions on go.think4ever.com from every source: ads, organic, direct and emails.'],
       ['Started sign-up', 'PostHog, people who typed their email on the landing and asked for the 6-digit code (registration_started), plus people who created the account directly, as one-click sign-up with Google does without that event. Internal excluded. Every account created is part of this step.'],
       ['Accounts created', 'PostHog, the first account_created or $identify of each person, External only: the visitor entered the code, or signed up in one click with Google.'],
@@ -472,14 +440,12 @@
     const cs = country === 'all' ? clickSplitData(from, to) : null;
     const formTotal = forms.reduce((t, [, n]) => t + n, 0);
     const formLine = forms.length ? `<p class="card-note ov-forms-by-form">HubSpot form submissions: <b>${U.fmt(formTotal)}</b> (${forms.map(([name, n]) => `${U.esc(name)} ${U.fmt(n)}`).join(' · ')}). A separate path, not a funnel step: the landing signs up with the email and a 6-digit code, without a HubSpot form. Early Builders is the Developer Network program form.</p>` : '';
-    const byChannel = country === 'all' ? channelTable(from, to, steps) : '';
     const picker = `<label class="field market-select"><span>Country</span><select id="goal-country" aria-label="Select country"><option value="all"${country === 'all' ? ' selected' : ''}>All countries</option>${options.map((name) => `<option value="${U.esc(name)}"${name === country ? ' selected' : ''}>${U.esc(name)}</option>`).join('')}</select></label>`;
-    const note = `<p class="card-note">Accounts created is the same number as the 500K goal (External, internal excluded). Open "How each step is measured" for what each number counts. ${country === 'all' ? '' : `${NOT_SPLIT}: clicks, forms, logins and projects; impressions only when the ad platforms store a country split.`}</p>`;
     return U.card({
       cls: 'chart-card', title: 'Funnel · 7 steps',
       sub: `${U.win(from, to)} · ${country === 'all' ? 'All countries' : U.esc(country)} · % versus the previous step`,
       right: picker,
-      body: C.funnel(steps, 'Funnel from impressions to projects created', { verdicts: true }) + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${clickSplitLine(cs)}${regLine}${howMeasured()}${channels}${clickSplitTable(cs)}${formLine}${byChannel}${note}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
+      body: C.funnel(steps, 'Funnel from impressions to projects created', { verdicts: true }) + `<p class="card-note"><b>${U.esc(weakLine)}</b></p>${clickSplitLine(cs)}${regLine}${howMeasured()}${channels}${formLine}<button class="btn btn-secondary btn-sm" type="button" data-go="executive">Open the Executive funnel</button>`,
     });
   }
 
