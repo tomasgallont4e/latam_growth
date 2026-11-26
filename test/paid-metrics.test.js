@@ -120,7 +120,7 @@ function dashboard(stored = {}, hash = '') {
     },
   } });
   App.testLoad = (file) => vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
-  for (const file of ['paid.js', 'channels.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'aggregate.js', 'assistant.js', 'regions.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/form.js', 'views/acquisition.js', 'app.js']) {
+  for (const file of ['paid.js', 'clickSplit.js', 'channels.js', 'measurement.js', 'ui.js', 'charts.js', 'funnels.js', 'aggregate.js', 'assistant.js', 'regions.js', 'views/social.js', 'views/landing.js', 'views/overview.js', 'views/executive.js', 'views/conversion.js', 'views/form.js', 'views/acquisition.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8'), context, { filename: file });
   }
   App.S.from = '2026-10-01'; App.S.to = '2026-10-28';
@@ -1761,6 +1761,44 @@ test('Overview groups by week by default and splits impressions to clicks by ad 
   const fed = A.overviewFunnel();
   assert.equal(fed.steps[0].value, 12000, 'the channel rows add up to the funnel impressions');
   assert.equal(fed.steps[1].value, 140, 'and to the funnel clicks');
+});
+
+test('Overview separates clicks that open the page and pairs each network with its own sessions', () => {
+  const A = dashboard();
+  A.S.from = '2026-11-01'; A.S.to = '2026-11-14'; A.S.ovWin = 'range';
+  const d = '2026-11-12';
+  const win = { from: '2026-10-01', to: '2026-11-24', pulled_at: '2026-11-24T12:00:00Z' };
+  A.S.data.metrics.push(
+    { source: 'google_ads', metric: 'ad_impressions', value: 64109, date: d, dim_value: 'Gmail' },
+    { source: 'google_ads', metric: 'ad_clicks', value: 1144, date: d, dim_value: 'Gmail' },
+    { source: 'linkedin', metric: 'post_impressions', value: 9000, date: d },
+    { source: 'linkedin', metric: 'post_clicks', value: 300, date: d },
+  );
+  A.S.data.snapshots.push(
+    { source: 'google_ads', key: 'ad_click_detail', ...win, rows: [{ available: true }] },
+    { source: 'google_ads', key: 'ad_click_detail_1', ...win, rows: [
+      { date: d, campaign: 'Gmail', device: 'MOBILE', network: 'GMAIL', kind: 'image', clicks: 986 },
+      { date: d, campaign: 'Gmail', device: 'DESKTOP', network: 'GMAIL', kind: 'image', clicks: 41 },
+      { date: d, campaign: 'Gmail', device: 'TABLET', network: 'GMAIL', kind: 'image', clicks: 17 },
+      { date: d, campaign: 'Gmail', device: 'MOBILE', network: 'GMAIL', kind: 'video', clicks: 100 },
+    ] },
+    { source: 'ga4', key: 'landing_device', ...win, rows: [{ available: true }] },
+    { source: 'ga4', key: 'landing_device_1', ...win, rows: [
+      { date: d, source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611', device: 'mobile', sessions: 386 },
+      { date: d, source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611', device: 'desktop', sessions: 42 },
+      { date: d, source: 'google', medium: 'cpc', campaign: 'early_builders_co_202611', device: 'tablet', sessions: 3 },
+      { date: d, source: 'linkedin', medium: 'social', campaign: '(not set)', device: 'mobile', sessions: 120 },
+    ] },
+  );
+  const html = A.views.overview.render();
+  assert.match(html, /Clicks that open the page → landing sessions, by network/);
+  assert.match(html, /Clicks to the landing: 1,444 = 1,044 open the page, 100 are Gmail video clicks that do not, 300 are LinkedIn page post clicks that cannot be separated\./);
+  assert.match(html, /Paired with their own sessions \(Google Ads\): 431 of 1,044 clicks that open the page became a landing session \(41%\); 613 were lost after the click\./);
+  assert.match(html, /Google Ads by device/);
+  const fed = A.overviewFunnel();
+  assert.equal(fed.steps[1].value, 1444, 'step 2 keeps its total');
+  assert.equal(fed.click_split.networks.find((n) => n.network === 'Google Ads').devices.find((x) => x.device === 'Phone').lost_after_click, 600);
+  assert.equal(fed.click_split.paired_total.lost_after_click, 613);
 });
 
 test('channels follow the Early Builders rule: exact source, medium and campaign, HubSpot emails with Referrals', () => {
