@@ -72,7 +72,7 @@ Leadership loads each approved piece here: creative link, copy, language, person
 | Google Analytics 4 | `GA4_PROPERTY_ID`, `GA4_SERVICE_ACCOUNT` (key JSON of a service account with Viewer access) |
 | PostHog | `POSTHOG_HOST`, `POSTHOG_PROJECT_ID`, `POSTHOG_API_KEY` |
 | Meta Ads | `META_TOKEN`, `META_AD_ACCOUNT_ID`; optional `META_API_VERSION` (default v23.0) |
-| LinkedIn | `LINKEDIN_ORG_ID` (129864039), and `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_REFRESH_TOKEN` (or a `LINKEDIN_TOKEN` that lasts 60 days). Needs the Community Management API approved by LinkedIn. |
+| LinkedIn | `LINKEDIN_ORG_ID` (129864039), and `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_REFRESH_TOKEN` (or a `LINKEDIN_TOKEN` that lasts 60 days). Needs the Community Management API approved by LinkedIn. Paid reporting is separate: `LINKEDIN_AD_ACCOUNT_ID` and `LINKEDIN_ADS_TOKEN` (60 days; or `LINKEDIN_ADS_REFRESH_TOKEN`, `LINKEDIN_ADS_CLIENT_ID`, `LINKEDIN_ADS_CLIENT_SECRET`) from an app with the Advertising API and the scopes `r_ads_reporting` and `r_ads`. Each part runs alone and clears only its own facts. |
 | Google Ads | `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`, `GOOGLE_ADS_REFRESH_TOKEN`; optional `GOOGLE_ADS_LOGIN_CUSTOMER_ID` (manager account), `GOOGLE_ADS_API_VERSION` (default v21) |
 | Clarity | `CLARITY_TOKEN` |
 | Growth assistant | `ANTHROPIC_API_KEY` (required; service variable only), optional `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`) |
