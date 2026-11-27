@@ -53,12 +53,15 @@ test('ads reporting: daily rows by campaign in the linkedin_ads source', async (
   assert.equal(load.owns, undefined);
   const row = (metric, date) => load.metrics.find((r) => r.metric === metric && r.date === date);
   assert.deepEqual(row('ad_impressions', '2026-10-17'), { metric: 'ad_impressions', date: '2026-10-17', dim: 'campaign', dim_value: 'Boost A', value: 1000 });
-  assert.equal(row('ad_clicks', '2026-10-17').value, 12);
-  assert.equal(row('ad_landing_clicks', '2026-10-17').value, 9);
+  // ad_clicks means clicks to the landing page, as for every other network; all clicks go apart.
+  assert.equal(row('ad_clicks', '2026-10-17').value, 9);
+  assert.equal(row('ad_clicks_all', '2026-10-17').value, 12);
+  assert.equal(load.metrics.filter((r) => r.metric === 'ad_landing_clicks').length, 0);
   assert.equal(row('ad_spend', '2026-10-17').value, 4.25);
   // A campaign without a name keeps its id; a missing field is zero.
   assert.equal(row('ad_impressions', '2026-10-18').dim_value, 'Campaign 22');
-  assert.equal(row('ad_landing_clicks', '2026-10-18').value, 0);
+  assert.equal(row('ad_clicks', '2026-10-18').value, 0);
+  assert.equal(row('ad_clicks_all', '2026-10-18').value, 3);
   assert.equal(load.metrics.length, 8);
   assert.equal(load.snapshots[0].key, 'ads_coverage');
   assert.equal(load.snapshots[0].rows[0].campaigns, 2);
